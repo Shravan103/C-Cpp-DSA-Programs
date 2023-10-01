@@ -1,0 +1,110 @@
+﻿#include<stdio.h>
+#include<stdlib.h>
+#define MAX 10
+int queue_arr[MAX];
+int rear=-1;
+int front=-1;
+void insert(int item);
+int delete();
+int peek();
+int isfull();
+int isempty();
+void display();
+
+int main()
+{
+    int choice,item;
+    while(1)
+        {
+            printf("\n1.Insert a element\n");
+            printf("2.Delete an element\n");
+            printf("3.Display the front element\n");
+            printf("4.Display all the elements\n");
+            printf("5.Quit\n\n");
+            printf("Enter your choice\n");
+            scanf("%d",&choice );
+            switch (choice)
+                {
+                case 1:
+                    printf("Enter the item to be pushed");
+                    scanf("%d",&item );
+                    insert(item);
+                    break;
+
+                case 4:
+                    display();
+                    break;
+                case 2:item =delete();
+                printf("\n%d is deleted",item);
+                break;
+                case 3:
+                       printf("\nFront = %d",peek());
+                       break;
+                default:
+                    printf("wrong choice\n");
+                    break;
+
+                }
+
+        }
+
+    return 0;
+}
+void insert(int item)
+{
+    if(isfull())
+        {
+            printf("Queue Overflow\n");
+            return;
+        }
+    if(front==-1)
+        {
+            front =0;
+        }
+    rear= rear+1;
+    queue_arr[rear]=item;
+}
+
+void display()
+{
+    for(int i=front; i<=rear; i++)
+        {
+            printf("\n%d",queue_arr[i]);
+        }
+
+
+}
+int delete(){
+int item;
+if(isempty()){
+printf("\nQueue Underflow");
+exit(1);
+}
+item=queue_arr[front];
+front=front+1;
+return item;
+
+}
+int isfull()
+{
+    if(rear==MAX-1)
+        return 1;
+    else
+        return 0;
+}
+int isempty(){
+if(front==-1&&rear==-1){
+return 1;
+}else{
+return 0;
+}
+
+}
+int peek(){
+if(isempty()){
+
+return -1;
+}
+return front;
+
+}
