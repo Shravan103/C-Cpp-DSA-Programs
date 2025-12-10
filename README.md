@@ -1,15187 +1,10577 @@
-unit UEmailReceipt;
-
-{ ****************************************************************************** }
+unit UReports;
+{******************************************************************************}
 interface
-
-{ ****************************************************************************** }
+{******************************************************************************}
 uses
   Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
-  UDetailForm, StdCtrls, ExtCtrls, Buttons, ImgList,System.RegularExpressions,
-  System.ImageList {,IvDictio, IvMulti}, IdSMTP, IdMessage, IdSSLOpenSSL, IdIOHandlerStack,
-  IdIOHandler, IdIOHandlerSocket, IdSSL, IdBaseComponent, IdComponent,
-  IdTCPConnection, IdTCPClient, IdExplicitTLSClientServerBase, IdMessageClient,
-  IdSMTPBase, pngimage, IdAttachmentFile, System.IOUtils, FFrameReceipt;
-
-{ ****************************************************************************** }
-type
-  (* *
-    Sends Receipt to Customer Emails.
-  *)
-  TformEmailReceipt = class(TformDetailForm)
-    MemoEmails: TMemo;
-    cmdAbout: TSpeedButton;
-    cmdgmailcomDes: TSpeedButton;
-    cmdAtTheRateDes: TSpeedButton;
-    IdSMTP1: TIdSMTP;
-    IdMessage1: TIdMessage;
-    IdSSLIOHandlerSocketOpenSSL1: TIdSSLIOHandlerSocketOpenSSL;
-    procedure FormShow(Sender: TObject);
-    procedure cmdOkClick(Sender: TObject);
-    procedure cmdHideClick(Sender: TObject);
-    procedure FormCreate(Sender: TObject);
-
-    procedure cmdTimeClick(Sender: TObject);
-    procedure cmdDateClick(Sender: TObject);
-    procedure cmdAboutClick(Sender: TObject);
-    procedure cmdAtTheRateDesClick(Sender: TObject);
-    procedure cmdgmailcomDesClick(Sender: TObject);
-    private
-      function IsValidEmail(const Email: string): Boolean;
-      function ValidateEmailList(const Emails: string; out CleanList: string): Boolean;
-      function FetchCustomerEmails: string;
-      procedure ConfigureSMTP;
-      procedure SendEmails(const EmailList: string);
-    public
-      FAccountName: String;
-  end;
-
-  { ****************************************************************************** }
-var
-  formEmailReceipt: TformEmailReceipt;
-  SSLORTLS: Integer;
-
-  { ****************************************************************************** }
-implementation
-
-{ ****************************************************************************** }
-{$R *.DFM}
-
-{ ****************************************************************************** }
-uses
-  USelectDateTime, LMain, UMain, DM_WBWaiter, UFiscalMenu,
-  UBaseDetailForm, UAboutBoxPOS, UPaymentTable, USelectCashSale;
-
-{ ****************************************************************************** }
-procedure TformEmailReceipt.FormShow(Sender: TObject);
-var
-  FoundEmails: string;
-begin
-  if ((KBLayout = QWERTY) and (cmdADes.Top <> 44)) or
-    ((KBLayout = ALPHA) and (cmdADes.Top <> 0)) then
-  begin
-    LayOutKeys;
-  end;
-  cmdFiscalMenu.Visible := AppDetails.EnableFiscalPrinting;
-
-  // "gmail.com" button
-  cmdgmailcomDes.Left := cmdLeftBracketDes.Left;
-  cmdgmailcomDes.Top := cmdLeftBracketDes.Top;
-  cmdgmailcomDes.Width := cmdLeftBracketDes.Width + cmdLeftBracketDes.Width;
-  cmdLeftBracketDes.Hide;
-  cmdRightBracketDes.Hide;
-
-  // Second "@" button
-  cmdAtTheRateDes.Left := cmdDivideDes.Left;
-  cmdAtTheRateDes.Top := cmdDivideDes.Top;
-  cmdAtTheRateDes.Width := cmdDivideDes.Width;
-  cmdAtTheRateDes.Height := cmdDivideDes.Height;
-  cmdDivideDes.Hide;
-
-  // Fetch Emails of Users:
-  MemoEmails.Clear;
-  FAccountName := UPaymentTable.formPaymentTable.txtAccountName.Text;
-  if (FAccountName <> '') then
-  begin
-    FoundEmails := FetchCustomerEmails;
-    if FoundEmails <> '' then
-    MemoEmails.Lines.Text := FoundEmails;
-  end;
-end;
-{ ****************************************************************************** }
-function TformEmailReceipt.IsValidEmail(const Email: string): Boolean;
+  StdCtrls, Grids, DBGrids, Buttons, ExtCtrls, ComCtrls, DBCtrls, DB,
+  Menus, IniFiles, {IvDictio, IvAMulti,
+  IvResDllDictionary, IvMulti, IvBinDic,} ShellAPI,
+  UTypesConstants, UIntegerList, ImgList, System.ImageList, Vcl.Samples.Spin;
+{******************************************************************************}
 const
-  EmailRegex = '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$';
-begin
-  Result := TRegEx.IsMatch(Email, EmailRegex);
-end;
-{ ****************************************************************************** }
-procedure TformEmailReceipt.SendEmails(const EmailList: string);
-var
-  Rec, ImgFile: string;
-  EArr: TArray<string>;
-begin
-  if not Assigned(formPaymentTable) then
-  begin
-    formPaymentTable := TformPaymentTable.Create(Application);
-    formPaymentTable.cmdLastDesClick(formPaymentTable.cmdLastDes);
-    formPaymentTable.Hide;
-  end;
-
-  IdMessage1.Clear;
-  //  IdMessage1.From.Address := 'alert@wizbang.co.nz';
-  IdMessage1.From.Address := 'no-reply@wizbang.co.nz';
-  IdMessage1.From.Name := 'Wizbang Onetap NZ';
-  IdMessage1.Subject := 'Order Receipt';
-  IdMessage1.Body.Text :=
-    'Dear Customer,' + sLineBreak +
-    'Thank you for your order.' + sLineBreak +
-    'Here is your receipt:' + sLineBreak + sLineBreak +
-    ReceiptText +
-    'Regards,' + sLineBreak +
-    'Wizbang Team';
-
-    ShowMessage(ReceiptText);
-
-  // Recipients (semicolon-separated)
-  EArr := EmailList.Split([';'], TStringSplitOptions.ExcludeEmpty);
-  for Rec in EArr do
-    IdMessage1.Recipients.Add.Text := Trim(Rec);
-
-  // Configure SMTP/SSL based on SSLORTLS flag
-  ConfigureSMTP;
-
-  try
-    IdSMTP1.Connect;
-    try
-      IdSMTP1.Send(IdMessage1);
-      ShowMessage('Receipt sent successfully.');
-    finally
-      IdSMTP1.Disconnect;
-    end;
-  except
-    on E: Exception do
-      ShowMessage('Email Sending Failed: ' + E.Message);
-  end;
-end;
-{ ****************************************************************************** }
-procedure TformEmailReceipt.ConfigureSMTP;
-begin
-  SSLORTLS := 0;
-  // Ensure SSL handler exists
-  if not Assigned(IdSSLIOHandlerSocketOpenSSL1) then
-    raise Exception.Create('IdSSLIOHandlerSocketOpenSSL1 is not created.');
-
-  if IdSMTP1.Connected then
-    IdSMTP1.Disconnect(False);
-  IdSMTP1.IOHandler := nil;
-  IdSMTP1.UseTLS := utNoTLSSupport;
-
-  IdSMTP1.Host := 'wizbang-co-nz.mail.protection.outlook.com';
-//  IdSMTP1.Host := 'smtp.office365.com';
-  IdSMTP1.AuthType := satDefault;
-  // IdSMTP1.Username := 'alert@wizbang.co.nz';
-  IdSMTP1.Username := 'no-reply@wizbang.co.nz';
-  IdSMTP1.Password := 'DeV3l0pm3nt88';
-  IdSMTP1.ConnectTimeout := 30000;
-
-  if SSLORTLS = 1 then
-  begin
-    IdSMTP1.Port := 587;
-
-    // TLS/SSL settings
-    IdSSLIOHandlerSocketOpenSSL1.SSLOptions.Method := sslvSSLv23;
-    IdSSLIOHandlerSocketOpenSSL1.SSLOptions.Mode := sslmClient;
-    IdSSLIOHandlerSocketOpenSSL1.SSLOptions.VerifyMode := [];
-    IdSSLIOHandlerSocketOpenSSL1.SSLOptions.VerifyDepth := 0;
-
-    // Link SSL handler and enable STARTTLS
-    IdSMTP1.IOHandler := IdSSLIOHandlerSocketOpenSSL1;
-    IdSMTP1.UseTLS := utUseExplicitTLS; // STARTTLS
-  end
-  else
-  begin
-    // Plain SMTP (no SSL/TLS)
-    IdSMTP1.IOHandler := nil;
-    IdSMTP1.UseTLS := utNoTLSSupport;
-    IdSMTP1.Port := 25;
-  end;
-end;
-{ ****************************************************************************** }
-function TformEmailReceipt.ValidateEmailList(const Emails: string;
-  out CleanList: string): Boolean;
-var
-  Arr: TArray<string>;
-  E, S: string;
-begin
-  Result := False;
-  CleanList := '';
-
-  if Trim(Emails) = '' then Exit;
-
-  if Emails.StartsWith(';') or Emails.EndsWith(';') then Exit;
-  if Emails.Contains(';;') then Exit;
-
-  Arr := Emails.Split([';'], TStringSplitOptions.ExcludeEmpty);
-
-  for E in Arr do
-  begin
-    S := Trim(E);
-    if S = '' then Exit;
-    if not IsValidEmail(S) then Exit;
-
-    if CleanList <> '' then
-      CleanList := CleanList + ';';
-    CleanList := CleanList + S;
-  end;
-
-  Result := True;
-end;
-{ ****************************************************************************** }
-procedure TformEmailReceipt.cmdgmailcomDesClick(Sender: TObject);
-begin
-  KeyStrokeString(TSpeedButton(Sender).Caption);
-end;
-{ ****************************************************************************** }
-procedure TformEmailReceipt.cmdHideClick(Sender: TObject);
-begin
-  inherited;
-  Close;
-end;
-{ ****************************************************************************** }
-procedure TformEmailReceipt.cmdTimeClick(Sender: TObject);
-var
-  TheNow: TDateTime;
-begin
-  TheNow := Now;
-  if (SelectDateTime(TheNow)) then
-  begin
-    MemoEmails.SelText := FormatDateTime(DATEFORMAT + ' ' +
-      TIMEFORMAT, TheNow);
-  end;
-end;
-{ ****************************************************************************** }
-procedure TformEmailReceipt.cmdAtTheRateDesClick(Sender: TObject);
-begin
-  ShiftDown;
-  KeyStroke(TSpeedButton(Sender).Caption[1]);
-end;
-
-{ ****************************************************************************** }
-procedure TformEmailReceipt.cmdDateClick(Sender: TObject);
-var
-  TheNow: TDateTime;
-begin
-  TheNow := Now;
-  if (SelectDate(TheNow)) then
-  begin
-    MemoEmails.SelText := FormatDateTime(DATEFORMAT, TheNow);
-  end;
-end;
-
-{ ****************************************************************************** }
-procedure TformEmailReceipt.cmdOkClick(Sender: TObject);
-var
-  CleanList: string;
-begin
-  inherited;
-  if ValidateEmailList(MemoEmails.Text, CleanList) then
-    SendEmails(CleanList)
-  else
-    ShowMessage('Invalid email list. Please correct and try again.');
-end;
-{ ****************************************************************************** }
-procedure TformEmailReceipt.cmdAboutClick(Sender: TObject);
-begin
-  inherited;
-  ShowAboutBox('onetap POS');
-end;
-{ ****************************************************************************** }
-function TformEmailReceipt.FetchCustomerEmails: string;
-begin
-  Result := '';
-
-  DM.qryGetEmail.Close;
-  DM.qryGetEmail.SQL.Clear;
-  DM.qryGetEmail.SQL.Add('SELECT P.EMAIL');
-  DM.qryGetEmail.SQL.Add('FROM PERORG P');
-  DM.qryGetEmail.SQL.Add('JOIN ACCOUNT A ON A.PERORGID = P.PERORGID');
-  DM.qryGetEmail.SQL.Add('WHERE UPPER(TRIM(A.ACCOUNTNAME)) = UPPER(TRIM(:ACCNAME))');
-
-  DM.qryGetEmail.ParamByName('ACCNAME').AsString := FAccountName;
-  DM.qryGetEmail.Open;
-
-  if not DM.qryGetEmail.IsEmpty then
-    Result := DM.qryGetEmail.FieldByName('EMAIL').AsString;
-
-  DM.qryGetEmail.Close;
-end;
-{ ****************************************************************************** }
-procedure TformEmailReceipt.FormCreate(Sender: TObject);
-begin
-  inherited;
-  pnlControlButtons.Width := 208;
-  cmdLayout.Left := 0;
-  cmdAbout.Left := 52;
-  cmdHide.Left := 104;
-  cmdOk.Left := 156;
-end;
-
-end.
-
-unit UPaymentTable;
-{******************************************************************************}
-interface
-{******************************************************************************}
-uses
-  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
-  UBaseDetailForm, ExtCtrls, StdCtrls, Buttons, Mask, IB_Controls, ComCtrls,
-  Grids, IB_Grid, fcImgBtn, fcShapeBtn, Contnrs,
-  UTenderLine, UTendering, USelectLoyaltyReward, UIntegerList,
-  USkin{,IvDictio, IvMulti},  UGlobalVariables,
-  UTableManagementBase, UTableManagementIntegration, UDiscountCalc, UOrderLine,
-  UCombos, USubsidyCalc, IB_EditButton;
-{******************************************************************************}
-procedure PaymentTable;
+  //Set this if this is being worked on for automatic settings
+  Developing = False;
 {******************************************************************************}
 type
-  TVisibleWindow = (vwToPay, vwTender);
-  TRecType = (rtUnTenderedItems, rtTenderedItems, rtBoth);
-
-  TManagerAuthorise = record
-    Authorise: Boolean;
-    AuthoriseLoginID: Integer;
-    AuthorisePriv6: Boolean;
-    AuthoriseAccountRank: Integer;
-    AuthoriseAccChargeRank: Integer;
-    AuthoriseAccPaymentRank: Integer;
-    AuthorisePriv13: Boolean;
-  end;
+  TReportType = (rptypSales, rptypAccountSales, rptypCourseSales, rptypTerminalSales, rptypStaffSales,
+    rptypSaleCategorySales, rptypSectionSales, rptypSalePeriodSales, rptypSalesByDate, rptypSalesHistory, rptypVoids,
+    rptypOrders, rptypStaffOrders,rptypStaffOpenPriceItems, rptypMenuItems, rptypModifiers,
+    rptypPeople, rptypCashTotals, rptypPeriodEndTransactions, rptypPeriodEndStatement,
+    rptypClockIns, rptypAccountSummaries, rptypStaffTips, rptypNoSales, rptypTillSales, rptypDiscountSchemeSales,
+    rptypItemModSales, rptypModItems, rptypOrderByBumped, rptypItemByBumped, rptypItemCountByBumped,
+    rptypAccountTransactions, rptypComboSales, rptypOrdersSalesVoids, rptypAccountTabSales,
+    rptypOpenTables, rptypTableSummary, rptypEventSales, rptypTransList, rptypAccTypeMovements);
 
   (**
-    Used to make payments against an account.
-    It is a Key form, used often.
-    By default we are paying off the entire bill. If we only want to pay a part
-    of it we can select items, items belonging to a position, or state we are
-    paying a certain amount. We are able to select and pay on a Debtor Account.
+    Main page of the Reports Program.
+    This is the page where we decide what sort of Report we want,
+    the time range of the report, which Group to include,
+    and what order the information will be.
+    In this page we set up the queries for the reports.
   *)
-  TformPaymentTable = class(TformBaseDetailForm)
-    pnlTotals: TPanel;
-    pnlTotalsRight: TPanel;
-    cmdOkDes: TSpeedButton;
-    lblSumToPay: TLabel;
-    lblStillDue: TLabel;
-    lblPayment: TLabel;
-    txtSumToPay: TEdit;
-    txtStillDue: TEdit;
-    txtPayment: TEdit;
-    lblBalDue: TLabel;
-    txtBalDue: TEdit;
-    cmdAuthoriseDes: TSpeedButton;
-    pnlAvail: TPanel;
-    lblAvailDollarSign: TLabel;
-    lblAvail: TLabel;
-    txtAvail: TEdit;
-    pnlToPay: TPanel;
-    pnlOLs: TPanel;
-    pnlOLControls: TPanel;
-    cmdOLUpDes: TSpeedButton;
-    cmdOLDownDes: TSpeedButton;
-    cmdAddPosDes: TSpeedButton;
-    pnlToPayBorder: TPanel;
-    pnlOLsToPay: TPanel;
-    pnlToPayControls: TPanel;
-    cmdTenderDes: TSpeedButton;
-    cmdOLClearDes: TSpeedButton;
-    cmdOLDeleteDes: TSpeedButton;
-    cmdAllDes: TSpeedButton;
-    grdToPay: TStringGrid;
-    pnlToPayQty: TPanel;
-    cmdToPayUpDes: TSpeedButton;
-    cmdToPayDownDes: TSpeedButton;
-    lblToPay: TLabel;
-    lblToPayCopy: TLabel;
-    lblQty: TLabel;
-    lblSalesTax: TLabel;
-    txtToPay: TEdit;
-    txtToPayCopy: TEdit;
-    txtQty: TEdit;
-    txtSalesTax: TEdit;
-    pnlToPayPadding: TPanel;
-    pnlTender: TPanel;
-    pnlTenderLinesBorder: TPanel;
-    pnlTenderLines: TPanel;
-    grdTLs: TStringGrid;
-    pnlTenderTenders: TPanel;
-    cmdToPayDes: TSpeedButton;
-    cmdTLDeleteDes: TSpeedButton;
-    cmdTLClearDes: TSpeedButton;
-    cmdDetailsDes: TSpeedButton;
-    cmdCashDes: TSpeedButton;
-    cmdEFTPOSDes: TSpeedButton;
-    cmdVisaDes: TSpeedButton;
-    cmdAMEXDes: TSpeedButton;
-    cmdMasterCardDes: TSpeedButton;
-    cmdDinersDes: TSpeedButton;
-    cmdChequeDes: TSpeedButton;
-    cmdOtherDes: TSpeedButton;
-    cmdVoucherDes: TSpeedButton;
-    cmdTLUpDes: TSpeedButton;
-    cmdTLDownDes: TSpeedButton;
-    cmdAmountToPayDes: TSpeedButton;
-    cmdEditDes: TSpeedButton;
-    cmdPMSDes: TSpeedButton;
-    txtTTender: TEdit;
-    txtTChange: TEdit;
-    txtTTip: TEdit;
-    txtTPayment: TEdit;
-    pnlAccounts: TPanel;
-    pnlAccountControlsBorder: TPanel;
-    pnlAccountControls: TPanel;
-    lblAccountName: TLabel;
-    cmdUpAccountsDes: TSpeedButton;
-    cmdDownAccountsDes: TSpeedButton;
-    cmdSelectAccountDes: TSpeedButton;
-    cmdDeselectAccountDes: TSpeedButton;
-    lblDiscountPercent: TLabel;
-    lblDiscountAmount: TLabel;
-    cmdDiscountPercentDes: TSpeedButton;
-    cmdDiscountAmountDes: TSpeedButton;
-    lblAllowCredit: TLabel;
-    cmdAccountNoLookupDes: TSpeedButton;
-    cmdOnAccountDes: TSpeedButton;
-    txtAccountName: TEdit;
-    txtDiscountPercent: TEdit;
-    txtDiscountAmount: TEdit;
-    pnlAccountButtons: TPanel;
-    scrAccounts: TScrollBox;
-    cmdSummaryTableDes: TSpeedButton;
-    cmdLastDes: TSpeedButton;
-    grdUnInvoicedList: TStringGrid;
-    lblComboDisc: TLabel;
-    txtComboDisc: TEdit;
-    cmdComboIndexDes: TSpeedButton;
-    lblAllowItemLevelDiscount: TLabel;
-    cmdGetCPFDes: TSpeedButton;
-    cmdEventDes: TSpeedButton;
-    pnlTabDetails: TPanel;
-    lblTableName: TLabel;
-    lblTableNo: TLabel;
-    lblStaff: TLabel;
-    txtTableName: TEdit;
-    txtTableNo: TEdit;
-    txtStaff: TIB_Edit;
-    pnlLoyalty: TPanel;
-    cmdLoyaltyDes: TSpeedButton;
-    cmdExternalAccLookupDes: TSpeedButton;
-    cmdExternalAccRIPDes: TSpeedButton;
-    cmdTaxCoreBuyerDetailDes: TSpeedButton;
-    cmdGoodyDes: TSpeedButton;
-
-    procedure cmdOkClick(Sender: TObject);
-    procedure FormCreate(Sender: TObject);
+  TformReports = class(TForm)
+    SaveDialog: TSaveDialog;
+    pnlReports: TPanel;
+    cmdDoReport: TSpeedButton;
+    frmRange: TGroupBox;
+    cmdFrom: TSpeedButton;
+    lblDateFrom: TLabel;
+    cmdTo: TSpeedButton;
+    lblDateTo: TLabel;
+    txtFrom: TEdit;
+    txtTo: TEdit;
+    frmForB: TGroupBox;
+    radFAndB: TRadioButton;
+    radFOnly: TRadioButton;
+    radBOnly: TRadioButton;
+    frmZeros: TGroupBox;
+    radExcludeZeros: TRadioButton;
+    frmItemGroups: TGroupBox;
+    DBGridItemGroups: TDBGrid;
+    radGCurrent: TRadioButton;            
+    radGDeleted: TRadioButton;
+    navItemGroups: TDBNavigator;
+    frmItemGroupSelection: TGroupBox;
+    radItemGroup: TRadioButton;
+    radAllItems: TRadioButton;
+    frmGroupSubTotals: TGroupBox;
+    ckbGroupGroup: TCheckBox;
+    ckbGroupForB: TCheckBox;
+    ckbGroupStaff: TCheckBox;
+    ckbGroupAccount: TCheckBox;
+    ckbGroupOutlet: TCheckBox;
+    chkExportFile: TCheckBox;
+    frmOrderVoidsBy: TGroupBox;
+    frmOrderSalesBy: TGroupBox;
+    radGroup: TRadioButton;
+    radUnits: TRadioButton;
+    radPrice: TRadioButton;
+    radGross: TRadioButton;
+    radDiscount: TRadioButton;
+    radNett: TRadioButton;
+    frmOrderOrdersBy: TGroupBox;
+    frmAccounts: TGroupBox;
+    DBGridAccounts: TDBGrid;
+    radACurrent: TRadioButton;
+    radAClosed: TRadioButton;
+    navAccounts: TDBNavigator;
+    fmAccountSelection: TGroupBox;
+    frmStaff: TGroupBox;
+    DBGridStaffMembers: TDBGrid;
+    radSCurrent: TRadioButton;
+    radSRemoved: TRadioButton;
+    navStaff: TDBNavigator;
+    fmStaffSelection: TGroupBox;
+    frmDetailsGroupsTotals: TGroupBox;
+    radDGTDetails: TRadioButton;
+    radDGTGroups: TRadioButton;
+    radDGTTotals: TRadioButton;
+    radStaffAll: TRadioButton;
+    radStaffSelected: TRadioButton;
+    radAccountAll: TRadioButton;
+    radAccountSelected: TRadioButton;
+    radOGroup: TRadioButton;
+    radOUnits: TRadioButton;
+    radOPrice: TRadioButton;
+    radOValue: TRadioButton;
+    radVStaff: TRadioButton;
+    radVWhen: TRadioButton;
+    radVGroup: TRadioButton;
+    radVVoided: TRadioButton;
+    radVWasted: TRadioButton;
+    radVPrice: TRadioButton;
+    radVValue: TRadioButton;
+    ckbGroupTerminal: TCheckBox;
+    frmTerminals: TGroupBox;
+    DBGridTerminals: TDBGrid;
+    navTerminals: TDBNavigator;
+    fmTerminalSelection: TGroupBox;
+    radTerminalAll: TRadioButton;
+    radTerminalSelected: TRadioButton;
+    radTCurrent: TRadioButton;
+    radTRemoved: TRadioButton;
+    frmOrderMenuBy: TGroupBox;
+    radMenuOrderGroup: TRadioButton;
+    radMenuOrderItem: TRadioButton;
+    radMenuOrderPrice: TRadioButton;
+    frmPeopleSelection: TGroupBox;
+    pnlPeopleBirthday: TPanel;
+    lblPeopleBirthday: TLabel;
+    lblPeopleDOB: TLabel;
+    cmdFromDOB: TSpeedButton;
+    lblPeopleDOBTo: TLabel;
+    cmdToDOB: TSpeedButton;
+    lblPeopleBirthdayTo: TLabel;
+    cmdFromBirthday: TSpeedButton;
+    cmdToBirthday: TSpeedButton;
+    txtFromBirthday: TEdit;
+    txtFromDOB: TEdit;
+    txtToDOB: TEdit;
+    txtToBirthday: TEdit;
+    pnlPeopleWedding: TPanel;
+    cmdFromWeddingDate: TSpeedButton;
+    lblPeopleWedding: TLabel;
+    lblPeopleAnniversary: TLabel;
+    cmdToWeddingDate: TSpeedButton;
+    lblPeopleAnniversaryTo: TLabel;
+    lblPeopleWeddingTo: TLabel;
+    cmdFromAnniversary: TSpeedButton;
+    cmdToAnniversary: TSpeedButton;
+    txtToWeddingDate: TEdit;
+    txtFromWeddingDate: TEdit;
+    txtFromAnniversary: TEdit;
+    txtToAnniversary: TEdit;
+    pnlPeople: TPanel;
+    pnlPeopleAddress: TPanel;
+    lblPeopleStreetname: TLabel;
+    lblPeopleSuburb: TLabel;
+    lblPeopleCity: TLabel;
+    txtStreetName: TEdit;
+    txtSuburb: TEdit;
+    txtCity: TEdit;
+    BevelPeopleSelection3: TBevel;
+    BevelPeopleSelection2: TBevel;
+    BevelPeopleSelection1: TBevel;
+    frmOrderPeopleBy: TGroupBox;
+    radPeopleOrderSurname: TRadioButton;
+    radPeopleOrderFirstname: TRadioButton;
+    frmOrderModifiersBy: TGroupBox;
+    radModifiersOrderDefault: TRadioButton;
+    radIncludeZeros: TRadioButton;
+    radOnlyZeros: TRadioButton;
+    radModifiersOrderModifier: TRadioButton;
+    radModifiersOrderUnits: TRadioButton;
+    radModifiersOrderPrice: TRadioButton;
+    radModifiersOrderValue: TRadioButton;
+    MainMenu: TMainMenu;
+    MenuFile: TMenuItem;
+    MenuFileExit: TMenuItem;
+    MenuSettings: TMenuItem;
+    frmVoidsOrderStyle: TGroupBox;
+    radVoidsAllDetails: TRadioButton;
+    radVoidsTotalsOnly: TRadioButton;
+    ckbGroupSaleCategory: TCheckBox;
+    frmSaleCategories: TGroupBox;
+    navSaleCategories: TDBNavigator;
+    frmSaleCategorySelection: TGroupBox;
+    radSaleCategoryAll: TRadioButton;
+    radSaleCategorySelected: TRadioButton;
+    radSCCurrent: TRadioButton;
+    radSCRemoved: TRadioButton;
+    chkSalesIncludePriceLevels: TCheckBox;
+    frmOrderCashTotalsBy: TGroupBox;
+    radCashTotalsOrderCashupID: TRadioButton;
+    radCashTotalsOrderTill: TRadioButton;
+    frmCashTotalsOrderStyle: TGroupBox;
+    ckbGroupTill: TCheckBox;
+    frmSalesHistory: TGroupBox;
+    lblSalesHistroyNoOfPeriods: TLabel;
+    txtSalesHistoryTimeSpanQuantity: TEdit;
+    UpDownSalesHistoryTimeSpanQuantity: TUpDown;
+    frmSalesHistoryPeriodSpacing: TGroupBox;
+    radSalesHistoryHour: TRadioButton;
+    frmSalesHistoryPeriodLength: TGroupBox;
+    radSalesHistoryLengthHour: TRadioButton;
+    frmModifiersOrderedState: TGroupBox;
+    radModifiersOrderedOnly: TRadioButton;
+    radModifiersNonOrderedOnly: TRadioButton;
+    radModifiersOrderedBoth: TRadioButton;
+    frmSalesHistoryDailyBetweenTimes: TGroupBox;
+    txtSalesHistorySliceStartHour: TEdit;
+    lblSalesHistorySliceStartTime: TLabel;
+    lblSalesHistorySliceEndTime: TLabel;
+    udtxtSalesHistorySliceStartHour: TUpDown;
+    txtSalesHistorySliceStartMinute: TEdit;
+    udtxtSalesHistorySliceStartMinute: TUpDown;
+    txtSalesHistorySliceEndMinute: TEdit;
+    udtxtSalesHistorySliceEndMinute: TUpDown;
+    udtxtSalesHistorySliceEndHour: TUpDown;
+    txtSalesHistorySliceEndHour: TEdit;
+    lblSalesHistorySliceHour: TLabel;
+    lblSalesHistorySliceMinute: TLabel;
+    chkSalesHistoryUsePeriodLength: TCheckBox;
+    chkSalesHistoryBetweenTimes: TCheckBox;
+    lblSalesHistoryShow: TLabel;
+    cmboSalesHistoryShownData: TComboBox;
+    radSalesHistory2Hour: TRadioButton;
+    radSalesHistoryLength2Hour: TRadioButton;
+    radSalesHistory3Hour: TRadioButton;
+    radSalesHistory4Hour: TRadioButton;
+    radSalesHistoryDay: TRadioButton;
+    radSalesHistoryWeek: TRadioButton;
+    radSalesHistoryFortnight: TRadioButton;
+    radSalesHistoryMonth: TRadioButton;
+    radSalesHistoryQuarter: TRadioButton;
+    radSalesHistoryYear: TRadioButton;
+    radSalesHistoryLength3Hour: TRadioButton;
+    radSalesHistoryLength4Hour: TRadioButton;
+    radSalesHistoryLengthDay: TRadioButton;
+    radSalesHistoryLengthWeek: TRadioButton;
+    radSalesHistoryLengthFortnight: TRadioButton;
+    radSalesHistoryLengthMonth: TRadioButton;
+    radSalesHistoryLengthQuarter: TRadioButton;
+    radSalesHistoryLengthYear: TRadioButton;
+    chkViewTransactions: TCheckBox;
+    lblReportType: TLabel;
+    cmbReportType: TComboBox;
+    frmPeriodEnds: TGroupBox;
+    DBGridPeriodEnds: TDBGrid;
+    navPeriodEnds: TDBNavigator;
+    chkIncludeZeroBalances: TCheckBox;
+    radAccountSelectedType: TRadioButton;
+    frmOrderClockInsBy: TGroupBox;
+    radClockInsOrderStaffName: TRadioButton;
+    radClockInsOrderClockInTime: TRadioButton;
+    radClockInsOrderClockOutTime: TRadioButton;
+    radVoidsVoidsOnly: TRadioButton;
+    radVoidsWastageOnly: TRadioButton;
+    frmCourses: TGroupBox;
+    radCoursesCurrent: TRadioButton;
+    radCoursesClosed: TRadioButton;
+    navCourses: TDBNavigator;
+    fmCourseSelection: TGroupBox;
+    radCourseAll: TRadioButton;
+    radCourseSelected: TRadioButton;
+    DBGridCourses: TDBGrid;
+    chkSalesNettExcludeSalesTax: TCheckBox;
+    chkShowAllStaff: TCheckBox;
+    radCashTotalsAllDetailsAllTenders: TRadioButton;
+    radCashTotalsAllDetails: TRadioButton;
+    radCashTotalsTotalsOnly: TRadioButton;
+    chkShowLinkCodes: TCheckBox;
+    radCashTotalsCashOnly: TRadioButton;
+    cmbPeopleCustomer: TComboBox;
+    lblPeopleCustomer: TLabel;
+    lblPeopleVIP: TLabel;
+    cmbPeopleVIP: TComboBox;
+    chkPeopleRemoveOptOut: TCheckBox;
+    lblPeopleFavoriteItem: TLabel;
+    txtPeopleFavoriteItem: TEdit;
+    lblPeopleGender: TLabel;
+    cmbPeopleGender: TComboBox;
+    BevelPeopleSelection4: TBevel;
+    pnlPeopleLastWhenInvoiced: TPanel;
+    lblPeopleLastWhenInvoiced: TLabel;
+    lblPeopleLastWhenInvoicedAfter: TLabel;
+    txtPeopleLastWhenInvoicedAfter: TEdit;
+    cmdPeopleLastWhenInvoicedAfter: TSpeedButton;
+    txtPeopleLastWhenInvoicedBefore: TEdit;
+    cmdPeopleLastWhenInvoicedBefore: TSpeedButton;
+    lblPeopleLastWhenInvoicedBefore: TLabel;
+    chkPeopleValidEmail: TCheckBox;
+    pnlOutletsLocations: TPanel;
+    pnlOutlets: TPanel;
+    lblOutlet: TLabel;
+    cmbOutlets: TComboBox;
+    pnlRemoteLocations: TPanel;
+    lblRemoteLocations: TLabel;
+    cmbRemoteLocations: TComboBox;
+    txtPeopleNationality: TEdit;
+    lblPeopleNationality: TLabel;
+    txtPeopleOccupation: TEdit;
+    lblPeopleOccupation: TLabel;
+    cmbPeopleAccountTypes: TComboBox;
+    lblPeopleAccountType: TLabel;
+    frmVoidsOrderTypes: TGroupBox;
+    radVoidsRefunds: TRadioButton;
+    radDriveThrough: TRadioButton;
+    radVoidClearitem: TRadioButton;
+    radVoidAllTypes: TRadioButton;
+    radVoidCancelledTrans: TRadioButton;
+    chkOutletBreakdown: TCheckBox;
+    chkRemoteLocationBreakdown: TCheckBox;
+    ckbGroupRemoteLocation: TCheckBox;
+    frmTills: TGroupBox;
+    DBGridTills: TDBGrid;
+    navTills: TDBNavigator;
+    fmTillSelection: TGroupBox;
+    radTillAll: TRadioButton;
+    radTillSelected: TRadioButton;
+    radTillsCurrent: TRadioButton;
+    radTillsRemoved: TRadioButton;
+    frmDiscountSchemes: TGroupBox;
+    DBGridDiscountSchemes: TDBGrid;
+    radDiscountSchemesCurrent: TRadioButton;
+    radDiscountSchemesRemoved: TRadioButton;
+    navDiscountSchemes: TDBNavigator;
+    fmDiscountSchemeSelection: TGroupBox;
+    radDiscountSchemeAll: TRadioButton;
+    radDiscountSchemeSelected: TRadioButton;
+    frmModGroups: TGroupBox;
+    DBGridModGroups: TDBGrid;
+    radModGroupsCurrent: TRadioButton;
+    radModGroupsRemoved: TRadioButton;
+    navModGroups: TDBNavigator;
+    fmModGroupsSelection: TGroupBox;
+    radModGroupAll: TRadioButton;
+    radModGroupSelected: TRadioButton;
+    frmShowModGroups: TGroupBox;
+    radShowModGroupsMods: TRadioButton;
+    radShowModGroupsAll: TRadioButton;
+    DBGridSaleCategories: TDBGrid;
+    chkPeopleRemoveInactive: TCheckBox;
+    lblPeoplePostCode: TLabel;
+    txtPeoplePostCode: TEdit;
+    lblPeopleCountry: TLabel;
+    txtPeopleCountry: TEdit;
+    frmSalePeriods: TGroupBox;
+    DBGridSalePeriods: TDBGrid;
+    navSalePeriods: TDBNavigator;
+    GroupBox2: TGroupBox;
+    radSalePeriodAll: TRadioButton;
+    radSalePeriodSelected: TRadioButton;
+    cmbPeopleRemoteSite: TComboBox;
+    lblRemoteSite: TLabel;
+    menuHelpUpdates: TMenuItem;
+    menuHelp: TMenuItem;
+    frmSBOptions: TRadioGroup;
+    frmSBDetails: TRadioGroup;
+    chkSBTransType: TCheckBox;
+    chkSBExtendedDetail: TCheckBox;
+    chkRemNumbers: TCheckBox;
+    frmCombos: TGroupBox;
+    DBGridCombos: TDBGrid;
+    navCombos: TDBNavigator;
+    GroupBox3: TGroupBox;
+    radComboAll: TRadioButton;
+    radComboSelected: TRadioButton;
+    radComboCurrent: TRadioButton;
+    radComboDeleted: TRadioButton;
+    frmOrderCombos: TGroupBox;
+    radComboOrderCombos: TRadioButton;
+    radComboOrderItem: TRadioButton;
+    chkShowExtendedCashup: TCheckBox;
+    ckbGroupRole: TCheckBox;
+    ckbGroupSection: TCheckBox;
+    cmdDatesLock: TSpeedButton;
+    frmTableOptions: TGroupBox;
+    radTableOptionDateRange: TRadioButton;
+    radTableOptionIncludeOpen: TRadioButton;
+    radTableOptionOpenOnly: TRadioButton;
+    frmOrderOpenPriceBy: TGroupBox;
+    radOpenPriceStaff: TRadioButton;
+    radOpenPriceDate: TRadioButton;
+    MenuAbout: TMenuItem;
+    TitleImageList: TImageList;
+    frmEvents: TGroupBox;
+    DBGridEvents: TDBGrid;
+    radECurrent: TRadioButton;
+    radEClosed: TRadioButton;
+    navEvents: TDBNavigator;
+    fmEventSelection: TGroupBox;
+    radEventAll: TRadioButton;
+    radEventSelected: TRadioButton;
+    frmTransListOptions: TGroupBox;
+    radTransListOptionsCashups: TRadioButton;
+    radTransListOptionsClockins: TRadioButton;
+    radTransListOptionsStaff: TRadioButton;
+    frmOrderTransListBy: TGroupBox;
+    radTransListSortByTender: TRadioButton;
+    radTransListSortByTrans: TRadioButton;
+    radTransListSortByDate: TRadioButton;
+    radTransListOptionsAll: TRadioButton;
+    frmAccountTypes: TGroupBox;
+    DBGridAccountTypes: TDBGrid;
+    radATCurrent: TRadioButton;
+    radATDeleted: TRadioButton;
+    navAccountTypes: TDBNavigator;
+    fmAccountTypeSelection: TGroupBox;
+    radAccountTypeAll: TRadioButton;
+    radAccountTypeSelected: TRadioButton;
+    ckbGroupAccountType: TCheckBox;
+    radMenuOrderWhenUpd: TRadioButton;
+    chkShowNoSale: TCheckBox;
+    chkShowLoyaltyReward: TCheckBox;
+    chkIncludeStaffOrdersKPI: TCheckBox;
+    cmdStaffOrdersKPI: TSpeedButton;
+    pnlStaffOrdersKPISetup: TPanel;
+    pnlStaffOrdersKPITitle: TPanel;
+    lblStaffOrdersKPITitle: TLabel;
+    cmdStaffOrdersKPICancel: TSpeedButton;
+    pnlStaffOrdersKPI: TPanel;
+    sgStaffOrdersKPI: TStringGrid;
+    pnlStaffOrdersKPIConfig: TPanel;
+    pnlStaffOrdersKPIControls: TPanel;
+    DBGridStaffOrdersKPI: TDBGrid;
+    txtStaffOrdersKPIName: TEdit;
+    lblStaffOrdersKPIName: TLabel;
+    rgStaffOrdersKPITotalsN: TRadioGroup;
+    rgStaffOrdersKPITotalsD: TRadioGroup;
+    lblStaffOrdersKPIConversionRate: TLabel;
+    txtStaffOrdersKPIConversionRate: TEdit;
+    rgStaffORdersKPIDisplayResultAs: TRadioGroup;
+    cmdStaffOrdersKPIAddIG_N: TButton;
+    cmdStaffOrdersKPIRemoveIG_N: TButton;
+    cmdStaffOrdersKPIRemoveIG_D: TButton;
+    cmdStaffOrdersKPIAddIG_D: TButton;
+    sgStaffOrdersKPIItemGroupsN: TStringGrid;
+    sgStaffOrdersKPIItemGroupsD: TStringGrid;
+    cmdStaffOrdersKPINew: TSpeedButton;
+    cmdStaffOrdersKPIDelete: TSpeedButton;
+    lblStaffOrdersKPIItemGroupsNName: TLabel;
+    txtStaffOrdersKPIItemGroupsNName: TEdit;
+    lblStaffOrdersKPIItemGroupsDName: TLabel;
+    txtStaffOrdersKPIItemGroupsDName: TEdit;
+    cmdStaffOrdersKPIOK: TSpeedButton;
+    rgStaffOrdersKPIItemGroup: TRadioGroup;
+    radSalesHistory15Min: TRadioButton;
+    radSalesHistory30Min: TRadioButton;
+    radSalesHistoryLength15Min: TRadioButton;
+    radSalesHistoryLength30Min: TRadioButton;
+    radShowModGroupsOnlyCustom: TRadioButton;
+    radShowModGroupsExludeCustom: TRadioButton;
+    frmCashupDetailsDisplay: TGroupBox;
+    chkCashupReference: TCheckBox;
+    chkCashupNotes: TCheckBox;
+    frmSections: TGroupBox;
+    DBGridSections: TDBGrid;
+    navSections: TDBNavigator;
+    frmSectionSelection: TGroupBox;
+    radSectionAll: TRadioButton;
+    radSectionSelected: TRadioButton;
+    radSecCurrent: TRadioButton;
+    radSecRemoved: TRadioButton;
+    frmStaffDetails: TGroupBox;
+    Panel1: TPanel;
+    radPastStaff: TRadioButton;
+    radAllStaff: TRadioButton;
+    radCurrentStaff: TRadioButton;
+    Panel2: TPanel;
+    lblStaffWorkingFrom: TLabel;
+    ComboBox1: TComboBox;
+    Panel3: TPanel;
+    Label1: TLabel;
+    SpinEdit2: TSpinEdit;
+    lblStaffLocation: TLabel;
     procedure FormShow(Sender: TObject);
-    procedure cmdOLDeleteClick(Sender: TObject);
-    function AddOrderLine(AList:TList;AOLIndex: Integer): Boolean;
-    procedure AddAllOrderLines;
-    procedure DeleteOrderLine;
-    procedure SetOLCols;
-    procedure SetUnInvoicedOLCols;
-    procedure cmdAllClick(Sender: TObject);
-    procedure cmdOLClearClick(Sender: TObject);
-    procedure cmdToPayClick(Sender: TObject);
-    procedure grdToPayClick(Sender: TObject);
-    procedure txtToPayChange(Sender: TObject);
-    procedure txtToPayExit(Sender: TObject);
-    procedure cmdOLUpClick(Sender: TObject);
-    procedure cmdOLDownClick(Sender: TObject);
-    procedure txtSumToPayChange(Sender: TObject);
-    procedure cmdToPayUpClick(Sender: TObject);
-    procedure cmdToPayDownClick(Sender: TObject);
-    procedure cmdTenderClick(Sender: TObject);
-    procedure cmdHideClick(Sender: TObject);
-    procedure FormDestroy(Sender: TObject);
-    procedure cmdDeselectAccountClick(Sender: TObject);
-    procedure cmdUpAccountsClick(Sender: TObject);
-    procedure cmdDownAccountsClick(Sender: TObject);
-    procedure cmdSelectAccountClick(Sender: TObject);
-    procedure cmdDiscountPercentClick(Sender: TObject);
-    procedure cmdDiscountAmountClick(Sender: TObject);
-    procedure cmdAmountToPayClick(Sender: TObject);
-    procedure cmdAddPosClick(Sender: TObject);
-    procedure cmdAccountNoLookupClick(Sender: TObject);
-    procedure TryLookupPaymentTableAccount(AccountID: Integer; AShowAcctScanned: Boolean = True; PromptLoyalty: Boolean = True; VerifyNO: Boolean = True);
-    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure FormCreate(Sender: TObject);
+    procedure cmdFromClick(Sender: TObject);
+    procedure cmdToClick(Sender: TObject);
+    procedure radACurrentClick(Sender: TObject);
+    procedure radSCurrentClick(Sender: TObject);
+    procedure radGCurrentClick(Sender: TObject);
+    procedure SaveDialogClose(Sender: TObject);
+    procedure DBGridItemGroupsEnter(Sender: TObject);
+    procedure navItemGroupsClick(Sender: TObject; Button: TNavigateBtn);
+    procedure DBGridStaffMembersCellClick(Column: TColumn);
+    procedure cmdDoReportClick(Sender: TObject);
+    procedure DBGridAccountsCellClick(Column: TColumn);
+    procedure radStaffSelectedClick(Sender: TObject);
+    procedure radOGroupClick(Sender: TObject);
+    procedure radGroupClick(Sender: TObject);
+    procedure radVStaffClick(Sender: TObject);
+    procedure radDGTGroupsClick(Sender: TObject);
+    procedure radTCurrentClick(Sender: TObject);
+    procedure radTillCurrentClick(Sender: TObject);
+    procedure DBGridTerminalsCellClick(Column: TColumn);
+    procedure DBGridTillsCellClick(Column: TColumn);
+    procedure radAllItemsClick(Sender: TObject);
+    procedure radItemGroupClick(Sender: TObject);
+    procedure cmdFromDOBClick(Sender: TObject);
+    procedure cmdToDOBClick(Sender: TObject);
+    procedure cmdFromWeddingDateClick(Sender: TObject);
+    procedure cmdToWeddingDateClick(Sender: TObject);
+    procedure cmdFromBirthdayClick(Sender: TObject);
+    procedure cmdToBirthdayClick(Sender: TObject);
+    procedure cmdFromAnniversaryClick(Sender: TObject);
+    procedure cmdToAnniversaryClick(Sender: TObject);
+    procedure radMenuOrderGroupClick(Sender: TObject);
+    procedure radModifiersOrderDefaultClick(Sender: TObject);
+    procedure MenuFileExitClick(Sender: TObject);
+    procedure radVoidsTotalsOnlyClick(Sender: TObject);
+    procedure radSCCurrentClick(Sender: TObject);
+    procedure DBGridSaleCategoriesCellClick(Column: TColumn);
+    procedure MenuSettingsClick(Sender: TObject);
+    procedure radCashTotalsOrderCashupIDClick(Sender: TObject);
+    procedure chkSalesHistoryUsePeriodLengthClick(Sender: TObject);
+    procedure radSalesHistoryHourClick(Sender: TObject);
+    procedure radSalesHistoryLengthHourClick(Sender: TObject);
+    procedure chkSalesHistoryBetweenTimesClick(Sender: TObject);
+    procedure cmbReportTypeChange(Sender: TObject);
+    procedure radAccountSelectedTypeClick(Sender: TObject);
+    procedure radAccountSelectedClick(Sender: TObject);
+    procedure radClockInsOrderStaffNameClick(Sender: TObject);
+    procedure radCoursesCurrentClick(Sender: TObject);
+    procedure radDiscountSchemesCurrentClick(Sender: TObject);
+    procedure radCourseAllClick(Sender: TObject);
+    procedure radDiscountSchemeAllClick(Sender: TObject);
+    procedure DBGridCoursesCellClick(Column: TColumn);
+    procedure DBGridDiscountSchemesCellClick(Column: TColumn);
+    procedure navCoursesClick(Sender: TObject; Button: TNavigateBtn);
+    procedure navDiscountSchemesClick(Sender: TObject; Button: TNavigateBtn);
+    procedure navAccountsBeforeAction(Sender: TObject; Button: TNavigateBtn);
+    procedure navSaleCategoriesClick(Sender: TObject; Button: TNavigateBtn);
+    procedure navTerminalsClick(Sender: TObject; Button: TNavigateBtn);
+    procedure navTillsClick(Sender: TObject; Button: TNavigateBtn);
+    procedure navStaffClick(Sender: TObject; Button: TNavigateBtn);
+    procedure cmdPeopleLastWhenInvoicedAfterClick(Sender: TObject);
+    procedure cmdPeopleLastWhenInvoicedBeforeClick(Sender: TObject);
+    procedure cmbOutletsChange(Sender: TObject);
+    procedure cmbRemoteLocationsChange(Sender: TObject);
+    procedure chkOutletBreakdownClick(Sender: TObject);
+    procedure chkRemoteLocationBreakdownClick(Sender: TObject);
+    procedure DBGridModGroupsCellClick(Column: TColumn);
+    procedure radModGroupsCurrentClick(Sender: TObject);
+    procedure radModGroupAllClick(Sender: TObject);
+    procedure radShowModGroupsAllClick(Sender: TObject);
 
-    procedure cmdTLUpClick(Sender: TObject);
-    procedure cmdTLDownClick(Sender: TObject);
-    procedure cmdTLDeleteClick(Sender: TObject);
-    procedure cmdTLClearClick(Sender: TObject);
-    procedure cmdDetailsClick(Sender: TObject);
-    procedure cmdCashClick(Sender: TObject);
-    procedure cmdEFTPOSClick(Sender: TObject);
-    procedure cmdVisaClick(Sender: TObject);
-    procedure cmdDinersClick(Sender: TObject);
-    procedure cmdAMEXClick(Sender: TObject);
-    procedure cmdMasterCardClick(Sender: TObject);
-    procedure cmdChequeClick(Sender: TObject);
-    procedure cmdVoucherClick(Sender: TObject);
-    procedure cmdOtherClick(Sender: TObject);
-    procedure cmdEditClick(Sender: TObject);
-    procedure grdTLsDblClick(Sender: TObject);
-    procedure cmdAuthoriseClick(Sender: TObject);
-    procedure txtToPayEnter(Sender: TObject);
-    procedure txtToPayClick(Sender: TObject);
-    procedure txtQtyEnter(Sender: TObject);
-    procedure txtQtyClick(Sender: TObject);
-    procedure txtQtyExit(Sender: TObject);
-    procedure txtQtyChange(Sender: TObject);
-    procedure cmdPMSClick(Sender: TObject);
-    procedure cmdOnAccountClick(Sender: TObject);
-    procedure cmdLoyaltyDesClick(Sender: TObject);
-    procedure cmdSummaryTableDesClick(Sender: TObject);
-    procedure cmdLastDesClick(Sender: TObject);
-    procedure cmdGetCPFDesClick(Sender: TObject);
+    procedure radSalePeriodSelectedClick(Sender: TObject);
+    procedure DBGridSalePeriodsCellClick(Column: TColumn);
+    procedure menuHelpUpdatesClick(Sender: TObject);
+    procedure chkSBExtendedDetailClick(Sender: TObject);
+    procedure frmSBOptionsClick(Sender: TObject);
+    procedure fmAccountSelectionClick(Sender: TObject);
+    procedure radComboCurrentClick(Sender: TObject);
+    procedure radComboSelectedClick(Sender: TObject);
+    procedure radComboOrderItemClick(Sender: TObject);
+    procedure cmdDatesLockClick(Sender: TObject);
+    procedure MenuAboutClick(Sender: TObject);
+    procedure radECurrentClick(Sender: TObject);
+    procedure DBGridEventsCellClick(Column: TColumn);
+    procedure navEventsBeforeAction(Sender: TObject; Button: TNavigateBtn);
+    procedure radEventAllClick(Sender: TObject);
+    procedure DBGridCombosCellClick(Column: TColumn);
+    procedure radTransListSortByTenderClick(Sender: TObject);
     procedure FormActivate(Sender: TObject);
-    procedure grdToPayDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect; State: TGridDrawState);
-    procedure grdUnInvoicedListDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect; State: TGridDrawState);
-    procedure grdUnInvoicedListClick(Sender: TObject);
-    procedure cmdComboIndexDesClick(Sender: TObject);
-    procedure grdTLsDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect; State: TGridDrawState);
-    procedure cmdEventDesClick(Sender: TObject);
-    procedure cmdExternalAccLookupDesClick(Sender: TObject);
-    procedure cmdExternalAccRIPDesClick(Sender: TObject);
-    procedure DoExternalAccountButtonClick(RIPButtonClicked: Boolean = False);
-    procedure cmdTaxCoreBuyerDetailDesClick(Sender: TObject);
-    procedure grdToPayEnter(Sender: TObject);
-    procedure grdToPayExit(Sender: TObject);
-    procedure grdToPayKeyDown(Sender: TObject; var Key: Word;
-      Shift: TShiftState);
-    procedure grdToPayMouseWheelDown(Sender: TObject; Shift: TShiftState;
-      MousePos: TPoint; var Handled: Boolean);
-    procedure grdToPayMouseWheelUp(Sender: TObject; Shift: TShiftState;
-      MousePos: TPoint; var Handled: Boolean);
+    procedure navAccountTypesBeforeAction(Sender: TObject;
+      Button: TNavigateBtn);
+    procedure DBGridAccountTypesCellClick(Column: TColumn);
+    procedure cmdStaffOrdersKPIClick(Sender: TObject);
+    procedure cmdStaffOrdersKPICancelClick(Sender: TObject);
+    procedure cmdStaffOrdersKPIAddIG_NClick(Sender: TObject);
+    procedure cmdStaffOrdersKPIRemoveIG_NClick(Sender: TObject);
+    procedure cmdStaffOrdersKPIAddIG_DClick(Sender: TObject);
+    procedure cmdStaffOrdersKPIRemoveIG_DClick(Sender: TObject);
+    procedure sgStaffOrdersKPIClick(Sender: TObject);
+    procedure txtStaffOrdersKPINameChange(Sender: TObject);
+    procedure cmdStaffOrdersKPINewClick(Sender: TObject);
+    procedure cmdStaffOrdersKPIDeleteClick(Sender: TObject);
+    procedure cmdStaffOrdersKPIOKClick(Sender: TObject);
+    procedure chkIncludeStaffOrdersKPIClick(Sender: TObject);
+    procedure rgStaffOrdersKPIItemGroupClick(Sender: TObject);
+    procedure DBGridSectionsCellClick(Column: TColumn);
+    procedure radSecCurrentClick(Sender: TObject);
+    procedure cmbPeopleCustomerChange(Sender: TObject);
   private
-    FToPay, FPayment, FTip, FChange, FTender, FRounding, FStillDue, FRequired: Currency;
-    FSalesTax: Currency;
-    FSalesTaxCalculated: Boolean;
-    FSurcharge: Currency;
-    FormActivated: Boolean;
-    OldLoyaltyRewardOffer: TRewardOffer;
-    FoundFirstLoyaltyFreeItem: Boolean;
-    FDiscountPercent: Currency;
-    FOrigDiscountAmount, FDiscountAmount: Currency;
-    AddingTender: Boolean;
-    FLoyaltyFreeItemDiscount: Currency;
-    FUseDiscountAmount: Boolean;
-    FUseDiscountPeriods: Boolean;
-    FUseItemDiscounts: Boolean;
-    FLimitMaximum: Boolean;
-    FMaxDiscount: Currency;
-    FOrigDiscountPercent: Currency;
-    FCurrentBalance: Currency;
-    GridUpdating: Boolean;
+    FFromTime, FToTime : TDateTime;
+    FFromDOB, FToDOB : TDateTime;
+    FFromBirthDay, FFromBirthMonth, FToBirthDay, FToBirthMonth : Integer;
+    FFromWeddingDate, FToWeddingDate : TDateTime;
+    FLastWhenInvoicedAfter, FLastWhenInvoicedBefore: TDateTime;
+    FFromAnniversaryDay, FFromAnniversaryMonth, FToAnniversaryDay, FToAnniversaryMonth : Integer;
 
-    DoCalcToPay: Boolean;
-    DoCalcQty: Boolean;
+    ReportType: TReportType;
 
-    DoingTablePayment: Boolean;
+    FOutletList, FRemLocsList, FPeopleAcctTypes, FPeopleRemSiteList: TIntegerList;
 
-    CurrentHour, CurrentMin, CurrentSec, CurrentMSec: Word;
-    CurrentTime: Integer;
-    CurrentDay: Integer;
+    LoggedInAlready: Boolean;
 
-    LibAccount, LibRoom, LibName, LibStatus: string;
-    NZAAccount: Integer;
-    NZAAkey: string;
-    NZAName: string;
+    PopulatingFields: Boolean;
 
-    EvolutionAccountNo: Integer;
-    EvolutionAccount: string;
-    EvolutionName: string;
-    EvolutionAccExtra: string;
+    procedure SetDefaultTime;
+    function CheckDate : Boolean;
 
-    SurchargeList: TList;
-    SaleCategorySurchargeItem: TSurchargeItem;
+    procedure ShowSalesReport;
+    procedure ShowOrdersReport;
+    procedure ShowVoidsReport;
+    procedure ShowAllStaffOrders;
+    procedure ShowAccountSalesReport;
+    procedure ShowCourseSalesReport;
+    procedure ShowDiscountSchemeSalesReport;
+    procedure ShowTerminalSalesReport;
+    procedure ShowTillSalesReport;
+    procedure ShowMenuItemsReport;
+    procedure ShowPeopleReport;
+    procedure ShowModifiersReport;
+    procedure ShowSalesHistoryReport;
+    procedure ShowStaffSalesReport;
+    procedure ShowSaleCategorySalesReport;
+    procedure ShowSectionSalesReport;
+    procedure ShowSalePeriodSalesReport; // 12.03
+    procedure ShowCashTotalsReport;
+    procedure ShowSalesByDateReport;
+    procedure ShowAccountPETransReport;
+    procedure ShowAccountPEStatementReport;
+    procedure ShowClockInsReport;
+    procedure ShowAccountSummariesReport;
+    procedure ShowStaffTipsReport;
+    procedure ShowNoSalesReport;
+    procedure ShowItemModSalesReport;
+    procedure ShowModItemsReport;
+    procedure ShowOrderByBumpedReport;
+    procedure ShowItemByBumpedReport;
+    procedure ShowItemCountByBumpedReport;
+    procedure ShowAccountTransactionReport;
+    procedure ShowOrdersSalesVoidsReport;
+    procedure ShowAccountTabSalesReport;
+    procedure ShowOpenTablesReport;
+    procedure ShowTableSummaryReport;
+    procedure ShowComboSalesReport;
+    procedure ShowEventSalesReport;
+    procedure ShowAllStaffOpenPriceOrders;
+    procedure ShowTransListReport;
+    procedure ShowAccTypeMovementsReport;
 
-    OnAccount: Boolean;
-    SurplusOnAccount: Boolean;
+    procedure ChangeReportType;
+    procedure EnableGroupSubTotalCheckBoxes(B: Boolean);
+    procedure CreateHistoryTimes;
 
-    LoyaltyReward: TLoyaltyReward;
+    procedure SetComboCaptions;
+    procedure SetDBGridCaptions;
 
-    cmdHideSkin: TfcCustomImageBtn;
-    cmdAuthorise: TfcCustomImageBtn;
-    cmdLast: TfcCustomImageBtn;
-    cmdSummaryTable: TfcCustomImageBtn;
-    cmdLoyalty: TfcCustomImageBtn;
+    function GetSelectedIDString(aDBGrid: TDBGrid; aIDFieldName: string): string;
+    procedure LoadStaffOrderKPI;
 
-    cmdAmountToPay: TfcCustomImageBtn;
-    cmdTLDelete: TfcCustomImageBtn;
-    cmdTLClear: TfcCustomImageBtn;
-    cmdDetails: TfcCustomImageBtn;
-    cmdTLUp: TfcCustomImageBtn;
-    cmdTLDown: TfcCustomImageBtn;
-    cmdCheque: TfcCustomImageBtn;
-    cmdVoucher: TfcCustomImageBtn;
-    cmdOther: TfcCustomImageBtn;
-    cmdPMS: TfcCustomImageBtn;
-    cmdEdit: TfcCustomImageBtn;
-    cmdDiners: TfcCustomImageBtn;
-    cmdVisa: TfcCustomImageBtn;
-    cmdEFTPOS: TfcCustomImageBtn;
-    cmdToPay: TfcCustomImageBtn;
-    cmdMasterCard: TfcCustomImageBtn;
-    cmdAMEX: TfcCustomImageBtn;
-    cmdCash: TfcCustomImageBtn;
-    cmdGetCPF: TfcCustomImageBtn;
-    cmdFiscalSkin: TfcCustomImageBtn;
-
-    cmdUpAccounts: TfcCustomImageBtn;
-    cmdDownAccounts: TfcCustomImageBtn;
-    cmdSelectAccount: TfcCustomImageBtn;
-    cmdAccountNoLookup: TfcCustomImageBtn;
-    cmdDeselectAccount: TfcCustomImageBtn;
-    cmdExternalAccLookup: TfcCustomImageBtn;
-    cmdExternalAccRIP: TfcCustomImageBtn;
-    cmdOnAccount: TfcCustomImageBtn;
-    cmdDiscountPercent: TfcCustomImageBtn;
-    cmdDiscountAmount: TfcCustomImageBtn;
-
-    cmdOLUp: TfcCustomImageBtn;
-    cmdOLDown: TfcCustomImageBtn;
-    cmdAddPos: TfcCustomImageBtn;
-
-    cmdToPayUp: TfcCustomImageBtn;
-    cmdToPayDown: TfcCustomImageBtn;
-
-    cmdAll: TfcCustomImageBtn;
-    cmdOLDelete: TfcCustomImageBtn;
-    cmdOLClear: TfcCustomImageBtn;
-    cmdOLZero: TfcCustomImageBtn;
-    cmdOL1: TfcCustomImageBtn;
-    cmdOL2: TfcCustomImageBtn;
-    cmdOL3: TfcCustomImageBtn;
-    cmdOL4: TfcCustomImageBtn;
-    cmdOL5: TfcCustomImageBtn;
-    cmdOL6: TfcCustomImageBtn;
-    cmdOL7: TfcCustomImageBtn;
-    cmdOL8: TfcCustomImageBtn;
-    cmdOL9: TfcCustomImageBtn;
-    cmdOLDoubleZero: TfcCustomImageBtn;
-    cmdOLDot: TfcCustomImageBtn;
-    cmdOLBack: TfcCustomImageBtn;
-    cmdTender: TfcCustomImageBtn;
-    cmdComboIndex: TfcCustomImageBtn;
-    cmdEvent: TfcCustomImageBtn;
-    cmdGoody: TfcCustomImageBtn;
-    cmdTaxCoreBuyerDetail: TfcCustomImageBtn;
-    cmdOK: TfcCustomImageBtn;
-    FVisibleWindow: TVisibleWindow;
-
-    FCPFNumber: string;  // for fiscal printing
-    FAccountCPFNumberChanged: Boolean; //for fiscal printing
-    FTenderSeqID, FTenderGrpID: Integer;
-
-    FRecordType: TRecType;
-    AmountSplitingStarted: Boolean;
-
-    NFManual: Boolean;
-    NFEMode: Boolean;
-    ShowManualSelection, NFManualSecond: Boolean;
-    FPerorgID: Integer;
-    FAmtToPay, FGroupPayment: Currency;
-    FManualSeries, FManualSubSeries, FManualInvNo: string;
-    FLoyaltyDiscount: Currency;
-    FDiscCalculator: TDiscountCalc;
-    SubsidyCalc: TSubsidyCalc;
-
-    AccountChange, RecalculateDiscount: Boolean;
-    FAllCombos: TCombos;
-    FComboDiscount: Currency;
-	  FCreditCardDiscount: Currency;
-    SuppressClearTenderMessage: Boolean;
-    FForceUnSelectAccount, FOneBill: Boolean;
-    FTotalSubsidyAllowed, FHostSubsidy, FGuestSubsidy : Currency;
-    ToPayString: string;
-    QtyChangedManully: Boolean;
-    grdItemAutoClick: Boolean;
-    grdItemManualClick: Boolean;
-    isbtnClick: Boolean;
-    function GetOriginalOL(aOrderLineID: Integer; var ASrcIndex: Integer): TOrderLine;
-    procedure LoadAllComboItems(aComboID: Integer; aComboIndex: Integer);
-
-    procedure SetComboColourIndex(AList:TList);
-    procedure OLKeyStroke(Key: Char);
-    function ValidateGoodySale: Boolean;
-    function TryPaymentTable: Boolean;
-
-    function SendLibicaTransactions(AOLList: TList): Boolean;
-    function SendFidelioTransactions(AOLList: TList): Boolean;
-    function SendPhoenixTransactions(AOLList: TList): Boolean;
-    function SendMicros4700Transactions(AOLList: TList): Boolean;
-    function SendNZATransactions(AOLList: TList): Boolean;
-    function SendEvolutionTransactions(AOLList: TList): Boolean;
-    function SendICRTouchTransactions(AOLList: TList): Boolean;
-    function SendMewsTransactions(AOLList: TList; SPNumber, TheTenderID: Integer): Boolean;
-    procedure SendTableManagementTransactions(aOLList: TList);
-
-    function SendTaxCoreTransactions(AOLList: TList): Boolean;
-
-    procedure ClearAllOrderLines;
-    procedure ClearUnTenderedOrderLines;
-    procedure ClearAllSurcharges;
-    procedure ClearVoidLines; //Added for fiscal
-    procedure LoadFromUnInvoicedList(aOrderLineID: Integer);
-    procedure ClearItemLevelSubsidy(var AOLList: TList);
-
-    procedure CalculateToPay(LoadAllowedDisc: Boolean = False; DisplayDiscount: Boolean = True);
-    procedure UpdateScreenAfterCalculateDiscount;
-    procedure CalculateAccTypeItemDiscount(AList: TList);
-    procedure CalculateComboAndAccountDiscounts(AList:TList);
-    procedure CalculateSubsidy(AList: TList;LoadAllowedDisc, DisplayDiscount:Boolean);
-    function ApplySubsidyOnItems: Boolean;
-
-    procedure BuildAccountButtons;
-    function CheckLoyaltyReward(Prompt: Boolean) : Boolean;
-    procedure ApplyLoyalty(tmpList: TList; FindNewOnly: Boolean = False);
-    procedure AccountClick(Sender: TObject);
-    procedure InitialiseAccountInfo(AShowAcctScanned: Boolean = True; PromptLoyalty: Boolean = True; VerifyNo: Boolean = True);
-    procedure UpdateUnInvoicedListComboDetails;
-    function CanSelectAccount: Boolean;
-    function GetSelectedAccount(AAccountID: Integer; AShowAcctScanned: Boolean; PromptLoyalty: Boolean; PrevAccountID: Integer;
-      VerifyPin: Boolean = False; ForGoodyDiscount: Boolean = False): Boolean;
-    procedure ResetLoyaltyReward;
-    procedure SetTLCols;
-    function GetDue(IncludeExternalTenders: Boolean = True): Currency;
-    procedure LoadTLs(LAction: TLA);
-    procedure RecalculateTotals;
-    procedure AddTenderLine(TLType: TTLT; IntendedTenderTypeProviderID: Integer = 0; pTL: TTL = nil);
-    procedure EditTenderLine;
-    procedure DeleteTenderLine;
-    procedure ClearAllTenderLines;
-    procedure PaymentTableCashCam;
-    function EFTPOSTransExists: Boolean;
-    function TenderTypeExists(TLType: TTLT): Boolean;
-
-    procedure ShowPaymentTable;
-
-    procedure SetCurrentTime;
-    procedure BuildTenderSurchargeList;
-    procedure ChangeAllowCreditLabel(AllowCredit: Boolean;VerifyPin:Boolean=True);
-    procedure SetOnAccount(State: Boolean);
-    procedure TestAllOLsLoyaltyItem(AList: Tlist;FindNewOnly: Boolean);
-    function TestLoyaltyItem(LoyaltyRewardID: Integer; ItemID: Integer): Integer;
-    function AllocateItemLoyalty(var OL: TOrderLine): Boolean;
-    procedure UpdateGrdToPayCells(Row: Integer);
-    procedure FSetVisibleWindow(Value: TVisibleWindow);
-    procedure LoadAllOlsToPay;
-    procedure LoadUnInvoicedOlsToGrid(AList: TList; APaid, AToPay: Currency);
-    procedure LoadUnInvoicedOlsToOLToPayList(AList: TList);
-    procedure ClearUnInvoicedOls;
-
-    procedure ClearTempItemList;
-    procedure ClearUnInvoicedGrid;
-    procedure ClearOLsWithoutTenderSeqNo;
-    procedure UpdateUnInvoicedOLValues(Apply: Boolean);
-    procedure ReloadItemsForThePayment(AList: TList; aPaid: Currency);
-
-    procedure AssociateOLSToTender(var TL: TTL; ATenderSeqNo: Integer);
-    function CheckPrinterFunctions:Boolean;
-    function GetCPFNumber(UpdateCPF: Boolean):Boolean; // for fiscal printing
-    function GetNFManualExtraDetails:Boolean;
-    function GetNFEDetails:Boolean;
-    procedure RetrieveCPFAccount;
-    function SendFiscalInvoice: Boolean;
-    procedure UpdateOLTenderID(ATenderID:Integer);
-    procedure CopyOL(aDestOL: TOrderLine; aSourceOL: TOrderLine);
-    procedure DeleteOLsOfTender(TL:TTL;ASeqNo: Integer);
-    function CheckForUnTenderedItems:Boolean;
-    procedure GetAllSelectedOLs(var AList: Tlist);
-    procedure CombineSameOls(var AList: TList);
-    procedure CalculateAmountForUntenderedItems;
-    procedure ProcessTheRemainingItems(TLPay: Currency);
-    procedure CopyItemSToTempList;
-    procedure LoadSelectedToPayList;
-
-    procedure ApplyPreviousNonAppliedDiscount;
-    procedure SetItemSelection;
-    procedure DoLoyalty(Prompt: Boolean);
-    procedure ClearItemLevelDiscounts(AList: TList);
-    function CheckForUnFinishedCombos(aList: TList; var aCombo: string; var aComboIndex: Integer): Boolean;
-    procedure BroadcastCDAMessage;
-    procedure ClearCDAMessage;
-    procedure DeselectEvent;
-    procedure ApplyItemLevelOneBillDiscountAmount;
-    procedure SetGuestCount;
-    procedure AddExternalTenders;
-    procedure DeleteCurrentExternalTenders;
-    procedure ReOrderOLtoPayList;
+    function GetSelectedSalesHistoryPeriodRadioButton: TRadioButton;
+    function GetSelectedSalesHistoryLengthRadioButton: TRadioButton;
+    procedure EnableHistoryBetweenTimesCheckBox;
   public
-    ItemsSelectedManually, FProcessedAllItems, FSelectedItemsNotPaidFull, PaymentOnSelectedItems, FGetAllItems: Boolean;
-    TempItemList, UnInvoicedOlsToPay, OLToPayList, VoidList: TList;
-    ComboFreeItems: TObjectList;
-    TLList, OneBillTLList: TTLList;
-    JustSelected, ReloadItems: Boolean;
-    ManagerAuthorise: TManagerAuthorise;
-    IsNormalLoyalty: Boolean;
-    property VisibleWindow: TVisibleWindow read FVisibleWindow write FSetVisibleWindow;
-    property IsDoingTablePayment: Boolean read DoingTablePayment;
-    procedure ShowExternalAccounts(TL: TTL = nil);
-    procedure CloseExternalAccounts;
-    procedure DeselectAccount(SuppressConfirmation: Boolean=True; ConfirmationResult: TModalResult=mrNone);
-    procedure UpdateTLListExternalAccounts;
+    property FromTime: TDateTime read FFromTime;
+    property ToTime: TDateTime read FToTime;
 
-    procedure SetGoodyAccountDiscountAmount;
-    procedure RefreshGoodyAccountDiscountAmount;
-    function TryAddGoodyDiscountAmount(ScannedAmount: string): Boolean;
-    procedure DeselectGoodyAccount;
   end;
-{******************************************************************************}
+
+procedure ApplicationInitialization;
+
 var
-  formPaymentTable: TformPaymentTable;
+  formReports: TformReports;
+  bLanguageChanged: Boolean;
+
+  Title1, Title2, Title3, OrdersHeader, VoidsHeader: string;
+  Title3Array: array [0..3] of string;
+  Title3ArrayCount: Integer;
 {******************************************************************************}
 implementation
-{******************************************************************************}
-uses
-  IB_Components, DateUtils,
-  UConfirmation, LWBQuery, USelectTable, USelectName, LMain, UAppDetails, DM_WBWaiter,
-  UMessage, UQuickMessage, USingleNote, UTables, UPrintSummary,
-  UDiscountPercent, UDiscountAmount, USelectAccount, LErrors, UGetAmountToPay, UGetItemSplitPayment,
-  UGetSelectPos, UGetAccountNo, UEFTPOSIntegration, UDMCashCam, USmartCardTransaction, UPocketVoucherTransaction,
-  ULibicaTransaction, UFidelioTransaction, UPhoenixTransaction, UMicros4700Transaction,
-  UNZATransaction, UEvolutionTransaction, UICRTouchPMSInterface, UDialogPrepay, UNumPadText, UAccountScanned,
-  UMain, UAlphaBlend, UResources,
-  UGetCPFNumber, UNFEDetail, UFiscalPrinting, IB_Access, USelectEvent,
-  UEncryption, ULogFile, ULogTypes, Math, uTEFDaruma, UCombosInSale, UCDAServer, UFiscalDeletedData,
-  UGlobalMenuObjects, UGlobalMenuList, UGetNewGuests, USelectExternalAccount, UExternalAccountIntegration, UExternalAccount,
-  USearchExternalAccount, wiGroupPOS, UTaxCoreHTTPSocket, UTaxCoreTransaction, UTaxCoreBuyerDetail, USelectCashSale,
-  LGoody, UMewsHTTP, UMewsTransaction;
-{******************************************************************************}
 {$R *.DFM}
 {******************************************************************************}
-procedure PaymentTable;
+uses
+  UAppDetails, UDM, LMain, USelectDateTime, USelectDayAndMonth, USettings,
+  UQRSales, UQROrders, UQRVoids, UQRAccountSales, UQRCourseSales, UQRAllStaffOrders,
+  UQRTerminalSales, UQRMenuItems, UQRPeople, UQRModifiers, UQRSalesHistory, UQRStaffSales,
+  UQRSaleCategorySales, UQRCashTotals, UQRSalesByDate, UQRAccountPETrans,
+  UQRAccountPEMailout, UQRClockIns, UQRAccountSummary, UQRStaffTips, UQRNoSales,
+  UQRTillSales, UQRDiscountSchemeSales, UQRItemModSales, UQRModItems, uResources,
+  UQROrdByBumped, UQRItemByBumped, UQRItemCountByBumped, UQRSalePeriodSales,
+  UQRAccountTransaction, UQRComboSales, UQRComboItemSales, UQROrdersSalesVoids,
+  UQRAccountTabSales, UQROpenTables, UQRTableSummary, UQRStaffOpenPrice,
+  UAboutBox, UQREventSales, UQRTransactionsListing, ULogonStaff,
+  UQRAccTypeMovements, DateUtils, UQRSectionSales, Math;
+{******************************************************************************}
+procedure TformReports.FormShow(Sender: TObject);
 begin
-  if ((GlbTable.Uninvoiced <= 0) and (not AppDetails.PaymentAllowZeroPriceInvoices)) then begin
-    ShowQuickMsg(Format(sNoDueOnTab, [GlbTable.TableNo]));
-  end
-  else if (not CheckTaxCoreReadyForInvoice) then
-  begin
-    ShowQuickMsg('Error with Fiscal device, unable to take payment');
-  end
-  else begin
-    formPaymentTable := TformPaymentTable.Create(Application);
-    DoingServiceTransaction := True;
-    with formPaymentTable do
-    begin
-      ShowModal;
-      Release;
-      formPaymentTable := nil;
-    end;
-    DoingServiceTransaction := False;
-  end;
+  txtFrom.Text := FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime);
+  txtTo.Text := FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime);
+  pnlStaffOrdersKPISetup.Visible := False;
 end;
 {******************************************************************************}
-procedure TformPaymentTable.FormCreate(Sender: TObject);
-
-  procedure HideUsualTenderLineTypes;
-  begin
-    cmdMasterCard.Visible := False;
-    cmdAmex.Visible := False;
-    cmdDiners.Visible := False;
-    cmdVisa.Visible := False;
-    cmdCash.Visible := False;
-    cmdEFTPOS.Visible := False;
-    cmdCheque.Visible := False;
-    cmdVoucher.Visible := False;
-    cmdOther.Visible := False;
-  end;
-
+procedure TformReports.FormCreate(Sender: TObject);
 begin
-  LogMessage(ltPaymentTrace, '1' + #9);
-  inherited;
+  FOutletList := TIntegerList.Create;
+  FRemLocsList := TIntegerList.Create;
+  FPeopleAcctTypes := TIntegerList.Create;
+  FPeopleRemSiteList := TIntegerList.Create;
 
-  FAllCombos := TCombos.Create;
-  FGetAllItems := False;
-  FRecordType := rtUnTenderedItems;
-  FormActivated := False; // Added for Manual NF Mode - Brazil to close the form in formactivate itself using postmessage
-  UnInvoicedOlsToPay := TList.Create;
-  ComboFreeItems := TObjectList.Create;
-  TempItemList := TList.Create;
-
-  ToPayString := '0.00';
-  QtyChangedManully := False;
-
-  FCPFNumber := ''; // for fiscal printing
-  FAccountCPFNumberChanged := False;
-
-  DoCalcToPay := False;
-  DoCalcQty := False;
-  grdItemAutoClick := False;
-  grdItemManualClick := False;
-  OLToPayList := TList.Create;
-  VoidList := TList.Create;
-  TLList := TTLList.Create;
-  OneBillTLList := TTLList.Create;
-  SurchargeList := TList.Create;
-  FDiscCalculator := TDiscountCalc.Create;
-  SubsidyCalc := TSubsidyCalc.Create;
-  SaleCategorySurchargeItem := Nil;
-  SetOLCols;
-  SetTLCols;
-  if (dm.qrOLsToPay.SQL.Text = '') then begin
-    SetQuery(qtOLsToPay);
-  end;
-  if (WBAccountButtons.QueryType <> qtAccountButtonsCurrent) then begin
-    FilterQuery(dm.qrAccountButtons, qtAccountButtonsCurrent);
-  end;
-
-  pnlToPay.Visible := False;
-  pnlTender.Visible := True;
-  FVisibleWindow := vwTender;
-  pnlToPay.Align := alClient;
-  pnlTender.Align := alClient;
-
-  if (Skin.FormFormBorder <> -1) then begin
-    pnlForm.BorderWidth := Skin.FormFormBorder;
-    pnlAccountButtons.BorderWidth := (4 - Skin.FormFormBorder);
-    pnlAccountControlsBorder.BorderWidth := (4 - Skin.FormFormBorder);
-    pnlAccountControlsBorder.Height := pnlAccountControlsBorder.Height + (2 * (4 - Skin.FormFormBorder));
-
-    pnlTotals.BorderWidth := (4 - Skin.FormFormBorder);
-    pnlTotals.Height := pnlTotals.Height + (2 * (4 - Skin.FormFormBorder));
-    if (Skin.FormFormBorder = 0) then begin
-      pnlTender.BevelOuter := bvNone;
-      pnlToPay.BevelOuter := bvNone;
-    end;
-  end;
-  if (Skin.FormColour <> -1) then begin
-    pnlForm.Color := Skin.FormColour;
-    pnlForm.BorderStyle := bsNone;
-  end;
-
-  if (Skin.FormToolbarColour <> -1) then begin
-    pnlTitle.ParentColor := False;
-    pnlTitle.ParentBackground := False;
-    pnlTitle.Color := Skin.FormToolbarColour;
-  end;
-  if (Skin.FormToolbarEditBoxColour <> -1) then begin
-    txtAvail.Color := Skin.FormToolbarEditBoxColour;
-    txtTableName.Color := Skin.FormToolbarEditBoxColour;
-    txtTableNo.Color := Skin.FormToolbarEditBoxColour;
-    txtStaff.Color := Skin.FormToolbarEditBoxColour;
-  end;
-
-  if (Skin.FormFunctionsBorder <> -1) then begin
-    pnlTenderLinesBorder.BorderWidth := Skin.FormFunctionsBorder;
-    pnlTenderLinesBorder.Width := pnlTenderLinesBorder.Width + (2 * Skin.FormFunctionsBorder);
-
-    pnlToPay.BorderWidth := Skin.FormFunctionsBorder;
-  end;
-  if (Skin.FormFunctionsColour <> -1) then begin
-    pnlTenderLinesBorder.ParentColor := False;
-    pnlTenderLinesBorder.ParentBackground := False;
-    pnlTenderLinesBorder.Color := Skin.FormFunctionsColour;
-
-    pnlToPay.ParentColor := False;
-    pnlToPay.ParentBackground := False;
-    pnlToPay.Color := Skin.FormFunctionsColour;
-
-    pnlTotals.ParentColor := False;
-    pnlTotals.ParentBackground := False;
-    pnlTotals.Color := Skin.FormFunctionsColour;
-  end;
-  if (Skin.FormFunctionsEditBoxColour <> -1) then begin
-    txtTPayment.Color := Skin.FormFunctionsEditBoxColour;
-    txtTTip.Color := Skin.FormFunctionsEditBoxColour;
-    txtTTender.Color := Skin.FormFunctionsEditBoxColour;
-    txtTChange.Color := Skin.FormFunctionsEditBoxColour;
-
-    txtToPayCopy.Color := Skin.FormFunctionsEditBoxColour;
-    txtSalesTax.Color := Skin.FormFunctionsEditBoxColour;
-
-    txtSumToPay.Color := Skin.FormFunctionsEditBoxColour;
-    txtBalDue.Color := Skin.FormFunctionsEditBoxColour;
-    txtPayment.Color := Skin.FormFunctionsEditBoxColour;
-    txtStillDue.Color := Skin.FormFunctionsEditBoxColour;
-  end;
-  if (Skin.FormFunctionsEditBoxEditColour <> -1) then begin
-    txtQty.Color := Skin.FormFunctionsEditBoxColour;
-    txtToPay.Color := Skin.FormFunctionsEditBoxColour;
-  end;
-
-  if (Skin.AccountsBGColour <> -1) then begin
-    pnlAccounts.ParentColor := False;
-    pnlAccounts.ParentBackground := False;
-    pnlAccounts.Color := Skin.AccountsBGColour;
-  end;
-  if (Skin.AccountsControlsColour <> -1) then begin
-    pnlAccountControlsBorder.ParentColor := False;
-    pnlAccountControlsBorder.ParentBackground := False;
-    pnlAccountControlsBorder.Color := Skin.AccountsControlsColour;
-  end;
-  if (Skin.AccountsEditBoxColour <> -1) then begin
-    txtAccountName.Color := Skin.AccountsEditBoxColour;
-    txtDiscountPercent.Color := Skin.AccountsEditBoxColour;
-    txtDiscountAmount.Color := Skin.AccountsEditBoxColour;
-  end;
-
-  Skin.NewButtonFromOldButton(cmdHideSkin, cmdHide, bstToolbar, gstClose);
-  Skin.NewButtonFromOldButton(cmdAuthorise, cmdAuthoriseDes, bstToolbar, gstAuthorise);
-  Skin.NewButtonFromOldButton(cmdLast, cmdLastDes, bstToolbar, gstLast);
-  Skin.NewButtonFromOldButton(cmdSummaryTable, cmdSummaryTableDes, bstToolbar, gstSummary);
-  Skin.NewButtonFromOldButton(cmdLoyalty, cmdLoyaltyDes, bstToolbar, gstAccount);
-  Skin.NewButtonFromOldButton(cmdComboIndex, cmdComboIndexDes, bstToolbar, gstSummary);
-  Skin.NewButtonFromOldButton(cmdEvent, cmdEventDes, bstToolbar, gstChargeAccs);
-  Skin.NewButtonFromOldButton(cmdGoody, cmdGoodyDes, bstToolbar, gstGoody);
-  Skin.NewButtonFromOldButton(cmdTaxCoreBuyerDetail, cmdTaxCoreBuyerDetailDes, bstToolBar, gstRefund);
-  Skin.NewButtonFromOldButton(cmdGetCPF, cmdGetCPFDes, bstToolbar);
-  Skin.NewButtonFromOldButton(cmdFiscalSkin, cmdFiscalMenu, bstToolbar);
-  Skin.NewButtonFromOldButton(cmdAmountToPay, cmdAmountToPayDes, bstAmount);
-  Skin.NewButtonFromOldButton(cmdTLDelete, cmdTLDeleteDes, bstClear56);
-  Skin.NewButtonFromOldButton(cmdTLClear, cmdTLClearDes, bstAll56);
-  Skin.NewButtonFromOldButton(cmdDetails, cmdDetailsDes, bstDetails);
-  Skin.NewButtonFromOldButton(cmdTLUp, cmdTLUpDes, bstUp);
-  Skin.NewButtonFromOldButton(cmdTLDown, cmdTLDownDes, bstDown);
-
-  if ((AppDetails.PaymentAllowPrePay) and (GlbTable.PrepaidBalance <> 0)) then
-  begin
-    Skin.NewButtonFromOldButton(cmdCheque, cmdChequeDes, bstGen112);
-    cmdCheque.Caption := sPrePaid;
-  end
-  else if (AppDetails.SmartCardInterface > 0) then
-  begin
-    Skin.NewButtonFromOldButton(cmdCheque, cmdChequeDes, bstGen112);
-    cmdCheque.Caption := sSmartCard;
-  end
-  else if ((AppDetails.VoucherType = Integer(vtPocketVoucher)) and (AppDetails.PocketVoucherMerchantID <> '') and (AppDetails.PocketVoucherTerminalID <> '') and (AppDetails.PocketVoucherPassword <> '') ) then
-  begin
-    Skin.NewButtonFromOldButton(cmdCheque, cmdChequeDes, bstGen112);
-    cmdCheque.Caption := 'POCKETvoucher';
-  end
-  else if AppDetails.wiGroupEnabled then
-  begin
-    Skin.NewButtonFromOldButton(cmdCheque, cmdChequeDes, bstGen112);
-    cmdCheque.Caption := swiGroupTL;
+  if (Screen.Width > 800) then begin //RPC screen res is 800 by 600 or 1024 by 768
+    ClientWidth := ((792 * Screen.PixelsPerInch) div 96);
+    ClientHeight := ((524 * Screen.PixelsPerInch) div 96);
   end
   else
   begin
-    Skin.NewButtonFromOldButton(cmdCheque, cmdChequeDes, bstCheque);
-  end;
-
-  Skin.NewButtonFromOldButton(cmdVoucher, cmdVoucherDes, bstVoucher);
-  Skin.NewButtonFromOldButton(cmdOther, cmdOtherDes, bstOther);
-  Skin.NewButtonFromOldButton(cmdPMS, cmdPMSDes, bstGen112);
-  Skin.NewButtonFromOldButton(cmdEdit, cmdEditDes, bstEdit);
-  Skin.NewButtonFromOldButton(cmdDiners, cmdDinersDes, bstDiners);
-  Skin.NewButtonFromOldButton(cmdVisa, cmdVisaDes, bstVisa);
-  Skin.NewButtonFromOldButton(cmdEFTPOS, cmdEFTPOSDes, bstEFTPOS);
-  Skin.NewButtonFromOldButton(cmdToPay, cmdToPayDes, bstItems48x96);
-  Skin.NewButtonFromOldButton(cmdMasterCard, cmdMasterCardDes, bstMasterCard);
-  Skin.NewButtonFromOldButton(cmdAMEX, cmdAMEXDes, bstAmex);
-  Skin.NewButtonFromOldButton(cmdCash, cmdCashDes, bstCash);
-
-  Skin.NewButtonFromOldButton(cmdUpAccounts, cmdUpAccountsDes, bstUp);
-  Skin.NewButtonFromOldButton(cmdDownAccounts, cmdDownAccountsDes, bstDown);
-  Skin.NewButtonFromOldButton(cmdSelectAccount, cmdSelectAccountDes, bstSelectAcc);
-
-  Skin.NewButtonFromOldButton(cmdAccountNoLookup, cmdAccountNoLookupDes, bstAccNoLookup);
-  Skin.NewButtonFromOldButton(cmdDeselectAccount, cmdDeselectAccountDes, bstDeselectAcc);
-  Skin.NewButtonFromOldButton(cmdExternalAccLookup, cmdExternalAccLookupDes, bstExternalAccount);
-  Skin.NewButtonFromOldButton(cmdExternalAccRIP, cmdExternalAccRIPDes, bstExternalAccountRIP);
-  Skin.NewButtonFromOldButton(cmdOnAccount, cmdOnAccountDes, bstPayOnAcc);
-  Skin.NewButtonFromOldButton(cmdDiscountPercent, cmdDiscountPercentDes, bstDiscPercent);
-  Skin.NewButtonFromOldButton(cmdDiscountAmount, cmdDiscountAmountDes, bstDiscAmount);
-
-  Skin.NewButtonFromOldButton(cmdOLUp, cmdOlUpDes, bstUp);
-  Skin.NewButtonFromOldButton(cmdOLDown, cmdOLDownDes, bstDown);
-  Skin.NewButtonFromOldButton(cmdAddPos, cmdAddPosDes, bstAddPosition);
-
-  Skin.NewButtonFromOldButton(cmdToPayUp, cmdToPayUpDes, bstUp);
-  Skin.NewButtonFromOldButton(cmdToPayDown, cmdToPayDownDes, bstDown);
-  Skin.NewButtonFromOldButton(cmdAll, cmdAllDes, bstSettle);
-  Skin.NewButtonFromOldButton(cmdOLDelete, cmdOLDeleteDes, bstClear72);
-  Skin.NewButtonFromOldButton(cmdOLClear, cmdOLClearDes, bstAll72);
-  Skin.NewButtonFromOldButton(cmdTender, cmdTenderDes, bstTender102x48);
-
-  if AppDetails.FiscalType = fiscalNone then
-    pnlControlButtons.Width := pnlControlButtons.Width - cmdGetCPF.Width;
-  if not AppDetails.EnableCombo then
-    pnlControlButtons.Width := pnlControlButtons.Width - cmdComboIndex.Width;
-
-  cmdHideSkin.Left := pnlControlButtons.Width - 48;
-
-  cmdEvent.Visible := AppDetails.EnableEvent;
-  cmdTaxCoreBuyerDetail.Visible := AppDetails.FiscalType = fiscalTaxCore;
-  cmdComboIndex.Visible := AppDetails.EnableCombo;
-  cmdComboIndex.Enabled := False;
-
-  IniGoodyUI(Self, cmdGoody);
-
-  PositionControlAlign(TControl(pnlTabDetails), TControl(cmdHideSkin), alLeft);
-  PositionControlAlign(TControl(cmdAuthorise), TControl(pnlTabDetails), alLeft);
-  PositionControlAlign(TControl(cmdLast), TControl(cmdAuthorise), alLeft);
-  PositionControlAlign(TControl(cmdSummaryTable), TControl(cmdLast), alLeft);
-  PositionControlAlign(TControl(cmdEvent), TControl(cmdSummaryTable), alLeft);
-  PositionControlAlign(TControl(cmdComboIndex), TControl(cmdEvent), alLeft);
-  PositionControlAlign(TControl(cmdGoody), TControl(cmdComboIndex), alLeft);
-  PositionControlAlign(TControl(cmdTaxCoreBuyerDetail), TControl(cmdGoody), alLeft);
-  PositionControlAlign(TControl(cmdGetCPF), TControl(cmdTaxCoreBuyerDetail), alLeft);
-
-
-  if (Screen.Width > 800) then
-  begin
-    pnlTotalsRight.Width := pnlTotalsRight.Width + (160 - 48);
-    Skin.NewButtonFromOldButton(cmdOK, cmdOKDes, bstOK);
-    cmdOK.Width := 160;
-  end
-  else
-  begin
-    pnlTitleText.Visible := False;
-    Skin.NewButtonFromOldButton(cmdOK, cmdOKDes, bstGen48);
-  end;
-  cmdGetCPF.Visible := AppDetails.EnableFiscalPrinting;
-
-  Skin.ApplySkinToGrid(grdToPay);
-  Skin.ApplySkinToGrid(grdUnInvoicedList);
-  Skin.ApplySkinToGrid(grdTLs);
-
-  BuildAccountButtons;
-  txtSalesTax.Visible := AppDetails.TaxExclusivePrices;
-  lblSalesTax.Visible := AppDetails.TaxExclusivePrices;
-
-  txtTableNo.Text := IntToStr(GlbTable.TableNo);
-  txtTableName.Text := GlbTable.TableName;
-  txtStaff.Text := GlbLogin.StaffName;
-
-  cmdEFTPOS.Enabled := GetTenderLineTypeRecord(TLTEFTPOS).TenderTypeEnabled;
-  cmdCash.Enabled := GetTenderLineTypeRecord(TLTCash).TenderTypeEnabled;
-  if ((AppDetails.PaymentAllowPrePay) and (GlbTable.PrepaidBalance <> 0)) then begin
-    cmdCheque.Enabled := GetTenderLineTypeRecord(TLTPrepaid).TenderTypeEnabled;
-  end
-  else if (AppDetails.SmartCardInterface > 0) then begin
-    cmdCheque.Enabled := GetTenderLineTypeRecord(TLTSmartCard).TenderTypeEnabled;
-  end
-  else if ((AppDetails.VoucherType = Integer(vtPocketVoucher)) and (AppDetails.PocketVoucherMerchantID <> '') and (AppDetails.PocketVoucherTerminalID <> '') and (AppDetails.PocketVoucherPassword <>'')) then
-  begin
-    cmdCheque.Enabled := GetTenderLineTypeRecord(TLTPocketVoucher).TenderTypeEnabled;
-  end
-  else if AppDetails.wiGroupEnabled then
-    cmdCheque.Enabled := GetTenderLineTypeRecord(TLTwiGroup).TenderTypeEnabled
-  else begin
-    cmdCheque.Enabled := GetTenderLineTypeRecord(TLTCheque).TenderTypeEnabled;
-  end;
-
-  cmdVoucher.Enabled := GetTenderLineTypeRecord(TLTVoucher).TenderTypeEnabled;
-  cmdOther.Enabled := GetTenderLineTypeRecord(TLTOther).TenderTypeEnabled;
-  cmdVisa.Enabled := (GetTenderLineTypeRecord(TLTVisaEFTPOS).TenderTypeEnabled or GetTenderLineTypeRecord(TLTVisaManual).TenderTypeEnabled);
-  cmdMasterCard.Enabled := (GetTenderLineTypeRecord(TLTMasterCardEFTPOS).TenderTypeEnabled or GetTenderLineTypeRecord(TLTMasterCardManual).TenderTypeEnabled);
-  cmdAMEX.Enabled := (GetTenderLineTypeRecord(TLTAmexEFTPOS).TenderTypeEnabled or GetTenderLineTypeRecord(TLTAmexManual).TenderTypeEnabled);
-  cmdDiners.Enabled := (GetTenderLineTypeRecord(TLTDinersEFTPOS).TenderTypeEnabled or GetTenderLineTypeRecord(TLTDinersManual).TenderTypeEnabled);
-
-  if (AppDetails.PMSType <> pmsNone) then begin
-    PositionControl(TControl(cmdVoucher), 112, -1, 76, -1);
-    PositionControl(TControl(cmdOther), 188, -1, 76, -1);
-    PositionControl(TControl(cmdPMS), 264, 82, 72, 48);
-    cmdPMS.Visible := True;
-    case AppDetails.PMSType of
-      pmsLibica: Skin.ChangeButton(cmdPMS, bstGen72, gstNoChange, biLibica);
-      pmsFidelio, pmsPhoenix, pmsMicros4700, pmsICRTouch, pmsMews: Skin.ChangeButton(cmdPMS, bstGen72, gstNoChange, biRoomCharge);
-      pmsNZAGold: begin
-        if (AppDetails.NZAOnly) then begin
-          HideUsualTenderLineTypes;
-          Skin.ChangeButton(cmdPMS, bstGen96x72, gstNoChange, biNZAGold);
-          PositionControl(TControl(cmdPMS), 84, 118, 168, 72);
-        end
-        else begin
-          Skin.ChangeButton(cmdPMS, bstGen72, gstNoChange, biNZAGold);
-        end;
-      end;
-      pmsEvolution, pmsMiniBar:
-      begin
-        if (AppDetails.EvolutionOnly or AppDetails.MinibarRoomTransferOnly) then
-        begin
-          HideUsualTenderLineTypes;
-          Skin.ChangeButton(cmdPMS, bstGen96x72, gstNoChange, biEvolution);
-          PositionControl(TControl(cmdPMS), 84, 118, 168, 72);
-        end
-        else begin
-          Skin.ChangeButton(cmdPMS, bstGen72, gstNoChange, biEvolution);
-        end;
-      end;
-    end;
-  end;
-  if (AppDetails.TenLnTypOther <> 'Other') then begin
-    Skin.ChangeButton(cmdOther, bstGen112, gstNoChange, biNone, AppDetails.TenLnTypOther);
-  end;
-
-  lblDiscountAmount.Caption := Format(sDiscountAmount, [AppDetails.CurrencyType]);
-  lblAvailDollarSign.Caption := AppDetails.CurrencyType;
-  LogMessage(ltPaymentTrace, '2' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.FormShow(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '3' + #9 + 'GlbTable.GroupID=' + IntToStr(GlbTable.GroupID) + ', GlbTable.TableNo=' + IntToStr(GlbTable.TableNo));
-  inherited;
-  GlbAccount.AccountID := -1;
-  GlbCustomer.AccountID := 0;
-  GlbAccount.PerorgName := '';
-  GlbAccount.PerorgAddress := '';
-
-  DeselectEvent;
-
-  AmountSplitingStarted := False;
-  FRecordType := rtBoth;
-
-  IsNormalLoyalty := True;
-  FTenderSeqID := 0;
-  FTenderGrpID := 1;
-  FCPFNumber := '';
-  FAccountCPFNumberChanged := False;
-  FDiscCalculator.PrevOrderItemsLoaded := False;
-  FDiscCalculator.LoadPreviousOrders := False;
-
-  if (AppDetails.FiscalType = fiscalTaxCore) then
-    TaxCoreTransactionData.Clear;
-
-  TheActiveDetail := adPaymentTable;
-  FAllCombos.LoadCombos;
-
-  LogMessage(ltPaymentTrace, '332' + #9);
-  ShowPaymentTable;
-  LogMessage(ltPaymentTrace, '333' + #9);
-
-  if ((AppDetails.PaymentGuestCount) and (GlbTable.RequireGuests)) then
-    SetGuestCount;
-
-  if (GlbTable.IntendedTenderTypeID > 0) then begin
-    LogMessage(ltPaymentTrace, '29' + #9);
-    AddTenderLine(GetTLT(GlbTable.IntendedTenderTypeID), GlbTable.IntendedTenderTypeProviderID);
-    LogMessage(ltPaymentTrace, '30' + #9);
-  end;
-  cmdSelectAccount.Enabled := True;
-  cmdAccountNoLookup.Enabled := cmdSelectAccount.Enabled;
-  cmdDeselectAccount.Enabled := cmdSelectAccount.Enabled;
-  cmdDiscountPercent.Enabled := cmdSelectAccount.Enabled;
-  cmdDiscountAmount.Enabled := cmdSelectAccount.Enabled;
-
-  //show 'External Accounts' button if there's at least one active external account other than RIP
-  cmdExternalAccLookup.Visible := sExternalAccountIntegration.IsActive and
-    (not (sExternalAccountIntegration.IsActive(eptRIP) and (sExternalAccountIntegration.FExternalProviders.Count = 1)));
-  //show 'RIP Expenses' button in account area if RIP active
-  cmdExternalAccRIP.Visible := sExternalAccountIntegration.IsActive(eptRIP);
-
-  //reposition 'RIP Expense' button if 'External Accounts' button is not visible
-  if (not cmdExternalAccLookup.Visible) and cmdExternalAccRIP.Visible then
-    PositionControl(TControl(cmdExternalAccRIP), 392, 4, 128, 48);
-
-  if (AppDetails.PaymentDefaultPayByItem) then
-    cmdToPayClick(Self);
-  LogMessage(ltPaymentTrace, '4' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.FormClose(Sender: TObject; var Action: TCloseAction);
-begin
-  LogMessage(ltPaymentTrace, '5' + #9);
-  inherited;
-
-  TheActiveDetail := adNoDetail;
-  ClearStatusPage;
-
-  //CheckTableLock(False, True);
-  if (ReturnToCashSaleAfterPayment) then begin
-    ReturnToCashSaleAfterPayment := False;
-    PostMessage(formMain.Handle, WM_TOCASHSALE, 0, 0);
-  end;
-  LogMessage(ltPaymentTrace, '6' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.FormDestroy(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '7' + #9);
-  ClearAllOrderLines;
-  OLToPayList.Free;
-  OLToPayList := nil;
-
-  ClearVoidLines;
-  VoidList.Free;
-  VoidList := nil;
-
-  TLList.Free;
-  TLList := nil;
-  OneBillTLList.Free;
-  OneBillTLList := nil;
-
-  ClearAllSurcharges;
-  SurchargeList.Free;
-  SurchargeList := nil;
-  dm.qrOLsToPay.Active := False;
-
-  ComboFreeItems.Clear;
-  ComboFreeItems.Free;
-  ComboFreeItems := nil;
-  ClearTempItemList;
-  ClearUnInvoicedOls;
-
-  if Assigned(UnInvoicedOlsToPay) then
-  begin
-    UnInvoicedOlsToPay.Free;
-    UnInvoicedOlsToPay := nil;
-  end;
-
-  if Assigned(FDiscCalculator) then
-  begin
-    FDiscCalculator.Free;
-    FDiscCalculator := nil;
-  end;
-  SubsidyCalc.Free;
-  if Assigned(FAllCombos) then
-  begin
-    FAllCombos.Free;
-    FAllCombos := nil;
-  end;
-  ClearCDAMessage;
-
-  if AppDetails.wiGroupEnabled then
-    wiGroupPOSSrv.ClearPayment;
-
-  inherited;
-  LogMessage(ltPaymentTrace, '8' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.OLKeyStroke(Key: Char);
-begin
-  if txtToPay.Enabled then begin
-    //akm 12.5.1 - if nothing focused, focus qty field before typing char
-    if ((not txtQty.Focused) and (not txtToPay.Focused) and (VisibleWindow = vwToPay)) then begin
-      txtQty.SetFocus;
-      txtQty.SelectAll;
-    end;
-
-    Keybd_event(VkKeyScan(Key), 0, 0, 0);
-  end;
-end;
-{******************************************************************************}
-function TformPaymentTable.ValidateGoodySale: Boolean;
-const
-  GoodyValFail = 'ValidateTabPayment False/Goody - ';
-begin
-  LogMessage(ltPaymentVerbose, 'TformPaymentTable.ValidateGoodySale begin');
-  Result := False;
-
-  //Check goody discount account is only used if a goody discounted sale
-  if (not InGoodyDiscountedSale) and ((GlbAccount.AccountID > 0) and (GlbAccount.AccountID = AppDetails.GoodyDiscountAccountID)) then
-  begin
-    LogMessage(ltPaymentVerbose, GoodyValFail + sGoodyDiscAcctExclusiveToGoodyDiscSale);
-    ShowMsg(sGoodyDiscAcctExclusiveToGoodyDiscSale);
-    Exit;
-  end;
-
-  //Check goody discount account is used if a goody discount sale
-  if InGoodyDiscountedSale and (not ((GlbAccount.AccountID > 0) and (GlbAccount.AccountID = AppDetails.GoodyDiscountAccountID))) then
-  begin
-    LogMessage(ltPaymentVerbose, GoodyValFail + sGoodyDiscAcctRequiredForGoodyDiscSale);
-    ShowMsg(sGoodyDiscAcctRequiredForGoodyDiscSale);
-    Exit;
-  end;
-
-  //If in Goody Sale
-  if InGoodySale then
-  begin
-    //Check don't have an Event selected
-    if GlbEvent.EventID <> 0 then
-    begin
-      LogMessage(ltPaymentVerbose, GoodyValFail + sNoEventForGoodyScan);
-      ShowMsg(sNoEventForGoodyScan);
-      Exit;
-    end;
-
-    //If in Goody Discounted Sale
-    if InGoodyDiscountedSale then
-    begin
-      //check account discount equals Goody discount
-      RefreshGoodyAccountDiscountAmount;
-      if FDiscountAmount <> GlbGoody.TotalDiscount then
-      begin
-        LogMessage(ltPaymentVerbose, GoodyValFail + sGoodyDiscDiffersFromAcctDisc);
-        ShowMsg(sGoodyDiscDiffersFromAcctDisc);
-        Exit;
-      end;
-
-      //check total discount doesn't exceed limit
-      if FLimitMaximum and (FDiscountAmount > GlbAccount.MaxDiscount) then
-      begin
-        LogMessage(ltPaymentVerbose, GoodyValFail + Format(sGoodyDiscExceedsAcctLimit, [FormatCurrencySign(GlbAccount.MaxDiscount)]));
-        ShowMsg(Format(sGoodyDiscExceedsAcctLimit, [FormatCurrencySign(GlbAccount.MaxDiscount)]));
-        Exit;
-      end;
-    end;
-  end;
-
-  Result := True;
-  LogMessage(ltPaymentVerbose, 'TformPaymentTable.ValidateGoodySale end, Result = True');
-end;
-{*******************************************************************************
-Creates an invoice for the table
-*******************************************************************************}
-function TformPaymentTable.TryPaymentTable: Boolean;
-var
-  I: Integer;
-  SoFarComboDiscount, SoFarDiscount, ILDiscount: Currency;
-
-  BalanceDelta: Currency;
-  LibExists: Boolean;
-  NZAExists: Boolean;
-  EvolutionExists: Boolean;
-  FidelioExists: Boolean;
-  PhoenixExists: Boolean;
-  Micros4700Exists: Boolean;
-  RoomChargeExists: Boolean;
-  TheTenderID: Integer;
-
-  TheInvoiceID, TheInvoiceNo: Integer;
-  TheInvoiceDate: TDateTime;
-
-  OrderID: Integer;
-  TheGroupID: Integer;
-  GenTR: TIB_Transaction;
-  aOL, tmpOL: TOrderLine;
-  VOL: TVoidOL;
-  TL: TTL;
-  SurchargeItem: TSurchargeItem;
-  ClearPreAuthTxnRef: Boolean;
-  aTotalTender, PrepaidBalanceChange: Currency;
-  aPromoMessage, aNotes: string; // for fiscal printing
-  tmpItemGroup: TItemGroup;
-  FiscalTLList: TTLList;
-  TenderLine: TTenderLineType;
-  aTotalTip: Currency;
-  aUnit, aItemName, aQtyType, aRounding: string;
-  tmpList: TList;
-  aTax: string;
-  FiscalPaymentInitialized: Boolean;
-  NFEItem: TNFEItem;
-  aAmtCancelled: Currency;
-  aHash: string;
-  CupomCOO, aTEFReport: string;
-  TEFReportData: TStringList;
-  PrintOK: Boolean;
-  iOldTenderID, iRefundTenderID, iRefundInvoiceID: Integer;
-  OrgInvCOO, tmpTefFlag: string;
-  aQty: Currency;
-  aUnitPrice, aDiscount, NCMTax, TotalNCMTax: Currency;
-  TheSP: TIB_StoredProc;
-  TheTR: TIB_Transaction;
-  SPNumber: Integer;
-  extAccountsMsg: string;
-  MewsOrderId: string;
-begin
-  LogMessage(ltPaymentTrace, '181' + #9);
-  aTotalTender := 0;
-  aDiscount := 0;
-  TotalNCMTax := 0;
-  FiscalPaymentInitialized := False;
-  Result := False;
-  TL := nil;
-  BalanceDelta := 0.00;
-  TheTenderID := 0;
-
-  if (AppDetails.OrdersLockWait) then begin
-    SPNumber := 3;
-  end
-  else begin
-    SPNumber := 1;
-  end;
-
-  TheSP := dm.GetSP(SPNumber);
-  TheTR := dm.GetTR(SPNumber);
-  LogMessage(ltPaymentTrace, '182' + #9);
-
-  ClearPreAuthTxnRef := False;
-
-  SetStatus(sSaving);
-  GenTR := DM.qrGeneral.IB_Transaction;
-  dm.qrGeneral.IB_Transaction := TheTR;
-
-  SFiscalPrinting.FiscalOpTryAgainCommand := True;
-
-  SFiscalPrinting.SupressFiscalErrorMessage := False;
-  if SWBEncryption.AuxiliaryData.TEFDone = '1' then
-    SFiscalPrinting.SupressFiscalErrorMessage := True;
-
-  if ((TLList.Count > 0) and (not OnAccount)) then
-  begin
-    if ItemsSelectedManually or FSelectedItemsNotPaidFull then
-    begin
-      LogMessage(ltPaymentTrace, '183' + #9);
-      LoadUnInvoicedOlsToOLToPayList(TempItemList)
-    end
-    else
-    begin
-      LogMessage(ltPaymentTrace, '218' + #9);
-      AddAllOrderLines;
-    end;
-  end;
-
-  LogMessage(ltPaymentTrace, '184' + #9);
-  SetItemSelection;
-
-  LogMessage(ltPaymentTrace, '185' + #9);
-  CalculateToPay;
-
-  tmpList := TList.Create;
-  FiscalTLList := TTLList.Create;
-  try
-    LogMessage(ltPaymentTrace, '186' + #9);
-    GetAllSelectedOLs(tmpList);
-
-    LogMessage(ltPaymentTrace, '187' + #9);
-    CombineSameOls(tmpList);          //copies of OLs now in tmpList so need to free them
-
-    //Allocate and apply wiGroup tender line discounts to consolidated OL list.
-    //NB: Assumes no other discount is/will be applied to the selected order
-    //lines to pay, EnableFiscalPrinting = False, no Event selected (no subsidy),
-    //not used by a ROSS system, nor interfacing with other external parties
-    //(e.g. Fidelio, Phoenix, Micros, NZA, Evolution, ICR Touch).
-    if TLList.TenderTypeExists(TLTwiGroup) then
-    begin
-      if not (wiGroupPOSSrv.AllocateDiscount(tmpList) and wiGroupPOSSrv.ApplyDiscount(tmpList, FSalesTax)) then
-      begin
-        ShowMsg(Format(swiGroupDiscAllocError, [swiGroupTL]));
-        Exit;
-      end;
-    end;
-
-    //if there are tender lines, kick cash draw ASAP
-    if (TLList.OpenDrawerExists(not SurplusOnAccount)) or
-          ((AppDetails.PaymentAllowZeroPriceInvoices) and (AppDetails.PaymentZPIOpenCashDrawer) and (TLList.Count = 0)) then
-    begin
-      if not AppDetails.EnableFiscalPrinting then
-        KickCashDraw(GlbLogin.TillDriverName, GlbLogin.TillDrawKickString);
-    end;
-
-    // for Fiscal Printing - Open an Invoice in the Fiscal Printer
-    if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode))) then
-    begin
-      tmpTefFlag := SWBEncryption.AuxiliaryData.TEFDone;
-      SWBEncryption.AuxiliaryData.TEFDone := '0';
-      if (not SFiscalPrinting.OpenFiscalPrinterInvoice(FCPFNumber, GlbAccount.PerorgName, GlbAccount.PerorgAddress)) then
-      begin
-        SWBEncryption.AuxiliaryData.TEFDone := tmpTefFlag;
-        Exit;
-      end;
-      SFiscalPrinting.GetMovementDate;
-      SWBEncryption.GenerateEncryptedAuxFile;
-
-      SWBEncryption.AuxiliaryData.TEFDone := tmpTefFlag;
-      SFiscalPrinting.GetCOOForInvoice;
-      SFiscalPrinting.GetCCFForInvoice;
-    end;
-
-    TheGroupID := GlbTable.GroupID;
-    try
-      if (not dm.TRStartTest(SPNumber)) then begin
-        LogMessage(ltPaymentTrace, '188' + #9);
-        Exit;
-      end;
-
-      LogMessage(ltPaymentTrace, '189' + #9);
-      with TheSP do begin
-        if ((SurchargeList.Count > 0) and (FSurcharge > 0)) then begin
-          SetStoredProcName('INSERT_ORDER', SPNumber);
-
-          ParamByName('outletid').AsInteger := AppDetails.OutletID;
-          ParamByName('groupid').AsInteger := GlbTable.GroupID;
-          ParamByName('rush').AsInteger := 0;
-
-          ParamNull(ParamByName('location'));
-          ParamByName('loginid').AsInteger := GlbLogin.LoginID;
-          IntegerAsParam(ParamByName('salecategoryid'), GlbTable.SaleCategoryID);
-          ParamByName('tableno').AsInteger := GlbTable.TableNo;
-          ParamNull(ParamByName('originaltime'));
-          ParamNull(ParamByName('eatintakeaway'));
-          ParamNull(ParamByName('heldgroupid'));
-          ParamByName('CPFNumber').AsString := Trim(FCPFNumber);
-          ExecProc;
-          OrderID := FieldByName('orderid').AsInteger;
-
-          //Don't do stock decrement on a surcharge  ;)
-
-          for i := 0 to (SurchargeList.Count - 1) do begin
-            SurchargeItem := SurchargeList.Items[I];
-            if (SurchargeItem.Amount <> 0) then begin
-              //create order line
-              SetStoredProcName('INSERT_ORDERLINE', SPNumber);
-
-              ParamNull(ParamByName('courseid'));
-              ParamByName('qty').AsCurrency := 1;
-              ParamNull(ParamByName('notes'));
-              ParamByName('happyhour').AsInteger := 0;
-              ParamNull(ParamByName('positions'));
-              ParamNull(ParamByName('numpos'));
-              ParamByName('itemid').AsInteger := SurchargeItem.ItemID;
-              ParamByName('orderid').AsInteger := OrderID;
-              ParamNull(ParamByName('printerid'));
-              ParamNull(ParamByName('repeatprinterid'));
-              ParamByName('held').AsInteger := 0;
-              ParamByName('openprice').AsCurrency := SurchargeItem.Amount;
-              ParamNull(ParamByName('openpriceitemabbrev'));
-              ParamByName('pricelevel').AsInteger := 0;
-              ParamNull(ParamByName('currenthour'));
-              ParamNull(ParamByName('currentminute'));
-              ParamNull(ParamByName('currentday'));
-              ParamNull(ParamByName('orderlineorder'));
-
-              if AppDetails.EnableFiscalPrinting then
-              begin
-                SWBEncryption.Initialise;
-                SWBEncryption.AddInt(SurchargeItem.ItemID);
-                SWBEncryption.AddStr(SurchargeItem.ItemAbbrev);
-                SWBEncryption.AddStr('T');
-                SWBEncryption.AddStr(FloatToStr(SurchargeItem.SalesTaxPercent));
-                SWBEncryption.AddCurrency(1);
-                SWBEncryption.AddCurrency(SurchargeItem.Amount);
-                SWBEncryption.AddCurrency(1 * SurchargeItem.Amount);
-                SWBEncryption.AddCurrency(0);
-                aHash := SWBEncryption.GetHash;
-                ParamByName('Checksum').AsString := aHash;
-              end;
-
-              ExecProc;
-              SurchargeItem.OrderLineID := FieldByName('orderlineid').AsInteger;
-            end;
-          end;
-        end;
-
-        //create invoice record
-        SetStoredProcName('INSERT_INVOICE', SPNumber);
-
-        ParamByName('discountrate').AsCurrency := FDiscountPercent;
-        IntegerAsParam(ParamByName('accountid'), GlbAccount.AccountID);
-        ParamByName('outletid').AsInteger := AppDetails.OutletID;
-        ParamByName('groupid').AsInteger := GlbTable.GroupID;
-
-        //may be null from tables already open when Sale Categories introduced
-        IntegerAsParam(ParamByName('salecategoryid'), GlbTable.SaleCategoryID);
-
-        ParamNull(ParamByName('refundnote'));
-        ParamByName('invoicetype').AsString := 'I';
-        ParamByName('loginid').AsInteger := GlbLogin.LoginID;
-        ParamByName('salestax').AsCurrency := FSalesTax;
-        ParamNull(ParamByName('cashsaleorderid'));
-        StringAsParam(ParamByName('cpfnumber'), FCPFNumber);
-        IntegerAsParam(ParamByName('eventid'), GlbEvent.EventID);
-        aNotes := '';
-
-       // StringAsParam(ParamByName('REFERENCENO'), aZapaReferences);
-        StringAsParam(ParamByName('Notes'), aNotes);
-        StringAsParam(ParamByName('FiscalCOO'), SFiscalPrinting.COO);
-        StringAsParam(ParamByName('FiscalCCF'), SFiscalPrinting.CCF);
-
-        ExecProc;
-        if (not FieldByName('errorcode').IsNull) then begin
-          LogMessage(ltPaymentTrace, '190' + #9);
-          ShowErrorMsg(FieldByName('errorcode').AsInteger);
-          TheTr.Rollback;
-          if SFiscalPrinting.OpenedFiscalInvoice then
-            SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-
-          Exit;
-        end
-        else
-        begin
-          TheInvoiceID := FieldByName('invoiceid').AsInteger;
-          WBInvoices.RefreshID := TheInvoiceID;
-          TheInvoiceNo := FieldByName('InvoiceNo').AsInteger;
-          TheInvoiceDate := FieldByName('InvoiceDate').AsDateTime;
-
-          LogMessage(ltPaymentTrace, '616' + #9 + 'TheInvoiceID=' + IntToStr(TheInvoiceID) + ', TheInvoiceNo=' + IntToStr(TheInvoiceNo)
-            + ', TheInvoiceDate=' + FormatDateTime('dd-mm-yyyy hh:nn:ss.zzz', TheInvoiceDate));
-
-          //process External Accounts here
-          try
-            sExternalAccountIntegration.SPNumber := SPNumber;
-            if (sExternalAccountIntegration.ActionPresentedCards(TheInvoiceID, TheInvoiceNo, tmplist, SurchargeList, TLList)) then
-            begin
-              if (sExternalAccountIntegration.CanContinueSale) then
-              begin
-                //shall continue sale here as transaction to external accounts have been committed on their side, we just might not have a valid transaction number
-                extAccountsMsg := sExternalAccountIntegration.ValidateProcessedCards;
-                if ((extAccountsMsg <> '')) then
-                begin
-                  LogMessage(ltExternalAccounts, extAccountsMsg);
-                end;
-                //ShowQuickMsg(sExtAccountTransSUCCESSFUL);
-              end
-              else
-              begin
-                LogMessage(ltPaymentTrace, '191' + #9);
-                TheTr.Rollback;
-                Exit;
-              end;
-            end
-            else if (not sExternalAccountIntegration.CanContinueSale) then
-            begin
-              LogMessage(ltPaymentTrace, '192' + #9);
-              TheTr.Rollback;
-              Exit;
-            end;
-          except
-            LogMessage(ltPaymentTrace, '193' + #9);
-            ShowMsg('Un-expected External Accounts issue');
-            LogMessage(ltExternalAccounts, 'Un-expected External Accounts issue');
-            TheTr.Rollback;
-            Exit;
-          end;
-
-          if AppDetails.EnableFiscalPrinting then
-          begin
-            SetStoredProcName('UPDATEFISCALDETAILS', SPNumber);
-            ParamByName('MANUFACTURENO').AsString := GlbFiscal.ManufactureNo;
-            ParamByName('ECFMODEL').AsString := GlbFiscal.ECFModel;
-            ParamByName('ADDITIONALMF').AsString := GlbFiscal.MFAdditional;
-            ParamByName('THEID').AsInteger := TheInvoiceID;
-            ParamByName('TABLETYPE').AsInteger := Ord(fttInvoice); // INVOICE Table
-            ParamByName('FISCALSEQNO').AsInteger := AppDetails.FiscalPrinterSeqNo;
-            ParamByName('MANUALSERIES').AsString := '';
-            ParamByName('MANUALSUBSERIES').AsString := '';
-            ParamByName('FISCALINVNO').AsString := '';
-            if NFManual then
-            begin
-              ParamByName('MANUFACTURENO').AsString := '';
-              ParamByName('ECFMODEL').AsString := '';
-              ParamByName('ADDITIONALMF').AsString := '';
-              ParamByName('MANUALSERIES').AsString := FManualSeries;
-              ParamByName('MANUALSUBSERIES').AsString := FManualSubSeries;
-              ParamByName('FISCALINVNO').AsString := FManualInvNo;
-            end;
-
-            ParamByName('FISCALINVTYPE').AsString := '2D';
-            if NFManual then
-              ParamByName('FISCALINVTYPE').AsString := '02'
-            else if NFEMode then
-              ParamByName('FISCALINVTYPE').AsString := '55';
-
-            Execute;
-
-            if (TheInvoiceID > 0) then
-            begin
-              SetStoredProcName('UPDATEVOIDLNINVOICEID', SPNumber);
-              ParamByName('pinvoiceid').AsInteger := TheInvoiceID;
-              ParamByName('pgroupid').AsInteger := GlbTable.GroupID;
-              ExecProc;
-            end;
-          end;
-
-          //if a Goody invoice, save details
-          if InGoodySale then
-          begin
-            SetStoredProcName('UPDATEGOODYINVOICEDETAILS', SPNumber);
-            ParamByName('INVOICEID').AsInteger := TheInvoiceID;
-            ParamByName('CUSTOMERID').AsString := GlbGoody.CustomerID;
-            ParamByName('DISCOUNTAMOUNTS').AsString := GlbGoody.DiscountAmounts.CommaText;
-            ExecSQL;
-          end;
-        end;
-
-        //create invoice lines
-        SoFarDiscount := 0.000;
-        SoFarComboDiscount := 0;
-
-        for I := 0 to (tmpList.Count - 1) do
-        begin
-          aOL := tmpList.Items[I];
-          // no combo or combos resetted due to 100 % account discount
-          if ((FDiscountPercent = 100) and (not FUseDiscountAmount) and (not FUseItemDiscounts) and (not FUseDiscountPeriods) and (aOL.ComboID <= 0)) then
-          begin
-            with DM.qrGeneral do
-            begin
-              Close;
-              SQL.Clear;
-              SQL.Add('UPDATE ORDLN SET COMBOID = null, COMBOGROUP = null, COMBOINDEX = null, COMBOQTY = null');
-              SQL.Add(' WHERE ORDERLINEID = :orderlineid ');
-              ParamByName('orderlineid').AsInteger := aOL.OrderLineID;
-              ExecSQL;
-            end;
-          end;
-
-          if ((aOL.ToPay > aOL.LoyaltyFreeDiscount) or (aOL.LoyaltyFreeQty <= 0) or (LoyaltyReward.LoyaltyRewardID <= 0) or (LoyaltyReward.RewardOffer <> roItem)) then
-          begin
-            SetStoredProcName('INSERT_INVOICELINE', SPNumber);   //insert_invoiceline
-            ParamByName('invoiceid').AsInteger := TheInvoiceID;
-            ParamByName('orderlineid').AsInteger := aOL.OrderLineID;
-
-            aOL.ILAmount := GetRoundedUpDown(aOL.ToPay - aOL.LoyaltyFreeDiscount, AppDetails.DecimalPlaces);
-            ParamByName('ilamount').AsCurrency := aOL.ILAmount;
-
-            //NB: if wiGroup TLs exist, don't enter this loop, as aOL.ILDiscount has already been set above
-            if IsNormalLoyalty and (not TLList.TenderTypeExists(TLTwiGroup)) and (not sExternalAccountIntegration.OverrideDiscount) then
-            begin
-              if aOL.ComboID > 0 then
-              begin
-                if aOL.LastComboItem then
-                begin
-                  ILDiscount := FComboDiscount - SoFarComboDiscount;
-                end
-                else
-                begin
-                  ILDiscount := aOL.AllowedDiscount;
-                end;
-
-                ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-                SoFarComboDiscount := SoFarComboDiscount + ILDiscount;
-                SoFarComboDiscount := GetRoundedUpDown(SoFarComboDiscount, AppDetails.DecimalPlaces);
-              end
-              else
-              begin
-                //if it's the last line, allocate whatever hasn't been pro rata-ed
-                if aOL.LastNormalItem then
-                  ILDiscount := FDiscountAmount - aOL.LoyaltyFreeDiscount - SoFarDiscount
-                else
-                begin              //pro rata discount and accumulate discount pro rata-ed so far
-                  if ((AppDetails.EnableFiscalPrinting) and (FUseDiscountAmount) and (aOL.ILAmount = aOL.AllowedDiscount)) then
-                  begin
-                    aOL.AllowedDiscount := ((aOL.ILAmount * (FDiscountAmount- aOL.LoyaltyFreeDiscount)) / FToPay);
-                    ILDiscount := aOL.AllowedDiscount;
-                  end
-                  else
-                    ILDiscount := aOL.AllowedDiscount - aOL.LoyaltyFreeDiscount;
-
-                  ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-                  SoFarDiscount := SoFarDiscount + ILDiscount;
-                  SoFarDiscount := GetRoundedUpDown(SoFarDiscount, AppDetails.DecimalPlaces);
-                end;
-              end;
-
-              ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-              aOL.ILDiscount := ILDiscount;
-            end;
-
-            ParamByName('discountamount').AsCurrency := aOL.ILDiscount;
-            if (aOL.DiscountSchemeID > 0) then
-              IntegerAsParam(ParamByName('discountschemeid'), aOL.DiscountSchemeID)
-            else IntegerAsParam(ParamByName('discountschemeid'), GlbAccount.DiscountSchemeID);
-
-            if (AppDetails.TaxExclusivePrices) then begin
-              BalanceDelta := BalanceDelta + GetRoundedUpDown(((aOL.ILAmount - aOL.ILDiscount) * (100 + aOL.SalesTaxPercent)) / 100, AppDetails.DecimalPlaces);
-            end
-            else begin
-              BalanceDelta := BalanceDelta + GetRoundedUpDown(aOL.ILAmount - aOL.ILDiscount, AppDetails.DecimalPlaces);
-            end;
-            // for Fiscal Printing - Open an Invoice in the Fiscal Printer
-            if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode))) then
-            begin
-              if (not aOL.WeighedItem) then
-              begin
-                aUnit := 'UN';
-                aQtyType := 'I';
-              end
-              else
-              begin
-                aUnit := 'KG';              //0 = in Kilos 1 - in 10gm, 2 - in gm
-                aQtyType := 'F';
-              end;
-
-              if ((aOL.Qty > 0) and (aOL.UnitPrice > 0) and (aOL.ItemID > 0)) then
-              begin
-                if aOL.OrderLineID > 0 then
-                begin
-                  with DM.qrGeneral do
-                  begin
-                    Close;
-                    SQL.Clear;
-                    SQL.Add('SELECT MODTEXT FROM GETALLMODIFIERTEXT(:orderlineid, :onlypriced)');
-                    ParamByName('orderlineid').AsInteger := aOL.OrderLineID;
-                    ParamNull(ParamByName('onlypriced'));
-                    Active := True;
-                  end;
-                  aItemName := Trim(Copy(aOL.ItemString, 1, 29));
-
-                  if not DM.qrGeneral.Eof then
-                  begin
-                    if Trim(DM.qrGeneral.FieldByName('ModText').AsString) <> '' then
-                    begin
-                      if AppDetails.FiscalPrinterType in [fpBematech, fpBematechNFC] then
-                      begin
-                        aItemName := Trim(Copy(aOL.ItemString, 1, 20)) + ':' + Trim(Copy(DM.qrGeneral.FieldByName('ModText').AsString, 1, 179));
-                        SFiscalPrinting.ExtendItemDescription(aItemName);
-                        aItemName := Trim(Copy(aOL.ItemString, 1, 29));
-                      end
-                      else if AppDetails.FiscalPrinterType = fpDaruma then
-                        aItemName := Trim(Copy(aOL.ItemString, 1, 30)) + ':' + Trim(Copy(DM.qrGeneral.FieldByName('ModText').AsString, 1, 200));
-
-                      {if aOL.ModPrice > 0 then
-                        ChangeInvoiceItemDiscount(IntToStr(i+1), 'A', '$', FormatFloat('################0.00', aOL.ModPrice));}
-                    end;
-                  end;
-                end;
-                if Trim(aOL.TaxSituation) = '' then
-                  aOL.TaxSituation := 'T';
-                if AppDetails.FiscalPrinterType in [fpBematech, fpBematechNFC] then
-                begin
-                  if aOL.TaxSituation = 'T' then
-                    aTax := SFiscalPrinting.GetFiscalTaxIndex(aOL.SalesTaxPercent, 0)
-                  else if aOL.TaxSituation = 'S' then
-                    aTax := SFiscalPrinting.GetFiscalTaxIndex(aOL.SalesTaxPercent, 1)
-                  else
-                    aTax := aOL.TaxSituation;
-                end
-                else if AppDetails.FiscalPrinterType = fpDaruma then
-                begin
-                  if aOL.TaxSituation = 'T' then
-                    aTax := 'I' + FormatFloat('###########0000', (aOL.SalesTaxPercent * 100))
-                  else if aOL.TaxSituation = 'S' then
-                    aTax := 'S' + FormatFloat('###########0000', (aOL.SalesTaxPercent * 100))
-                  else if ((aOL.TaxSituation = 'II') or (aOL.TaxSituation = 'NN') or (aOL.TaxSituation = 'FF')) then
-                    aTax := aOL.TaxSituation
-                  else if aOL.TaxSituation = 'SI' then
-                    aTax := 'ISS'
-                  else if aOL.TaxSituation = 'SN' then
-                    aTax := 'NS'
-                  else if aOL.TaxSituation = 'SF' then
-                    aTax := 'FS';
-                end;
-
-                if AppDetails.TruncateAmount = 1 then
-                begin
-                  aQty := TruncateTo(aOL.Qty, 3);
-                  aUnitPrice := TruncateTo(aOL.UnitPrice, 3);
-                  aDiscount := TruncateTo(aOL.ILDiscount, 2);
-                  aRounding := 'T';
-                end
-                else
-                begin
-                  aQty := CRoundTo(aOL.Qty, 4);
-                  aUnitPrice := CRoundTo(aOL.UnitPrice, 3);
-                  aDiscount := CRoundTo(aOL.ILDiscount, 2);
-                  aRounding := 'A';
-                end;
-
-                if (AppDetails.FiscalPrinterType = fpBematechNFC)then
-                begin
-                  NCMTax := SFiscalPrinting.GetNCMTax(aOL.NCMProductCode, aOL.CSOSN, aOL.ToPay);
-                  TotalNCMTax := TotalNCMTax + NCMTax;
-                  if not SFiscalPrinting.AddFiscalPrinterNFCInvoiceItems(aOL.ItemID, aOL.GTIN, aItemName,
-                      '01', aTax, aUnit, aQtyType, '3', aQty, '3', aUnitPrice, '$', '0', aDiscount,
-                      aRounding, aOL.NCMProductCode, IntToStr(aOL.CFOP), aOL.Notes, aOL.CSTICMS, IntToStr(aOL.ProductOrigin), '', '', '', '',
-                      '', aOL.CSOSN, '', '', '', '', '', '', '', '',
-                      '', '', '', '', '', '', FormatFloat(PRICEFORMAT,NCMTax), aOL.CST_PIS, '', '',
-                      '', '', '', aOL.CST_COFFINS, '', '', '', '', '', aOL.CEST) then
-                  begin
-                    LogMessage(ltPaymentTrace, '194' + #9);
-                    TheTr.Rollback;
-                    if SFiscalPrinting.OpenedFiscalInvoice then
-                      SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-                    Result := False;
-                    Exit;
-                  end;
-                end
-                else if not SFiscalPrinting.AddFiscalPrinterInvoiceItems(aOL.ItemID, aItemName, aTax, aQty, aUnit, aUnitPrice, aDiscount) then
-                begin
-                  LogMessage(ltPaymentTrace, '195' + #9);
-                  TheTR.Rollback;
-                  if SFiscalPrinting.OpenedFiscalInvoice then
-                    SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-                  Result := False;
-                  Exit;
-                end;
-                LogMessage(ltFiscal, 'Printed item '+ aItemName);
-              end;
-            end;
-            ParamByName('FISCALSEQNO').AsString := SFiscalPrinting.FiscalItemIndex;
-            if AppDetails.EnableFiscalPrinting then
-            begin
-              aAmtCancelled := 0;
-              with dm.qr do
-              begin
-                Close;
-                SQL.Clear;
-                SQL.Add('SELECT p.ITEMID, p.ITEMABBREV, p.QTY, p.UNITPRICE, p.TOTAL, p.AMOUNTCANCELLED, p.qtycancelled from GETFISCALORDERLINEAMOUNT (:orderlineid) p ');
-                ParamByName('orderlineid').AsInteger := aOL.OrderLineID;
-                Active := True;
-                if not Eof then
-                  aAmtCancelled := FieldByName('AMOUNTCANCELLED').AsFloat;
-              end;
-
-              SWBEncryption.Initialise;
-              SWBEncryption.AddStr(GlbFiscal.ManufactureNo);
-              SWBEncryption.AddStr(SFiscalPrinting.COO);
-              SWBEncryption.AddStr(SFiscalPrinting.CCF);
-              SWBEncryption.AddInt(aOL.ItemID);
-              SWBEncryption.AddStr(aOL.ItemString);
-              SWBEncryption.AddStr(aOL.TaxSituation);
-              SWBEncryption.AddStr(FloatToStr(aOL.SalesTaxPercent));
-              SWBEncryption.AddCurrency(aOL.Qty);
-              SWBEncryption.AddCurrency(aOL.UnitPrice);
-              SWBEncryption.AddCurrency(ParamByName('ilamount').AsFloat-ParamByName('discountamount').AsFloat);
-              SWBEncryption.AddCurrency(aAmtCancelled);
-              aHash := SWBEncryption.GetHash;
-
-              ParamByName('CHECKSUM').AsString := aHash;
-              ParamByName('FISCALTAX').Asinteger := 1;
-
-              SWBEncryption.Initialise;
-              SWBEncryption.AddInt(aOL.ItemID);
-              SWBEncryption.AddStr(aOL.ItemString);
-              SWBEncryption.AddCurrency(aOL.Qty);
-              SWBEncryption.AddCurrency(aOL.UnitPrice);
-              SWBEncryption.AddCurrency(aOL.Qty * aOL.UnitPrice);
-              SWBEncryption.AddCurrency(aAmtCancelled);
-              aHash := SWBEncryption.GetHash;
-              SFiscalPrinting.UpdateOrderLineChecksumToDb(aHash, aOL.OrderLineID);
-            end;
-
-            ExecProc;
-            aOL.InvoiceLineID := FieldByName('INVOICELINEID').AsInteger;
-
-            if (AppDetails.FiscalType = fiscalTaxCore) then
-            begin
-              SetStoredProcName('INSERT_INVOICELINETAXCORE', SPNumber);
-              ParamByName('invoicelineid').AsInteger := aOL.InvoiceLineID;
-              StringAsParam(ParamByName('taxlabel'), aOL.TaxCoreLabel);
-              ExecProc;
-            end;
-          end;
-
-          if ((aOL.LoyaltyItemID > 0) and (aOL.LoyaltyFreeQty > 0) and (aOL.LoyaltyFreeDiscount > 0)) then
-          begin
-            SetStoredProcName('INSERT_INVOICELINE', SPNumber);
-            ParamByName('invoiceid').AsInteger := TheInvoiceID;
-            ParamByName('orderlineid').AsInteger := aOL.OrderLineID;
-
-            aOL.ILAmount := aOL.LoyaltyFreeDiscount;
-            ParamByName('ilamount').AsCurrency := aOL.ILAmount;
-
-            aOL.ILDiscount := aOL.LoyaltyFreeDiscount;
-            ParamByName('discountamount').AsCurrency := aOL.ILDiscount;
-            ParamNull(ParamByName('discountschemeid'));
-            ParamByName('FISCALSEQNO').AsString := '';
-            SoFarDiscount := SoFarDiscount + aOL.ILDiscount;
-            // for Fiscal Printing - Open an Invoice in the Fiscal Printer
-            if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode))) then
-            begin
-              if (not aOL.WeighedItem) then
-              begin
-                aUnit := 'UN';
-                aQtyType := 'I';
-              end
-              else
-              begin
-                aUnit := 'KG';
-                aQtyType := 'F';                      //0 = in Kilos 1 - in 10gm, 2 - in gm
-              end;
-
-              if Trim(aOL.TaxSituation) = '' then
-                aOL.TaxSituation := 'T';
-
-              if AppDetails.FiscalPrinterType in [fpBematech, fpBematechNFC] then
-              begin
-                if aOL.TaxSituation = 'T' then
-                  aTax := SFiscalPrinting.GetFiscalTaxIndex(aOL.SalesTaxPercent, 0)
-                else if aOL.TaxSituation = 'S' then
-                  aTax := SFiscalPrinting.GetFiscalTaxIndex(aOL.SalesTaxPercent, 1)
-                else
-                  aTax := aOL.TaxSituation;
-              end
-              else if AppDetails.FiscalPrinterType = fpDaruma then
-              begin
-                if aOL.TaxSituation = 'T' then
-                  aTax := 'I' + FormatFloat('###########0000', (aOL.SalesTaxPercent * 100))
-                else if aOL.TaxSituation = 'S' then
-                  aTax := 'S' + FormatFloat('###########0000', (aOL.SalesTaxPercent * 100))
-                else if ((aOL.TaxSituation = 'II') or (aOL.TaxSituation = 'NN') or (aOL.TaxSituation = 'FF')) then
-                  aTax := aOL.TaxSituation
-                else if aOL.TaxSituation = 'SI' then
-                  aTax := 'ISS'
-                else if aOL.TaxSituation = 'SN' then
-                  aTax := 'NS'
-                else if aOL.TaxSituation = 'SF' then
-                  aTax := 'FS';
-              end;
-
-              if AppDetails.TruncateAmount = 1 then
-              begin
-                aQty := TruncateTo(aOL.Qty, 3);
-                aUnitPrice := TruncateTo(aOL.UnitPrice, 3);
-                aDiscount := TruncateTo(aOL.ILDiscount, 2);
-                aRounding := 'T';
-              end
-              else
-              begin
-                aQty := CRoundTo(aOL.Qty, 4);
-                aUnitPrice := CRoundTo(aOL.UnitPrice, 3);
-                aDiscount := CRoundTo(aOL.ILDiscount, 2);
-                aRounding := 'A';
-              end;
-
-              if ((aOL.Qty > 0) and (aOL.UnitPrice > 0) and (aOL.ItemID > 0)) then
-              begin
-                if (AppDetails.FiscalPrinterType = fpBematechNFC)then
-                begin
-                  NCMTax := SFiscalPrinting.GetNCMTax(aOL.NCMProductCode, aOL.CSOSN, aOL.ToPay);
-                  TotalNCMTax := TotalNCMTax + NCMTax;
-                  if not SFiscalPrinting.AddFiscalPrinterNFCInvoiceItems(aOL.ItemID, aOL.GTIN, aItemName,
-                      '01', aTax, aUnit, aQtyType, '3', aQty, '3', aUnitPrice, '$', '0', aDiscount,
-                      aRounding, aOL.NCMProductCode, IntToStr(aOL.CFOP), aOL.Notes, aOL.CSTICMS, IntToStr(aOL.ProductOrigin), '', '', '', '',
-                      '', aOL.CSOSN, '', '', '', '', '', '', '', '',
-                      '', '', '', '', '', '', FormatFloat(PRICEFORMAT,NCMTax), aOL.CST_PIS, '', '',
-                      '', '', '', aOL.CST_COFFINS, '', '', '', '', '', aOL.CEST) then
-                  begin
-                    LogMessage(ltPaymentTrace, '196' + #9);
-                    TheTR.Rollback;
-                    if SFiscalPrinting.OpenedFiscalInvoice then
-                      SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-                    Result := False;
-                    Exit;
-                  end;
-                end
-                else if not SFiscalPrinting.AddFiscalPrinterInvoiceItems(aOL.ItemID, Copy(aOL.ItemString, 1, 29), aTax, aQty, aUnit, aUnitPrice, aDiscount) then
-                begin
-                  LogMessage(ltPaymentTrace, '197' + #9);
-                  TheTr.Rollback;
-                  if SFiscalPrinting.OpenedFiscalInvoice then
-                    SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-                  Result := False;
-                  Exit;
-                end;
-              end;
-            end;
-
-            if AppDetails.EnableFiscalPrinting then
-            begin
-              SWBEncryption.Initialise;
-              SWBEncryption.AddStr(GlbFiscal.ManufactureNo);
-              SWBEncryption.AddStr(SFiscalPrinting.COO);
-              SWBEncryption.AddStr(SFiscalPrinting.CCF);
-              SWBEncryption.AddInt(aOL.ItemID);
-              SWBEncryption.AddStr(aOL.ItemString);
-              SWBEncryption.AddStr(aOL.TaxSituation);
-              SWBEncryption.AddStr(FloatToStr(aOL.SalesTaxPercent));
-              SWBEncryption.AddCurrency(aOL.Qty);
-              SWBEncryption.AddCurrency(aOL.UnitPrice);
-              SWBEncryption.AddCurrency(ParamByName('ilamount').AsFloat-ParamByName('discountamount').AsFloat);
-              SWBEncryption.AddCurrency(0);
-              aHash := SWBEncryption.GetHash;
-
-              ParamByName('CHECKSUM').AsString := aHash;
-              ParamByName('FISCALTAX').Asinteger := 1;
-            end;
-
-            ExecProc;
-            aOL.InvoiceLineID := FieldByName('INVOICELINEID').AsInteger;
-
-            if (AppDetails.FiscalType = fiscalTaxCore) then
-            begin
-              SetStoredProcName('INSERT_INVOICELINETAXCORE', SPNumber);
-              ParamByName('invoicelineid').AsInteger := aOL.InvoiceLineID;
-              StringAsParam(ParamByName('taxlabel'), aOL.TaxCoreLabel);
-              ExecProc;
-            end;
-          end;
-        end;
-
-        //create invoice lines for surcharges
-        for i := 0 to (SurchargeList.Count - 1) do begin
-          if (TSurchargeItem(SurchargeList[I]).Amount <> 0) then begin
-            SetStoredProcName('INSERT_INVOICELINE', SPNumber);
-            ParamByName('ilamount').AsCurrency := GetRoundedUpDown(TSurchargeItem(SurchargeList[i]).Amount, AppDetails.DecimalPlaces);
-            ParamByName('discountamount').AsCurrency := TSurchargeItem(SurchargeList[i]).Discount;
-            ParamByName('invoiceid').AsInteger := TheInvoiceID;
-            ParamByName('orderlineid').AsInteger := TSurchargeItem(SurchargeList[i]).OrderLineID;
-            ParamNull(ParamByName('discountschemeid'));
-            ParamByName('FISCALSEQNO').AsString := '';
-            if AppDetails.EnableFiscalPrinting then
-              ParamByName('FISCALTAX').Asinteger := 1;
-            //AM 23Dec99 Account Balance
-            if (AppDetails.TaxExclusivePrices) then begin   //Jon 18-03-2002
-              BalanceDelta := BalanceDelta + GetRoundedUpDown((TSurchargeItem(SurchargeList[i]).Amount * (100 + TSurchargeItem(SurchargeList[i]).SalesTaxPercent)) / 100, AppDetails.DecimalPlaces);
-            end
-            else begin
-              BalanceDelta := BalanceDelta + GetRoundedUpDown(TSurchargeItem(SurchargeList[i]).Amount, AppDetails.DecimalPlaces);
-            end;
-
-            if AppDetails.EnableFiscalPrinting then
-            begin
-              SWBEncryption.Initialise;
-              SWBEncryption.AddStr(GlbFiscal.ManufactureNo);
-              SWBEncryption.AddStr(SFiscalPrinting.COO);
-              SWBEncryption.AddStr(SFiscalPrinting.CCF);
-              SWBEncryption.AddInt(TSurchargeItem(SurchargeList[i]).ItemID);
-              SWBEncryption.AddStr(TSurchargeItem(SurchargeList[i]).ItemAbbrev);
-              SWBEncryption.AddStr('T');
-              SWBEncryption.AddStr(FloatToStr(TSurchargeItem(SurchargeList[i]).SalesTaxPercent));
-              SWBEncryption.AddCurrency(1);
-              SWBEncryption.AddCurrency(TSurchargeItem(SurchargeList[i]).Amount);
-              SWBEncryption.AddCurrency(TSurchargeItem(SurchargeList[i]).Amount);
-              SWBEncryption.AddCurrency(0);
-              aHash := SWBEncryption.GetHash;
-              ParamByName('CHECKSUM').AsString := aHash;
-            end;
-            ExecProc;
-            TSurchargeItem(SurchargeList[i]).InvoiceLineID := FieldByName('INVOICELINEID').AsInteger;
-
-            if (AppDetails.FiscalType = fiscalTaxCore) then
-            begin
-              SetStoredProcName('INSERT_INVOICELINETAXCORE', SPNumber);
-              ParamByName('invoicelineid').AsInteger := TSurchargeItem(SurchargeList[i]).InvoiceLineID;
-              tmpItemGroup := GlobalMenuList.GetItemsItemGroup( TSurchargeItem(SurchargeList[i]).ItemID);
-              if (Assigned(tmpItemGroup)) then
-                StringAsParam(ParamByName('taxlabel'), tmpItemGroup.TaxCoreLabel)
-              else
-                ParamNull(ParamByName('taxlabel'));
-              ExecProc;
-            end;
-
-          end;
-        end;
-
-        //create tender record ONLY if there are tender lines
-        if ((TLList.Count > 0) and (not TLList.TenderTypeExistsOnly(TLTNone))) then
-        begin
-          PrepaidBalanceChange := 0.00;
-          SetStoredProcName('INSERT_TENDER', SPNumber);
-          ParamByName('tendertype').AsString := 'P';
-
-          IntegerAsParam(ParamByName('accountid'), GlbAccount.AccountID);
-          ParamByName('groupid').AsInteger := GlbTable.GroupID;
-
-          ParamByName('invoiceid').AsInteger := TheInvoiceID;
-          ParamNull(ParamByName('nosaletypeid'));
-          ParamNull(ParamByName('nosalenotes'));
-          // ParamByName('printed').AsInteger := 1;
-
-          BoolAsParam(ParamByName('printed'), AppDetails.PrintReceipt);
-          ParamByName('loginid').AsInteger := GlbLogin.LoginID;
-
-          LibExists := ((AppDetails.PMSType = pmsLibica) and (TenderTypeExists(TLTLibica)));
-          StringAsParamIfBool(ParamByName('libaccount'), LibAccount, LibExists);   //Jon 03-10-2002
-          StringAsParamIfBool(ParamByName('libroom'), LibRoom, LibExists);         //Jon 03-10-2002
-          StringAsParamIfBool(ParamByName('libname'), LibName, LibExists);         //Jon 03-10-2002
-          StringAsParamIfBool(ParamByName('libstatus'), LibStatus, LibExists);     //Jon 03-10-2002
-
-          NZAExists := ((AppDetails.PMSType = pmsNZAGold) and (TenderTypeExists(TLTNZAGold)));
-          IntegerAsParamIfBool(ParamByName('nzaaccount'), NZAAccount, NZAExists);       //Jon 01-02-2003
-          StringAsParamIfBool(ParamByName('nzaakey'), NZAAkey, NZAExists);              //Jon 01-02-2003
-          StringAsParamIfBool(ParamByName('nzaname'), Copy(NZAName, 1, 30), NZAExists); //Jon 01-02-2003
-
-          EvolutionExists := ((AppDetails.PMSType = pmsEvolution) and (TenderTypeExists(TLTEvolution)));
-          IntegerAsParamIfBool(ParamByName('evolutionaccountno'), EvolutionAccountNo, EvolutionExists);
-          StringAsParamIfBool(ParamByName('evolutionaccount'), Copy(EvolutionAccount, 1, 30), EvolutionExists);
-          StringAsParamIfBool(ParamByName('evolutionname'), Copy(EvolutionName, 1, 60), EvolutionExists);
-          if ((EvolutionExists) and (AppDetails.EvolutionAccExtraField <> '')) then begin
-            if (AppDetails.EvolutionAccExtraFieldSortInt) then begin
-              IntegerAsParam(ParamByName('nzaaccount'), StrToIntDef(EvolutionAccExtra, 0));  //Jon 06-06-2008
-            end
-            else begin
-              StringAsParam(ParamByName('nzaname'), Copy(EvolutionAccExtra, 1, 30));         //Jon 06-06-2008
-            end;
-          end;
-
-          FidelioExists := ((AppDetails.PMSType = pmsFidelio) and (TenderTypeExists(TLTFidelio)));
-          PhoenixExists := ((AppDetails.PMSType = pmsPhoenix) and (TenderTypeExists(TLTPhoenix)));
-          Micros4700Exists := ((AppDetails.PMSType = pmsMicros4700) and ((TenderTypeExists(TLTMicros4700)) or (TenderTypeExists(TLTMicros4700Account))));
-          RoomChargeExists := (TenderTypeExists(TLTRoomCharge));
-
-          if (PhoenixExists) then begin
-            ParamByName('fidelioguestnumber').AsInteger := GlbPhoenixAccount.GuestNumber;
-            ParamByName('fidelioroomnumber').AsString := GlbPhoenixAccount.RoomNumber;
-            ParamByName('fidelioguestname').AsString := GlbPhoenixAccount.GuestName;
-          end
-          else if (Micros4700Exists) then begin
-            ParamNull(ParamByName('fidelioguestnumber'));
-            ParamByName('fidelioroomnumber').AsString := GlbMicros4700Account.RoomNumber;
-            ParamByName('fidelioguestname').AsString := GlbMicros4700Account.SubFolio;
-          end
-          else if RoomChargeExists then
-          begin
-            if (AppDetails.PMSType = pmsICRTouch) then
-            begin
-              IntegerAsParam(ParamByName('fidelioguestnumber'), GlbICRTouchFolio.FolioNumber);
-              StringAsParam(ParamByName('fidelioroomnumber'), GlbICRTouchFolio.RoomNumber);
-              StringAsParam(ParamByName('fidelioguestname'), GlbICRTouchFolio.DisplayName);
-            end
-            else
-            begin
-              IntegerAsParam(ParamByName('fidelioguestnumber'), GlbTable.FidelioGuestNumber);
-              StringAsParam(ParamByName('fidelioroomnumber'), GlbTable.FidelioRoomNumber);
-              StringAsParam(ParamByName('fidelioguestname'), GlbTable.FidelioGuestName);
-            end;
-          end
-          else
-          begin
-            IntegerAsParamIfBool(ParamByName('fidelioguestnumber'), GlbFidelioAccount.GuestNumber, FidelioExists);
-            StringAsParamIfBool(ParamByName('fidelioroomnumber'), GlbFidelioAccount.RoomNumber, FidelioExists);
-            StringAsParamIfBool(ParamByName('fidelioguestname'), GlbFidelioAccount.GuestName, FidelioExists);
-          end;
-
-          // for Fiscal Printing - Open an Invoice in the Fiscal Printer
-          if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode))) then
-          begin
-            aTotalTip := 0;
-            FCreditCardDiscount := 0;
-            //Calculate total tip amount and add this as an item to the fiscal printer
-            for I := 0 to (TLList.Count - 1) do
-            begin
-              TL := TLList.Items[I];
-              if (TL.TLTender > 0) then
-              begin
-                aTotalTip := aTotalTip + TL.TLTip;
-                FCreditCardDiscount := FCreditCardDiscount + TL.TEFCreditCardDiscount;
-              end;
-            end;
-            if FCreditCardDiscount > 0 then
-            begin
-              PrintOK := SFiscalPrinting.OpenFiscalPrinterPayment('D', '$', FCreditCardDiscount);
-            end
-            else
-            begin
-              if (AppDetails.TipsAsChange) then
-                PrintOK := SFiscalPrinting.OpenFiscalPrinterPayment('A', '$', 0)     //dont send value of tip thus extra amount tendered is seen as change in fiscal printer
-              else
-                PrintOK := SFiscalPrinting.OpenFiscalPrinterPayment('A', '$', aTotalTip);
-            end;
-
-            if not PrintOK then
-            begin
-              LogMessage(ltPaymentTrace, '198' + #9);
-              TheTR.Rollback;
-              if SFiscalPrinting.OpenedFiscalInvoice then
-                SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-              Result := False;
-              Exit;
-            end;
-            LogMessage(ltFiscal, 'Opened fiscal invoice payment');
-            FiscalPaymentInitialized := True;
-          end;
-          ParamByName('COO').AsString := SFiscalPrinting.COO;
-          ParamByName('GNF').AsString := '';
-
-          SWBEncryption.Initialise;
-          SWBEncryption.AddStr(GlbFiscal.ManufactureNo);
-          SWBEncryption.AddStr(SFiscalPrinting.COO);
-          SWBEncryption.AddStr(SFiscalPrinting.CCF); //CCF
-          SWBEncryption.AddStr(''); // CDC
-          SWBEncryption.AddStr(''); // GNF
-          aHash := SWBEncryption.GetHash;
-          ParamByName('CHECKSUM').AsString := aHash;
-          IntegerAsParam(ParamByName('eventid'), GlbEvent.EventID);
-          ExecProc;
-          WBReceipts.RefreshID := FieldByName('tenderid').AsInteger;
-          TheTenderID := WBReceipts.RefreshID;
-
-          if (AppDetails.EnableFiscalPrinting) then
-          begin
-            SetStoredProcName('UPDATEFISCALDETAILS', SPNumber);
-            ParamByName('MANUFACTURENO').AsString := GlbFiscal.ManufactureNo;
-            ParamByName('ECFMODEL').AsString := GlbFiscal.ECFModel;
-            ParamByName('ADDITIONALMF').AsString := GlbFiscal.MFAdditional;
-            ParamByName('THEID').AsInteger := TheTenderID;
-            ParamByName('TABLETYPE').AsInteger := Ord(fttTender); // tender Table
-            ParamByName('FISCALSEQNO').AsInteger := AppDetails.FiscalPrinterSeqNo;
-            ParamByName('MANUALSERIES').AsString := '';
-            ParamByName('MANUALSUBSERIES').AsString := '';
-            ParamByName('FISCALINVNO').AsString := '';
-            ParamByName('FISCALINVTYPE').AsString := '';
-            Execute;
-          end;
-          //create tender lines
-          FiscalTLList.Copy(TLList);
-
-          for I := 0 to (TLList.Count - 1) do
-          begin
-            TL := TLList.Items[I];
-            //only create a record if amount > 0
-            if (TL.TLType = TLTPrepaid) then begin
-              PrepaidBalanceChange := PrepaidBalanceChange - TL.TLTender;
-            end;
-
-            //Save tender line
-            //NB: treat wiGroup tenders differently: if a wiGroup 'payment' was
-            //all discount and no actual payment, then don't save tender line
-            //(else do save, including zero payments (to record trans occurred)
-            if ((TL.TLType <> TLTwiGroup) and (TL.TLType <> TLTExternalProviders) and (TL.TLTender > 0)) or
-                ((TL.TLType = TLTwiGroup) and not (
-                   (TwiGroupTrans(TL.wiGroupTrans).Discount > 0) and (TwiGroupTrans(TL.wiGroupTrans).Payment = 0))) or
-                ((TL.TLType = TLTExternalProviders) and (TL.TLTender <> 0) and not (sExternalAccountIntegration.OverrideDiscount)) then
-            begin
-              if (TL.TLTypeID <> GetTLTID(TLTLoyaltyPoints)) then
-                aTotalTender := aTotalTender + GetRoundedUpDown(TL.TLPayment, AppDetails.DecimalPlaces);
-
-              SetStoredProcName('INSERT_TENDERLINE', SPNumber);
-              ParamByName('tenderid').AsInteger := WBReceipts.RefreshID;
-              ParamByName('tenderlinetypeid').AsInteger := TL.TLTypeID;
-              ParamByName('tenderlineamount').AsCurrency := TL.TLTender;
-              ParamByName('tenderlinetip').AsCurrency := TL.TLTip;
-              //ParamByName('roundingamount').AsFloat := 0;
-              ParamByName('roundingamount').AsCurrency := TL.TLRounding;    //Jon 30-3-2001
-              BoolAsParam(ParamByName('changeamount'), False);
-
-              if (SurplusOnAccount) then begin      //Jon 04-11-2003
-                ParamByName('tenderlinechange').AsCurrency := 0;
-              end
-              else begin
-                ParamByName('tenderlinechange').AsCurrency := TL.TLChange; //akm 01.12.01
-              end;
-
-              StringAsParam(ParamByName('tenderlinenotes'), TL.TLNotes);
-              StringAsParam(ParamByName('eftpostxnref'), TL.EFTPOSTxnRef);
-              if (TL.TLType <> TLTExternalProviders) then
-              begin
-                StringAsParam(ParamByName('eftpostxnauthcode'), TL.EFTPOSTxnAuthCode);
-                StringAsParam(ParamByName('eftposcardref'), TL.EFTPOSCardRef);
-              end
-              else
-              begin
-                StringAsParam(ParamByName('eftpostxnauthcode'), TL.ExternalTransactionNo);
-                StringAsParam(ParamByName('eftposcardref'), TL.EFTPOSCardRef);
-              end;
-              //AM 23Dec99 Account Balance
-              BalanceDelta := BalanceDelta - GetRoundedUpDown(TL.TLTender - TL.TLTip + TL.TLRounding, AppDetails.DecimalPlaces);
-
-              SWBEncryption.Initialise;
-              SWBEncryption.AddStr(GlbFiscal.ManufactureNo);
-              SWBEncryption.AddStr(SFiscalPrinting.COO);
-              SWBEncryption.AddStr(SFiscalPrinting.CCF); //CCF
-              SWBEncryption.AddStr(''); // CDC
-              SWBEncryption.AddStr(''); // GNF
-              StringAsParam(ParamByName('COO'), SFiscalPrinting.COO);
-              ParamNull(ParamByName('GNF'));
-              StringAsParam(ParamByName('CCF'), SFiscalPrinting.CCF);
-              StringAsParam(ParamByName('CHECKSUM'), SWBEncryption.GetHash);
-              IntegerAsParam(ParamByName('tenlinetypeproviderid'), TL.TLProviderID);
-              IntegerAsParam(ParamByName('instalments'), TL.TLInstalments);
-              TL.COO := SFiscalPrinting.COO;
-              TL.CCF := SFiscalPrinting.CCF;
-              ExecProc;
-              TL.TLID := FieldByName('tenderlineid').AsInteger;
-            end;
-
-            if (TL.PreAuthPayment) then begin
-              ClearPreAuthTxnRef := True;
-            end;
-          end;
-
-          //Fiscal tenders
-          if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode))) then
-          begin
-            FiscalTLList.DoCombine;
-            FiscalTLList.DoSort(True);
-            if (FiscalTLList.Count > 1) and ((FiscalTLList.TotalTender - FiscalTLList.Items[FiscalTLList.Count - 1].TLTender) >= FiscalTLList.TotalPayment) then
-            begin
-              FiscalTLList.DoCombine(True);
-              FiscalTLList.DoSort;
-            end;
-
-            for I := 0 to (FiscalTLList.Count - 1) do
-            begin
-              TL := FiscalTLList.Items[I];
-
-              TenderLine := GetTenderLineTypeRecord(GetTLT(TL.TLTypeID));
-              if Assigned(TenderLine) then
-              begin
-                if (not SFiscalPrinting.AddFiscalPrinterPayment(TenderLine.TenderLineType, TL.TLTender-TL.TEFCreditCardDiscount, TL.TLTypeID = GetTLTID(TLTCash))) then
-                begin
-                  LogMessage(ltPaymentTrace, '199' + #9);
-                  TheTR.Rollback;
-                  if SFiscalPrinting.OpenedFiscalInvoice then
-                    SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-                  Result := False;
-                  Exit;
-                end;
-                LogMessage(ltFiscal, 'Send payment details of ' + TenderLine.TenderLineType);
-              end;
-            end;
-
-            SWBEncryption.AuxiliaryData.FiscalInvoiceDone := '1';
-            SWBEncryption.GenerateEncryptedAuxFile;
-          end;
-
-          //create a tender line for the change
-          if ((FChange > 0) and (not SurplusOnAccount)) then begin
-            SetStoredProcName('INSERT_TENDERLINE', SPNumber);
-            ParamByName('tenderid').AsInteger := WBReceipts.RefreshID;
-            ParamByName('tenderlinetypeid').AsInteger := 4; //cash
-            ParamByName('tenderlineamount').AsCurrency := -FChange; //total change
-            ParamByName('tenderlinetip').AsCurrency := 0;
-            ParamByName('roundingamount').AsCurrency := 0; // JEH 24/11/01 Removed FRounding
-            BoolAsParam(ParamByName('changeamount'), True);
-            ParamByName('tenderlinechange').AsCurrency := 0; //akm 01.12.01
-            ParamNull(ParamByName('tenderlinenotes'));
-            ParamNull(ParamByName('eftpostxnref'));
-            ParamNull(ParamByName('eftposcardref'));
-            //AM 23Dec99 Account Balance
-            BalanceDelta := BalanceDelta - GetRoundedUpDown(ParamByName('tenderlineamount').AsCurrency - ParamByName('tenderlinetip').AsCurrency + ParamByName('roundingamount').AsCurrency, AppDetails.DecimalPlaces);
-
-            if AppDetails.EnableFiscalPrinting then
-            begin
-              StringAsParam(ParamByName('COO'), SFiscalPrinting.COO);
-              ParamNull(ParamByName('GNF'));
-              StringAsParam(ParamByName('CCF'), SFiscalPrinting.CCF);
-              SWBEncryption.Initialise;
-              SWBEncryption.AddStr(GlbFiscal.ManufactureNo);
-              SWBEncryption.AddStr(SFiscalPrinting.COO);
-              SWBEncryption.AddStr(SFiscalPrinting.CCF); //CCF
-              // CDC
-              // GNF
-              StringAsParam(ParamByName('CHECKSUM'), SWBEncryption.GetHash);
-            end
-            else
-            begin
-              ParamNull(ParamByName('COO'));
-              ParamNull(ParamByName('GNF'));
-              ParamNull(ParamByName('CCF'));
-              ParamNull(ParamByName('checksum'));
-            end;
-            ParamNull(ParamByName('tenlinetypeproviderid'));
-            ParamNull(ParamByName('instalments'));
-            ExecProc;
-          end;
-
-          if (PrepaidBalanceChange <> 0) then begin
-            SetStoredProcName('CHANGETABLEPREPAYBALANCE', SPNumber);         //changetableprepaybalance
-            ParamByName('groupid').AsInteger := GlbTable.GroupID;
-            ParamByName('loginid').AsInteger := GlbLogin.LoginID;
-            ParamByName('prepaidbalancechange').AsCurrency := PrepaidBalanceChange;
-            ExecProc;
-            if (not FieldByName('errorcode').IsNull) then begin
-              LogMessage(ltPaymentTrace, '200' + #9);
-              Result := False;
-              ShowErrorMsg(FieldByName('errorcode').AsInteger);
-              TheTr.Rollback;
-              if SFiscalPrinting.OpenedFiscalInvoice then
-                SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-              Exit;
-            end;
-          end;
-        end;
-
-        //Save wiGroup transaction database records
-        if TLList.TenderTypeExists(TLTwiGroup) then
-          wiGroupPOSSrv.SaveTransRecords(TheSP, SPNumber, tmpList);
-
-        //For fiscal Printing
-        if ((TheInvoiceID > 0) and (AppDetails.EnableFiscalPrinting)) then
-        begin
-          if NFEMode then
-          begin
-            if not GetNFEDetails then
-            begin
-              LogMessage(ltPaymentTrace, '201' + #9);
-              Result := False;
-              TheTr.Rollback;
-              Exit;
-            end;
-
-            if FPerorgID > 0 then
-              SetGlbPerson(FPerorgID);
-
-            if Assigned(GlbNFEData) then // global variable
-            begin
-              GlbNFEData.InvoiceID := TheInvoiceID;
-              GlbNFEData.InvoiceNo := TheInvoiceNo;
-              GlbNFEData.InvoiceDate := TheInvoiceDate;
-              GlbNFEData.InvoiceTotal := FToPay;
-              GlbNFEData.PaidOnAccount := False;
-              if ((GlbAccount.AccountID > 0) and (BalanceDelta > 0) and (OnAccount)) then
-                GlbNFEData.PaidOnAccount := True;
-
-              try
-                for I := 0 to (tmpList.Count - 1) do
-                begin
-                  aOL := tmpList.Items[I];
-                  if (aOL.ItemID > 0) then
-                  begin
-                    NFEItem := TNFEItem.Create;
-
-                    NFEItem.ItemID := aOL.ItemID;
-                    NFEItem.ItemName := aOL.ItemString;
-                    NFEItem.Qty := aOL.Qty;
-                    NFEItem.CFOP := GlbNFEData.CFOP;
-                    NFEItem.FiscalSeq := IntToStr(i);
-                    NFEItem.WeightedItem := Boolean(aOL.WeighedItem) ;
-                    NFEItem.UnitPrice := aOL.UnitPrice;
-                    NFEItem.Discount := aOL.ILDiscount;
-                    NFEItem.Total := aOL.Qty * aOL.UnitPrice;//aOL.ILAmount;
-                    NFEItem.ItemGrpType := aOL.ItemGrpType;
-
-                    NFEItem.TaxSituation := aOL.TaxSituation;
-                    NFEItem.TaxRate := aOL.SalesTaxPercent;
-                    NFEItem.CSOSN := aOL.CSOSN;
-                    NFEItem.CSTICMS := aOL.CSTICMS;
-                    NFEItem.NCMProductCode := aOL.NCMProductCode;
-                    SFiscalPrinting.NFEItems.Add(NFEItem);
-                  end;
-                end;
-
-                if not SFiscalPrinting.SendNFEDetails then
-                begin
-                  LogMessage(ltPaymentTrace, '202' + #9);
-                  ShowQuickMsg(sErrorInSendingNFEData);
-                  TheTR.Rollback;
-                  Result := False;
-                  Exit;
-                end;
-              finally
-                SFiscalPrinting.NFEItems.Clear;
-              end;
-            end;
-
-            SetStoredProcName('UPDATENFEDETAILS', SPNumber);
-            ParamByName('INVOICEID').AsInteger := TheInvoiceID;
-            ParamByName('INVOICESTATUS').AsString := GlbNFEData.InvoiceStatus;
-            ParamByName('DISPATCHDATE').AsDateTime := GlbNFEData.DeliveryDate;
-            ParamByName('BOXQTY').AsFloat := GlbNFEData.BoxQty;
-            ParamByName('LOTNUMBER').AsFloat := GlbNFEData.LotNumber;
-            ParamByName('GROSSWEIGHT').AsFloat := GlbNFEData.GrossWeight;
-            ParamByName('NETWEIGHT').AsFloat := GlbNFEData.NetWeight;
-            ParamByName('NUMBERPLATE').AsString := GlbNFEData.NumberPlate;
-            ParamByName('NUMBERPLATESTATE').AsString := GlbNFEData.NumberPlateState;
-            ParamByName('MARCA').AsString := GlbNFEData.Marca;
-            ParamByName('NOTES').AsString := GlbNFEData.Notes;
-            ParamByName('FREIGHTVALUE').AsFloat := GlbNFEData.FreightValue;
-            ParamByName('INSURANCEVALUE').AsFloat := GlbNFEData.InsuranceValue;
-            ParamByName('OTHEREXPVALUE').AsFloat := GlbNFEData.OtherExpense;
-            ParamByName('SHIPPINGMODE').AsString := GlbNFEData.FreightType;
-            ParamByName('DANFENUMBER').AsString := GlbNFEData.DANFENumber;
-            ParamByName('INVOICEKEY').AsString := GlbNFEData.InvoiceKey;
-            ParamByName('PROTOCOLNUMBER').AsString := GlbNFEData.ProtocolNumber;
-            ParamByName('PROTOCOLDATE').AsDateTime := GlbNFEData.ProtocolDate;
-            ParamByName('PROTOCOLSTATUS').AsString := GlbNFEData.ProtocolStatus;
-            ParamByName('CFOP').AsInteger := GlbNFEData.CFOP;
-            ExecProc;
-          end;
-        end;
-
-        //If Needing to clear PreAuth txn reference from Tab, then do it here
-        if (ClearPreAuthTxnRef) then begin
-          SetStoredProcName('SETTABLEEFTPOSTXNREF', SPNumber);             //settableeftpostxnref
-          ParamByName('groupid').AsInteger := GlbTable.GroupID;
-          ParamByName('loginid').AsInteger := GlbLogin.LoginID;
-          ParamNull(ParamByName('eftpostxnref'));
-          ExecProc;
-          if (not FieldByName('errorcode').IsNull) then begin
-            LogMessage(ltPaymentTrace, '203' + #9);
-            Result := False;
-            ShowErrorMsg(FieldByName('errorcode').AsInteger);
-            TheTR.Rollback;
-            if SFiscalPrinting.OpenedFiscalInvoice then
-              SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-            Exit;
-          end;
-        end;
-
-        //try to close table
-        if ((AppDetails.PaymentAutoCloseTable) and (GlbTable.WhenOpened <> 0)) or
-           ((not AppDetails.PaymentAutoCloseTable) and
-            ((AppDetails.PaymentSaleCategoryID <> 0) and (AppDetails.PaymentSaleCategoryID <> GlbTable.SaleCategoryID))) then
-            begin
-          SetStoredProcName('CLOSE_TABLE', SPNumber);      //close_table
-
-          ParamByName('groupid').AsInteger := GlbTable.GroupID;
-          ParamByName('loginid').AsInteger := GlbLogin.LoginID;
-          ExecProc;
-        end;
-
-        if ((AppDetails.FiscalType = fiscalNone) and ((AppDetails.PrintReceipt) or
-            ((GlbTable.SectionID = AppDetails.DeliverySectionID) and (AppDetails.PhoneOrderDeliveryPrintInvoice)) or
-            ((Appdetails.PaymentTenderOverRidePrints) and (TLList.PrintCopiesExists)) or
-            ((Appdetails.PaymentAccountPrints = 1) and ((FDiscountAmount > 0) or (FLoyaltyFreeItemDiscount > 0))) or
-            ((Appdetails.PaymentAccountPrints = 2) and (GlbAccount.AccountID > 0)))) then begin
-          //insert print job
-          SetStoredProcName('INSERT_PRINTJOBWITHLOGINID', SPNumber);   //Jon 17-4-2001                //insert_printjobwithloginid
-
-          ParamByName('printjobtype').AsString := 'Invoice';
-          ParamByName('theid').AsInteger := TheInvoiceID;
-          IntegerAsParamIfBool(ParamByName('loginid'), ManagerAuthorise.AuthoriseLoginID, ManagerAuthorise.Authorise);
-          ParamByName('printerid').AsInteger := AppDetails.PrinterID;
-          ExecProc;
-          if ((GlbTable.SectionID = AppDetails.DeliverySectionID) and (AppDetails.PhoneOrderDeliveryPrintInvoice)) then begin
-            //Do it again
-            ExecProc;
-          end;
-        end;
-
-        //AM 23Dec99 Account Balance
-        //totalinvoices = insert_invoiceline: add sum(ilamount-discountamount)
-        //totaltenders = insert_tenderline: less sum(tenderlineamount-tenderlinetip+roundingamount)
-        //account balance delta = totalinvoices - totaltenders
-        if (GlbAccount.AccountID > 0) then begin // if going on an account, set account balance
-          SetStoredProcName('INSERTACCOUNTINVOICE', SPNumber);            //insertaccountinvoice
-
-          ParamByName('accountid').AsInteger := GlbAccount.AccountID;
-          ParamByName('invoiceid').AsInteger := TheInvoiceID;
-          IntegerAsParam(ParamByName('tenderid'), TheTenderID);
-          ParamByName('loginid').AsInteger := GlbLogin.LoginID;
-          CurrencyAsParam(ParamByName('currentbalancechange'), GetRoundedUpDown(BalanceDelta, AppDetails.DecimalPlaces));
-
-          //for Fiscal Printing - Open an Invoice in the Fiscal Printer
-          if BalanceDelta > 0.005 then
-          begin
-            if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode))) then
-            begin
-              SWBEncryption.AuxiliaryData.FiscalInvoiceDone := '0';
-              SWBEncryption.GenerateEncryptedAuxFile;
-
-              if not FiscalPaymentInitialized then
-              begin
-                if FCreditCardDiscount > 0 then
-                begin
-                  PrintOK := SFiscalPrinting.OpenFiscalPrinterPayment('D', '$', FCreditCardDiscount);
-                end
-                else
-                begin
-                  if (AppDetails.TipsAsChange) then
-                    PrintOK := SFiscalPrinting.OpenFiscalPrinterPayment('A', '$', 0)     //dont send value of tip thus extra amount tendered is seen as change in fiscal printer
-                  else
-                    PrintOK := SFiscalPrinting.OpenFiscalPrinterPayment('A', '$', aTotalTip);
-                  end;
-
-                if not PrintOK then
-                begin
-                  LogMessage(ltPaymentTrace, '204' + #9);
-                  TheTR.Rollback;
-                  if SFiscalPrinting.OpenedFiscalInvoice then
-                    SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-                  Result := False;
-                  Exit;
-                end;
-              end;
-              if Trim(AppDetails.FiscalAccountPaymentMethod) <> '' then
-              begin
-                if ((AppDetails.FiscalPrinterType in [fpBematech, fpBematechNFC]) and (not SFiscalPrinting.AddFiscalPrinterPayment(AppDetails.FiscalAccountPaymentMethod, BalanceDelta))) then
-                begin
-                  LogMessage(ltPaymentTrace, '205' + #9);
-                  TheTr.Rollback;
-                  if SFiscalPrinting.OpenedFiscalInvoice then
-                    SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-                  Result := False;
-                  Exit;
-                end
-                else if ((AppDetails.FiscalPrinterType = fpDaruma) and (not SFiscalPrinting.AddFiscalPrinterPayment(AppDetails.FiscalAccountPaymentMethod, BalanceDelta))) then
-                begin
-                  LogMessage(ltPaymentTrace, '206' + #9);
-                  TheTr.Rollback;
-                  if SFiscalPrinting.OpenedFiscalInvoice then
-                    SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-                  Result := False;
-                  Exit;
-                end;
-              end;
-              SWBEncryption.AuxiliaryData.FiscalInvoiceDone := '1';
-              SWBEncryption.GenerateEncryptedAuxFile;
-            end;
-          end;
-          ExecProc;
-
-          if ((LoyaltyReward.LoyaltyRewardID > 0) and {(not LoyaltyReward.Processed)} (TheInvoiceID > 0)) then begin
-            SetStoredProcName('REDEEMLOYALTYPOINTS', SPNumber);             //redeemloyaltypoints
-
-            ParamByName('accountid').AsInteger := GlbAccount.AccountID;
-            ParamByName('loyaltyrewardid').AsInteger := LoyaltyReward.LoyaltyRewardID;
-            ParamByName('invoiceid').AsInteger := TheInvoiceID;
-            IntegerAsParam(ParamByName('tenderid'), TheTenderID);
-            IntegerAsParamIfBool(ParamByName('loyaltypoints1change'), LoyaltyReward.DecrementLoyalty1Points, ((LoyaltyReward.RewardOffer = roVariableDiscount) and (LoyaltyReward.DecrementLoyalty1Points > 0)));
-            IntegerAsParamIfBool(ParamByName('loyaltypoints2change'), LoyaltyReward.DecrementLoyalty2Points, ((LoyaltyReward.RewardOffer = roVariableDiscount) and (LoyaltyReward.DecrementLoyalty2Points > 0)));
-            ParamByName('loginid').AsInteger := GlbLogin.LoginID;
-            ExecProc;
-          end;
-        end;
-
-        SFiscalPrinting.UpdateInvoiceChecksum(TheSP, TheInvoiceID, False);
-
-        if AppDetails.OrderDiscountEnable then
-        begin
-          if (GlbTable.AccountID <> GlbAccount.AccountID ) then
-          begin
-            FDiscCalculator.AccountID := GlbAccount.AccountID;
-            FDiscCalculator.Account := GlbAccount;
-            FDiscCalculator.LoadUninvoicedOls := True;
-            FDiscCalculator.RecalculateDiscountsOfTheGroup(ComboFreeItems, False,True); // No Update db
-          end;
-        end;
-      end;
-
-      if ((AppDetails.PMSType = pmsLibica) and (TenderTypeExists(TLTLibica))) then begin
-        if (not SendLibicaTransactions(tmpList)) then begin
-          //Something wrong happened while putting in the Transactions.
-          LogMessage(ltPaymentTrace, '207' + #9);
-          TheTR.Rollback;
-          if SFiscalPrinting.OpenedFiscalInvoice then
-            SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-          Result := False;
-          Exit;
-        end;
-      end
-      else if ((AppDetails.PMSType = pmsFidelio) and
-               ((AppDetails.FidelioAllTransactions = 1) or
-                ((AppDetails.FidelioExtendedTender > 0) and (AppDetails.FidelioAllTransactions < 2) and (TLList.Count > 0)) or
-                (TenderTypeExists(TLTFidelio)))) then begin
-        if (not SendFidelioTransactions(tmpList)) then begin
-          //Something wrong happened while putting in the Transactions.
-          LogMessage(ltPaymentTrace, '208' + #9);
-          TheTR.Rollback;
-          if SFiscalPrinting.OpenedFiscalInvoice then
-            SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-          Exit;
-        end;
-      end
-      else if ((AppDetails.PMSType = pmsPhoenix) and ((AppDetails.PhoenixAllTransactions) or ((AppDetails.PhoenixExtendedTender) and (TLList.Count > 0)) or (TenderTypeExists(TLTPhoenix)))) then begin
-        if (not SendPhoenixTransactions(tmpList)) then begin
-          //Something wrong happened while putting in the Transactions.
-          LogMessage(ltPaymentTrace, '209' + #9);
-          TheTR.Rollback;
-          if SFiscalPrinting.OpenedFiscalInvoice then
-            SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-          Exit;
-        end;
-      end
-      else if ((AppDetails.PMSType = pmsMicros4700) and ((AppDetails.Micros4700AllTransactions = 1) or ((AppDetails.Micros4700ExtendedTender) and (AppDetails.Micros4700AllTransactions < 2) and (TLList.Count > 0)) or (TenderTypeExists(TLTMicros4700)) or (TenderTypeExists(TLTMicros4700Account)))) then begin
-        if (not SendMicros4700Transactions(tmpList)) then begin
-          //Something wrong happened while putting in the Transactions.
-          LogMessage(ltPaymentTrace, '210' + #9);
-          TheTR.Rollback;
-          if SFiscalPrinting.OpenedFiscalInvoice then
-            SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-          Exit;
-        end;
-      end
-      else if ((AppDetails.PMSType = pmsNZAGold) and (TenderTypeExists(TLTNZAGold))) then begin
-        if (not SendNZATransactions(tmpList)) then begin
-          //Something wrong happened while putting in the Transactions.
-          LogMessage(ltPaymentTrace, '211' + #9);
-          TheTr.Rollback;
-          if SFiscalPrinting.OpenedFiscalInvoice then
-            SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-          Exit;
-        end;
-      end
-      else if ((AppDetails.PMSType = pmsEvolution) and (TenderTypeExists(TLTEvolution))) then begin
-        if (not SendEvolutionTransactions(tmpList)) then begin
-          //Something wrong happened while putting in the Transactions.
-          LogMessage(ltPaymentTrace, '212' + #9);
-          TheTR.Rollback;
-          if SFiscalPrinting.OpenedFiscalInvoice then
-            SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-          Result := False;
-          Exit;
-        end;
-      end
-      else if ((AppDetails.PMSType = pmsICRTouch) and (TenderTypeExists(TLTRoomCharge))) then
-      begin
-        if (not SendICRTouchTransactions(tmpList)) then
-        begin
-          //Something wrong happened while putting in the Transactions.
-          LogMessage(ltPaymentTrace, '213' + #9);
-          TheTR.Rollback;
-          if SFiscalPrinting.OpenedFiscalInvoice then
-            SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-          Result := False;
-          Exit;
-        end;
-      end
-      else if ((AppDetails.PMSType = pmsMews) and ((AppDetails.MewsAddOutletBills) or (TenderTypeExists(TLTMews)))) then begin
-        if (not SendMewsTransactions(tmpList, SPNumber, TheTenderID)) then
-        begin
-          //Something wrong happened while putting in the Transactions.
-          TheTR.Rollback;
-          if SFiscalPrinting.OpenedFiscalInvoice then
-            SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-          Exit;
-        end;
-      end;
-
-      if (AppDetails.TableManagementType <> tabmanNone) then
-      begin
-        SendTableManagementTransactions(tmpList);
-      end;
-
-      if (AppDetails.FiscalType = fiscalTaxCore) then
-      begin
-        if (SendTaxCoreTransactions(tmpList)) and TaxCoreTransactionData.SaveInvoice(False, SPNumber) and TaxCoreTransactionData.InsertPrintJob(SPNumber) then
-        begin
-          if (TaxCoreTransactionData.Messages <> '') then
-            ShowQuickMsg('Tax Core Transaction' + #13#10 + TaxCoreTransactionData.Messages);
-          TaxCoreTransactionData.Clear;
-        end
-        else begin
-          // transaction failed
-          LogMessage(ltPaymentTrace, '214' + #9);
-          if (TaxCoreTransactionData.Messages <> '') then
-            ShowMsg('Tax Core Transaction' + #13#10 + TaxCoreTransactionData.Messages)
-          else
-            ShowMsg('Tax Core Transaction' + #13#10 + 'Failed');
-          TheTR.Rollback;
-          Result := False;
-          Exit;
-        end;
-      end;
-
-      // for Fiscal Printing - Open an Invoice in the Fiscal Printer
-      if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode))) then
-      begin
-        //TSurchargeItem(SurchargeList[I]).
-        aPromoMessage := SFiscalPrinting.GetFiscalInvoiceFooter(OLToPayList, Self, '', TheGroupID, TheInvoiceID);
-        if not SFiscalPrinting.CloseFiscalPrinterPayment(aPromoMessage, TotalNCMTax) then
-        begin
-          LogMessage(ltPaymentTrace, '215' + #9);
-          TheTR.Rollback;
-          if SFiscalPrinting.OpenedFiscalInvoice then
-            SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-          Result := False;
-          Exit;
-        end;
-        SFiscalPrinting.FiscalOpTryAgainCommand := False;
-        LogMessage(ltFiscal, 'Closed fiscal invoice');
-      end;
-
-      if (TLList.OpenDrawerExists(not SurplusOnAccount)) then
-      begin
-        if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode))) then
-          SFiscalPrinting.KickDrawer;
-      end;
-
-      LogMessage(ltPaymentTrace, '216' + #9);
-      TheTR.Commit;
-      LogMessage(ltPaymentTrace, '217' + #9);
-
-      if (GlbEvent.EventID > 0) then
-      begin
-        SetGlbEvent(GlbEvent.EventID, True);
-
-        if ((GlbEvent.Available) < 0) then
-        begin
-          ShowMsg(sEventSpendLimitReachedDeSelect);
-          txtAvail.Text := FormatCurrencyNoSign(GlbEvent.Available);
-          DeselectEvent;
-        end;
-      end;
-
-      FoundFirstLoyaltyFreeItem := False;
-      formEFTPOSIntegration.ClearTransactionID;
-      LogMessage(ltPaymentTrace, '219' + #9);
-
-      // send paymark loyalty amount to eftpos machine again
-      if ((AppDetails.EFTPOSIntegrated and AppDetails.EFTPOSPaymarkLoyaltyEnabled) and
-          (aTotalTender > 0) and (ShowConf(sIsLoyaltyCardAvailable) = mrYes)) then
-      begin
-        LogMessage(ltPaymentTrace, '220' + #9);
-        formEFTPOSIntegration.EFTPOSTLType := TLTLoyaltyPoints;
-        formEFTPOSIntegration.EFTPOSTxnRef := ''; // empty reference for loyalty points
-        formEFTPOSIntegration.EFTPOSTxnAuthCode := '';
-        formEFTPOSIntegration.AllowTipAuthorisation := False;
-        formEFTPOSIntegration.DoEftposTrans(aTotalTender, 0, ettEftpos);
-      end;
-
-      if (AppDetails.EnableFiscalPrinting and AppDetails.EFTPOSIntegrated and EFTPOSTransExists) then
-      begin
-        SWBEncryption.AuxiliaryData.DBInvoiceDone := '1';
-        SWBEncryption.GenerateEncryptedAuxFile;
-
-        if (not SFiscalPrinting.PrintAllCDCs(TLList)) then
-        begin
-          SFiscalPrinting.LockKeyBoardWhilePrinting(False);
-          SFiscalPrinting.CancelNonInvoiceTEF(True);
-          SFiscalPrinting.RefundPOSSale(iOldTenderID, iRefundTenderID, iRefundInvoiceID, OrgInvCOO);
-          SFiscalPrinting.SupressFiscalErrorMessage := True;
-          PrintOK := SFiscalPrinting.FiscalPrinterEnabled;
-          SFiscalPrinting.SupressFiscalErrorMessage := False;
-
-          if PrintOK then
-            SFiscalPrinting.CancelFiscalPrinterInvoice(SWBEncryption.AuxiliaryData.InvoiceCPF, SWBEncryption.AuxiliaryData.InvoiceName, SWBEncryption.AuxiliaryData.InvoiceAddress, True);
-
-          // Here lets start the timer again!
-          Result := False;
-          Exit;
-        end;
-        SFiscalPrinting.LockKeyBoardWhilePrinting(False);
-      end;
-
-      if AppDetails.EnableFiscalPrinting then
-      begin
-        SWBEncryption.AuxiliaryData.TEFReferences := '';
-
-        SWBEncryption.AuxiliaryData.DBInvoiceDone := '0';
-        SWBEncryption.AuxiliaryData.FiscalInvoiceDone := '0';
-        SWBEncryption.AuxiliaryData.TEFDone := '0';
-        SWBEncryption.AuxiliaryData.CDCDone := '0';
-
-        SWBEncryption.AuxiliaryData.InvoiceCPF := '';
-        SWBEncryption.AuxiliaryData.InvoiceName := '';
-        SWBEncryption.AuxiliaryData.InvoiceAddress := '';
-        SWBEncryption.GenerateEncryptedAuxFile;
-      end;
-
-      if ((BalanceDelta > 0.005) and (AppDetails.EnableFiscalPrinting) and (GlbAccount.AccountID > 0)) then
-        SFiscalPrinting.PrintAccountPaymentReport(sPayOnAccount, BalanceDelta, FCPFNumber);
-
-      SFiscalPrinting.COO := '';
-      SFiscalPrinting.CCF := '';
-      SFiscalPrinting.SupressFiscalErrorMessage := False;
-
-      FSelectedItemsNotPaidFull := False;
-      FUseItemDiscounts := False;
-      Result := True;
-      LogMessage(ltPaymentTrace, '221' + #9);
-    except
-      on e: exception do
-      begin
-        LogMessage(ltPaymentTrace, '222' + #9);
-        ShowMessage(e.message);
-        TheTr.Rollback;
-        SFiscalPrinting.FiscalOpTryAgainCommand := False;
-
-        if SFiscalPrinting.OpenedFiscalInvoice then
-          SFiscalPrinting.CancelFiscalPrinterInvoice; // Cancel Opened invoice
-
-        SelectFirsts;
-      end;
-    end;
-    SFiscalPrinting.FiscalOpTryAgainCommand := False;
-  finally
-    sExternalAccountIntegration.FinalisePresentedCards;
-
-    if Assigned(GlbNFEData) then
-      GlbNFEData.Free;
-
-    ClearListObjects(tmpList, True); //copies of OLs now in tmpList so need to free them
-    FiscalTLList.Clear;
-    FiscalTLList.Free;
-
-    DM.qrGeneral.IB_Transaction := GenTR;
-
-    ClearStatusPage;
-    ClearStatus;
-    LogMessage(ltPaymentTrace, '223' + #9);
-  end;
-end;
-{******************************************************************************}
-function TformPaymentTable.SendLibicaTransactions(AOLList: TList): Boolean;
-var
-  LibFood, LibBev, LibTip: Currency;
-  TotalFood, TotalBev, LibAmt: Currency;
-  LibDesc: string;
-  LibGLCodeF, LibGLCodeB, LibGLCodeTip: string;
-  ListCount: Integer;
-  I: Integer;
-  TL: TTL;
-  SoFarComboDiscount, SoFarDiscount, ILDiscount: Currency;
-  LibicaSourceList: TList;
-begin
-  I := 0;
-  ListCount := TLList.Count;
-  while ((I < ListCount) and (TTL(TLList.Items[I]).TLTypeID <> GetTLTID(TLTLibica))) do begin
-    Inc(I);
-  end;
-  if (I >= ListCount) then begin
-  //This should never happen cos we should only come here if libicatransexist
-    Result := False;
-    Exit;
-  end;
-  TL := TLList.Items[I];
-
-  LibAmt := TL.TLPayment;
-  LibTip := TL.TLTip;
-
-  ListCount := AOLList.Count;
-
-  TotalFood := 0;
-  TotalBev := 0;
-  SoFarDiscount := 0;
-  SoFarComboDiscount := 0;
-
-  for I := 0 to (ListCount - 1) do
-  begin
-    if TOrderLine(AOLList[I]).ComboID > 0 then
-    begin
-      if TOrderLine(AOLList[I]).LastComboItem then
-      begin
-        ILDiscount := FComboDiscount - SoFarComboDiscount;
-      end
-      else
-      begin
-        ILDiscount := TOrderLine(AOLList[I]).AllowedDiscount;
-      end;
-
-      ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-      SoFarComboDiscount := SoFarComboDiscount + ILDiscount;
-      SoFarComboDiscount := GetRoundedUpDown(SoFarComboDiscount, AppDetails.DecimalPlaces);
-    end
-    else
-    begin
-      //if it's the last line, allocate whatever hasn't been pro rata-ed
-      if TOrderLine(AOLList[I]).LastNormalItem then
-        ILDiscount := FDiscountAmount - SoFarDiscount
-      else
-      begin              //pro rata discount and accumulate discount pro rata-ed so far
-        ILDiscount := TOrderLine(AOLList[I]).AllowedDiscount;
-        ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-        SoFarDiscount := SoFarDiscount + ILDiscount;
-        SoFarDiscount := GetRoundedUpDown(SoFarDiscount, AppDetails.DecimalPlaces);
-      end;
-    end;
-
-    ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-    SoFarDiscount := GetRoundedUpDown(SoFarDiscount, AppDetails.DecimalPlaces);
-
-    if (TOrderLine(AOLList[I]).ForB = 'F') then
-    begin
-      if (AppDetails.TaxExclusivePrices) then begin
-        TotalFood := TotalFood + (((TOrderLine(AOLList[I]).ToPay - ILDiscount) * (100 + TOrderLine(AOLList[I]).SalesTaxPercent)) / 100);
-      end
-      else begin
-        TotalFood := TotalFood + TOrderLine(AOLList[I]).ToPay - ILDiscount;
-      end;
-    end
-    else
-    begin
-      if (AppDetails.TaxExclusivePrices) then begin
-        TotalBev := TotalBev + (((TOrderLine(AOLList[I]).ToPay - ILDiscount) * (100 + TOrderLine(AOLList[I]).SalesTaxPercent)) / 100);
-      end
-      else begin
-        TotalBev := TotalBev + TOrderLine(AOLList[I]).ToPay - ILDiscount;
-      end;
-    end;
-  end;
-
-  try
-    //We are already in a Transaction so another one does not need to be started
-    with dm.sp do begin
-      SetStoredProcName('GETSALECATEGORYINFO');
-
-      ParamByName('psalecategoryid').AsInteger := GlbTable.SaleCategoryID;
-      ParamByName('currenttime').AsInteger := CurrentTime;
-      ParamByName('currentday').AsInteger := CurrentDay;
-      Execute;
-
-      if (FieldByName('salecategoryid').IsNull) then begin
-        ShowQuickMsg(sSaleCatNotFound);
-        Result := False;
-        Exit;
-      end;
-
-      LibGLCodeF := FieldByName('libglf').AsString;
-      LibGLCodeB := FieldByName('libglb').AsString;
-      LibGLCodeTip := FieldByName('libgltip').AsString;
-
-      if ((FieldByName('tplibglf').AsString <> '') and
-        (FieldByName('tp1libglb').AsString <> '')) then begin
-        LibGLCodeF := FieldByName('tplibglf').AsString;
-        LibGLCodeB := FieldByName('tp1libglb').AsString
-      end;
-    end;
-  except
-    on e: exception do begin
-      Result := False;
-      ShowMessage(e.message);
-      Exit;
-    end;
-  end;
-
-  if (LibAmt > TotalFood) then begin
-    LibFood := TotalFood;
-    LibBev := LibAmt - TotalFood;
-  end
-  else begin
-    LibFood := LibAmt;
-    LibBev := 0;
-  end;
-
-  LibDesc := Copy('Invoice ' + IntToStr(WBInvoices.RefreshID) + ', ' + AppDetails.TerminalName, 1, 30);
-
-  if (((LibFood > 0) and (LibGLCodeF = '')) or
-      ((LibBev > 0) and (LibGLCodeB = '')) or
-      ((LibTip > 0) and (LibGLCodeTip = ''))) then begin
-    ShowQuickMsg(sGLCodeNotProvided);
-    Result := False;
-    Exit;
-  end;
-
-  LibicaSourceList := TList.Create;
-
-  if (LibFood > 0) then begin
-    LibicaSourceList.Add(NewPLibicaSourceData(LibAccount, LibGLCodeF, LibDesc, LibFood));
-  end;
-  if (LibBev > 0) then begin
-    LibicaSourceList.Add(NewPLibicaSourceData(LibAccount, LibGLCodeB, LibDesc, LibBev));
-  end;
-  if (LibTip > 0) then begin
-    LibicaSourceList.Add(NewPLibicaSourceData(LibAccount, LibGLCodeTip, LibDesc, LibTip));
-  end;
-
-  Result := DoLibicaTransactions(LibicaSourceList);
-//  DestroyList(LibicaSourceList, True);
-  ClearLibicaSourceDataList(LibicaSourceList);
-  LibicaSourceList.Free;
-end;
-{******************************************************************************}
-function TformPaymentTable.SendFidelioTransactions(AOLList: TList): Boolean;
-var
-  FidelioTransaction: TFidelioTransaction;
-  ListFT: TList;
-
-  FidTotal, FidSubtotal, FidTax: Currency;
-  ListCount: Integer;
-  I: Integer;
-  ArrayI: Integer;
-  TL: TTL;
-
-  LineSub, LineTax, LineDisc, LineTotal: Currency;
-  aSub: array [1 .. CN_FidelioArraySize] of Currency;
-  aTax: array [1 .. CN_FidelioArraySize] of Currency;
-  aDisc: array [1 .. CN_FidelioArraySize] of Currency;
-  aTotal: array [1 .. CN_FidelioArraySize] of Currency;
-  ServingTime: Integer;
-  TenderLineType: TTenderLineType;
-
-  SoFarComboDiscount, SoFarDiscount, ILDiscount: Currency;
-  OL: TOrderLine;
-  SurchargeItem: TSurchargeItem;
-
-  procedure AddFidelioValues;
-  var
-    Ratio: Double;
-    J: Integer;
-    LocalSub: Currency;
-    LocalTax: Currency;
-
-  begin
-    for J := 1 to CN_FidelioArraySize do
-    begin
-      if (FidTotal > aTotal[J]) then begin
-        Ratio := 1;
-      end
-      else if (aTotal[J] > 0) then begin
-        Ratio := (FidTotal / aTotal[J]);
-      end
-      else begin
-        Ratio := 0;
-      end;
-      LocalSub := RoundCurrency(aSub[J] * Ratio, 2);
-      LocalTax := RoundCurrency(aTax[J] * Ratio, 2);
-      FidelioTransaction.Sub[J] := FidelioTransaction.Sub[J] + LocalSub;
-      FidelioTransaction.Tax[J] := FidelioTransaction.Tax[J] + LocalTax;
-      FidelioTransaction.Disc[J] := RoundCurrency(LocalSub + LocalTax - (aTotal[J] * Ratio), 2);
-      FidTotal := FidTotal - (aTotal[J] * Ratio);
-      aTotal[J] := aTotal[J] * (1 - Ratio);
-      aSub[J] := aSub[J] * (1 - Ratio);
-      aTax[J] := aTax[J] * (1 - Ratio);
-      aDisc[J] := aDisc[J] * (1 - Ratio);
-    end;
-  end;
-
-begin
-  ListFT := TList.Create;
-  try
-    I := 0;
-    ListCount := TLList.Count;
-    while ((I < ListCount) and (TTL(TLList.Items[I]).TLTypeID <> GetTLTID(TLTFidelio))) do begin
-      Inc(I);
-    end;
-    if ((I >= ListCount) and (AppDetails.FidelioExtendedTender = 0) and (AppDetails.FidelioAllTransactions <> 1)) then begin
-    //This should never happen cos we should only come here if Fideliotransexist
-      Result := False;
-      Exit;
-    end
-    else begin
-      if (I >= ListCount) then begin
-        TL := Nil;
-      end
-      else begin
-        TL := TLList.Items[I];
-      end;
-      if ((AppDetails.FidelioBreakdownType = 0) and (Assigned(TL))) then begin
-        FidelioTransaction := TFidelioTransaction.Create;
-
-        FidelioTransaction.GuestNumber := GlbFidelioAccount.GuestNumber;
-        FidelioTransaction.RoomNumber := GlbFidelioAccount.RoomNumber;
-        FidelioTransaction.GuestName := GlbFidelioAccount.GuestName;
-        FidelioTransaction.InvoiceID := WBInvoices.RefreshID;
-        if (GlbTable.Invoiced > 0) then begin
-          FidelioTransaction.Covers := 0;
-        end
-        else begin
-          FidelioTransaction.Covers := GlbTable.Guests;
-        end;
-
-        FidTotal := TL.TLPayment + TL.TLTip;
-        if ((FToPay + FSurcharge - FDiscountAmount) <> 0) then begin
-          FidTax := FSalesTax * (TL.TLPayment) / (FToPay + FSurcharge - FDiscountAmount);
-        end
-        else begin
-          FidTax := 0;
-        end;
-        FidSubtotal := FidTotal - FidTax;
-
-        FidelioTransaction.FoodSub := FidSubtotal;
-        FidelioTransaction.FoodTax := FidTax;
-        FidelioTransaction.BreakdownType := 0;
-        FidelioTransaction.Refund := False;
-        ListFT.Add(FidelioTransaction);
-      end
-      else if (AppDetails.FidelioBreakdownType > 0) then begin
-        ListCount := AOLList.Count - 1;
-
-        for I := 1 to CN_FidelioArraySize do
-        begin
-          aSub[I] := 0.00;
-          aTax[I] := 0.00;
-          aDisc[I] := 0.00;
-          aTotal[I] := 0.00;
-        end;
-        SoFarDiscount := 0;
-        SoFarComboDiscount := 0.00;
-
-        for I := 0 to ListCount do
-        begin
-          OL := AOLList.Items[I];
-
-          if OL.ComboID > 0 then
-          begin
-            if OL.LastComboItem then
-            begin
-              ILDiscount := FComboDiscount - SoFarComboDiscount;
-            end
-            else
-            begin
-              ILDiscount := OL.AllowedDiscount;
-            end;
-
-            ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-            SoFarComboDiscount := SoFarComboDiscount + ILDiscount;
-            SoFarComboDiscount := GetRoundedUpDown(SoFarComboDiscount, AppDetails.DecimalPlaces);
-          end
-          else
-          begin            //if it's the last line, allocate whatever hasn't been pro rata-ed
-            if OL.LastNormalItem then
-              ILDiscount := FDiscountAmount - SoFarDiscount
-            else
-            begin              //pro rata discount and accumulate discount pro rata-ed so far
-              ILDiscount := OL.AllowedDiscount;
-              ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-              SoFarDiscount := SoFarDiscount + ILDiscount;
-              SoFarDiscount := GetRoundedUpDown(SoFarDiscount, AppDetails.DecimalPlaces);
-            end;
-          end;
-
-          if (AppDetails.TaxExclusivePrices) then
-          begin
-            LineSub := OL.ToPay;
-            LineTax := GetRoundedUpDown(((OL.ToPay - ILDiscount) * OL.SalesTaxPercent) / 100, AppDetails.DecimalPlaces);
-            LineDisc := ILDiscount;
-            LineTotal := LineSub + LineTax - LineDisc;
-          end
-          else begin
-            LineSub := GetRoundedUpDown(((OL.ToPay * 100) / (100 + OL.SalesTaxPercent)), AppDetails.DecimalPlaces);
-            LineTotal := (OL.ToPay - ILDiscount);
-            LineTax := GetRoundedUpDown(LineTotal * ((OL.SalesTaxPercent) / (100 + OL.SalesTaxPercent)), AppDetails.DecimalPlaces);
-            LineDisc := GetRoundedUpDown((ILDiscount * 100) / (100 + OL.SalesTaxPercent), AppDetails.DecimalPlaces);
-          end;
-
-          ArrayI := StrToIntDef(OL.GLCode, 0);
-          if (not (ArrayI in [1 .. CN_FidelioArraySize])) then
-          begin
-            if (OL.ForB = 'F') then
-            begin
-              ArrayI := 1;
-            end
-            else
-            begin
-              ArrayI := 2;
-            end;
-          end;
-
-          aSub[ArrayI] := aSub[ArrayI] + LineSub;
-          aTax[ArrayI] := aTax[ArrayI] + LineTax;
-          aDisc[ArrayI] := aDisc[ArrayI] + LineDisc;
-          aTotal[ArrayI] := aTotal[ArrayI] + LineTotal;
-        end;
-
-        ListCount := (SurchargeList.Count - 1);
-        for I := 0 to (ListCount) do begin
-          SurchargeItem := SurchargeList.Items[I];
-
-          if (AppDetails.TaxExclusivePrices) then begin
-            LineSub := SurchargeItem.Amount;
-            LineTax := GetRoundedUpDown((SurchargeItem.Amount * SurchargeItem.SalesTaxPercent) / 100, AppDetails.DecimalPlaces);
-            LineDisc := 0;
-            LineTotal := LineSub + LineTax;
-          end
-          else begin
-            LineSub := ((SurchargeItem.Amount * 100) / (100 + SurchargeItem.SalesTaxPercent));
-            LineTotal := GetRoundedUpDown(SurchargeItem.Amount, AppDetails.DecimalPlaces);
-            LineTax := GetRoundedUpDown(LineTotal * ((SurchargeItem.SalesTaxPercent) / (100 + SurchargeItem.SalesTaxPercent)), AppDetails.DecimalPlaces);
-            LineDisc := 0;
-          end;
-
-          aSub[3] := aSub[3] + LineSub;
-          aTax[3] := aTax[3] + LineTax;
-          aDisc[3] := aDisc[3] + LineDisc;
-          aTotal[3] := aTotal[3] + LineTotal;
-        end;
-
-        Try
-          //We are already in a Transaction so another one does not need to be started
-          with dm.sp do begin
-            SetStoredProcName('GETSALECATEGORYINFO');
-
-            ParamByName('psalecategoryid').AsInteger := GlbTable.SaleCategoryID;
-            ParamByName('currenttime').AsInteger := CurrentTime;
-            ParamByName('currentday').AsInteger := CurrentDay;
-            Execute;
-
-            if (FieldByName('salecategoryid').IsNull) then begin
-              dm.tr.Rollback;   //Jon 14-07-2003
-              ShowQuickMsg(sSaleCatNotFound);
-              Result := False;
-              Exit;
-            end;
-
-            ServingTime := FieldAsInt(FieldByName('fidservingtime'), 0);
-
-            if ((FieldAsInt(FieldByName('tpfidservingtime'))) > 0) then begin
-              ServingTime := FieldAsInt(FieldByName('tpfidservingtime'));
-            end;
-          end;
-        except
-          on e: exception do begin
-            dm.tr.Rollback;   //Jon 14-07-2003
-            Result := False;
-            ShowMessage(e.message);
-            Exit;
-          end;
-        end;
-        if (Assigned(TL)) then begin
-          FidelioTransaction := TFidelioTransaction.Create;
-
-          FidelioTransaction.GuestNumber := GlbFidelioAccount.GuestNumber;
-          FidelioTransaction.RoomNumber := GlbFidelioAccount.RoomNumber;
-          FidelioTransaction.GuestName := GlbFidelioAccount.GuestName;
-          FidelioTransaction.ServingTime := ServingTime;
-          FidelioTransaction.InvoiceID := WBInvoices.RefreshID;
-          if (GlbTable.Invoiced > 0) then begin
-            FidelioTransaction.Covers := 0;
-          end
-          else begin
-            FidelioTransaction.Covers := GlbTable.Guests;
-          end;
-
-          FidTotal := TL.TLPayment;
-          AddFidelioValues;
-
-          FidelioTransaction.Tip := TL.TLTip;
-
-          FidelioTransaction.BreakdownType := AppDetails.FidelioBreakdownType;
-          FidelioTransaction.Refund := False;
-
-          ListFT.Add(FidelioTransaction);
-        end;
-        if ((AppDetails.FidelioExtendedTender > 0) and
-            ((AppDetails.FidelioAllTransactions < 2) or
-             ((AppDetails.FidelioAllTransactions = 2) and (TLList.TenderTypeExists(TLTFidelio))))) then
-        begin
-          ListCount := (TLList.Count - 1);
-          for I := 0 to ListCount do
-          begin
-            TL := TLList.Items[I];
-            if (TL.TLTypeID <> GetTLTID(TLTFidelio)) then
-            begin
-              FidelioTransaction := TFidelioTransaction.Create;
-              TenderLineType := GetTenderLineTypeRecord(TL.TLType);
-
-              FidelioTransaction.GuestNumber := StrToIntDef(TenderLineType.LibGLCode, AppDetails.FidelioLIBGLCode);
-              FidelioTransaction.RoomNumber := '';
-              FidelioTransaction.GuestName := '';
-              FidelioTransaction.ServingTime := ServingTime;
-              FidelioTransaction.InvoiceID := WBInvoices.RefreshID;
-              if ((ListFT.Count > 0) or (GlbTable.Invoiced > 0)) then begin
-                FidelioTransaction.Covers := 0;
-              end
-              else begin
-                FidelioTransaction.Covers := GlbTable.Guests;
-              end;
-              FidelioTransaction.PaymentMethod := TenderLineType.MiniName;
-
-              FidTotal := TL.TLPayment;
-              AddFidelioValues;
-
-              FidelioTransaction.Tip := TL.TLTip;
-
-              FidelioTransaction.BreakdownType := AppDetails.FidelioBreakdownType;
-              FidelioTransaction.Refund := False;
-
-              ListFT.Add(FidelioTransaction);
-            end;
-          end;
-        end;
-        //Post a transaction with 0 value to show the till was opened.
-        if (((AppDetails.FidelioAllTransactions = 1) or
-             ((AppDetails.FidelioAllTransactions = 2) and (TLList.TenderTypeExists(TLTFidelio)))) and
-            (ListFT.Count <= 0)) then begin
-          FidelioTransaction := TFidelioTransaction.Create;
-          TenderLineType := GetTenderLineTypeRecord(TLTCash);
-
-          FidelioTransaction.GuestNumber := StrToIntDef(TenderLineType.LibGLCode, AppDetails.FidelioLIBGLCode);
-          FidelioTransaction.RoomNumber := '';
-          FidelioTransaction.GuestName := '';
-          FidelioTransaction.ServingTime := ServingTime;
-          FidelioTransaction.InvoiceID := WBInvoices.RefreshID;
-          if (GlbTable.Invoiced > 0) then begin
-            FidelioTransaction.Covers := 0;
-          end
-          else begin
-            FidelioTransaction.Covers := GlbTable.Guests;
-          end;
-          FidelioTransaction.PaymentMethod := TenderLineType.MiniName;
-
-          FidTotal := 0;
-          AddFidelioValues;
-
-          FidelioTransaction.Tip := 0;
-
-          FidelioTransaction.BreakdownType := AppDetails.FidelioBreakdownType;
-          FidelioTransaction.Refund := False;
-
-          ListFT.Add(FidelioTransaction);
-        end;
-      end;
-    end;
-    Result := DoFidelioTransactionList(ListFT);
-    //RPC Here if we failed, we removed the room transfer tender to force to re enter room details
-    if (not Result) then begin
-      ListCount := TLList.Count;
-      I := 0;
-      while (I < ListCount) do begin
-        if (TTL(TLList.Items[I]).TLTypeID = GetTLTID(TLTFidelio)) then begin
-          grdTLs.Row := I+1;
-          DeleteTenderLine;
-          Dec(ListCount);
-        end;
-        Inc(I);
-      end;
-    end;
-  finally
-    ClearListObjects(ListFT, True);
-  end;
-end;
-{******************************************************************************}
-function TformPaymentTable.SendPhoenixTransactions(AOLList: TList): Boolean;
-var
-  PhoenixTransaction: TPhoenixTransaction;
-  ListPT: TList;
-
-  PhxTotal: Currency;
-  ListCount: Integer;
-  I: Integer;
-  TL: TTL;
-
-  GLFoodTotal, GLBevTotal, FoodTotal, BevTotal, MiscTotal, TipTotal: Currency;
-  LineSub, LineTax, LineDisc, LineTotal: Currency;
-  TenderLineType: TTenderLineType;
-
-  FoodCat, BevCat, MiscCat, TipCat: Integer;
-  tmpFoodCat, tmpBevCat: Integer;
-  OverrideIGGLCode: Boolean;
-
-  SoFarComboDiscount, SoFarDiscount, ILDiscount: Currency;
-  OL: TOrderLine;
-  SurchargeItem: TSurchargeItem;
-  tmpItemGroup: TItemGroup;
-
-  procedure AddPhoenixValues(DoEverything: Boolean);
-
-    procedure AllocateAgainstPhxTotal(ACategory: Integer; ATotal: Currency);
-    var
-      Ratio: Double;
-      Value: Currency;
-    begin
-      if ((PhxTotal > ATotal) or (DoEverything)) then begin
-        Ratio := 1;
-      end
-      else if (ATotal > 0) then begin
-        Ratio := (PhxTotal / ATotal);
-      end
-      else begin
-        Ratio := 0;
-      end;
-
-      Value := RoundCurrency(ATotal * Ratio, 2);
-      if (Value <> 0) then begin
-        PhoenixTransaction.AddPhoenixCategory(ACategory, Value, True);
-      end;
-
-      PhxTotal := PhxTotal - (ATotal * Ratio);
-    end;
-
-    procedure AllocateGLOLsAgainstPhxTotal(ForB: string; ATotal: Currency);
-    var
-      iIDx: Integer;
-      cAmtToAlloc: Currency;
-    begin
-      //if there is a GL Food/Bev total, it is distributed across the order
-      //lines below, where there is a GLCode, and the ForB param matches
-      if ATotal > 0 then
-      begin
-        //loop through each order line
-        ListCount := (AOLList.Count - 1);
-        for iIDx := 0 to ListCount do
-        begin
-          OL := AOLList.Items[iIDx];
-
-          //if find an order line with a GLCode (from item's itemgroup)
-          if (OL.GLCode <> '') and (OL.FORB = ForB) then
-          begin
-            //allocate the net amount to pay on the orderline (or less, if remaining total is smaller)
-            if OL.NetToPay <= ATotal then
-              cAmtToAlloc := OL.NetToPay
-            else
-              cAmtToAlloc := ATotal;
-            AllocateAgainstPhxTotal(StrToIntDef(OL.GLCode, 0), cAmtToAlloc);
-
-            //remove amount just allocated from remaining total
-            ATotal := ATotal - cAmtToAlloc;
-            if ATotal <= 0 then
-              Break;
-          end;
-        end;
-      end;
-    end;
-
-  begin
-    AllocateGLOLsAgainstPhxTotal('F', GLFoodTotal);
-    AllocateGLOLsAgainstPhxTotal('B', GLBevTotal);
-    AllocateAgainstPhxTotal(FoodCat, FoodTotal);
-    AllocateAgainstPhxTotal(BevCat, BevTotal);
-    AllocateAgainstPhxTotal(MiscCat, MiscTotal);
-  end;
-
-begin
-  ListPT := TList.Create;
-  PhoenixTransaction := nil;
-  try
-    I := 0;
-    ListCount := TLList.Count;
-    while ((I < ListCount) and (TTL(TLList.Items[I]).TLTypeID <> GetTLTID(TLTPhoenix))) do
-    begin
-      Inc(I);
-    end;
-    if ((I >= ListCount) and (not (AppDetails.PhoenixExtendedTender or AppDetails.PhoenixAllTransactions))) then begin
-    //This should never happen cos we should only come here if Phoenixtransexist
-      Result := False;
-      Exit;
-    end
-    else begin
-      if (I >= ListCount) then begin
-        TL := Nil;
-      end
-      else begin
-        TL := TLList.Items[I];
-      end;
-
-      try
-        //We are already in a Transaction so another one does not need to be started
-        with dm.sp do begin
-          SetStoredProcName('GETSALECATEGORYINFO');
-
-          ParamByName('psalecategoryid').AsInteger := GlbTable.SaleCategoryID;
-          ParamByName('currenttime').AsInteger := CurrentTime;
-          ParamByName('currentday').AsInteger := CurrentDay;
-          Execute;
-
-          if (FieldByName('salecategoryid').IsNull) then begin
-            dm.tr.Rollback;   //Jon 14-07-2003
-            ShowQuickMsg(sSaleCatNotFound);
-            Result := False;
-            Exit;
-          end;
-
-          FoodCat := StrToIntDef(FieldAsString(FieldByName('libglf')), 1);
-          BevCat := StrToIntDef(FieldAsString(FieldByName('libglb')), 2);
-          MiscCat := StrToIntDef(FieldAsString(FieldByName('libglmisc')), 3);
-          TipCat := StrToIntDef(FieldAsString(FieldByName('libgltip')), 4);
-
-          tmpFoodCat := StrToIntDef(FieldAsString(FieldByName('tplibglf')), FoodCat);
-          tmpBevCat := StrToIntDef(FieldAsString(FieldByName('tplibglb')), BevCat);
-          OverrideIGGLCode := FieldAsBool(FieldByName('overrideigglcode'));
-          if ((tmpFoodCat <> 0) and (tmpBevCat <> 0)) then begin
-            FoodCat := tmpFoodCat;
-            BevCat := tmpBevCat;
-          end;
-        end;
-      except
-        on e: exception do begin
-          dm.tr.Rollback;   //Jon 14-07-2003
-          Result := False;
-          ShowMessage(e.message);
-          Exit;
-        end;
-      end;
-
-      if ((AppDetails.PhoenixBreakdownType = 0) and (Assigned(TL))) then begin
-        PhoenixTransaction := TPhoenixTransaction.Create;
-
-        PhoenixTransaction.GuestNumber := GlbPhoenixAccount.GuestNumber;
-        PhoenixTransaction.RoomNumber := GlbPhoenixAccount.RoomNumber;
-        PhoenixTransaction.GuestName := GlbPhoenixAccount.GuestName;
-        PhoenixTransaction.InvoiceID := WBInvoices.RefreshID;
-        if (GlbTable.Invoiced > 0) then begin
-          PhoenixTransaction.Covers := 0;
-        end
-        else begin
-          PhoenixTransaction.Covers := GlbTable.Guests;
-        end;
-
-        PhxTotal := TL.TLPayment + TL.TLTip;
-
-        PhoenixTransaction.AddPhoenixCategory(FoodCat, PhxTotal);
-
-        PhoenixTransaction.BreakdownType := 0;
-        PhoenixTransaction.Refund := False;
-        ListPT.Add(PhoenixTransaction);
-      end
-      else if (AppDetails.PhoenixBreakdownType = 1) then begin
-      //Do this right then remove the same code where it exists below
-        ListCount := (AOLList.Count - 1);
-
-        GLFoodTotal := 0;
-        GLBevTotal := 0;
-        FoodTotal := 0;
-        BevTotal := 0;
-        MiscTotal := 0;
-        TipTotal := 0;
-        SoFarDiscount := 0;
-        SoFarComboDiscount := 0;
-
-        for I := 0 to ListCount do begin
-          OL := AOLList.Items[I];
-
-          if ((FDiscountAmount <= 0) and (FComboDiscount <= 0)) then
-          begin
-            ILDiscount := 0;
-          end
-          else if OL.ComboID > 0 then
-          begin
-            if OL.LastComboItem then
-            begin
-              ILDiscount := FComboDiscount - SoFarComboDiscount;
-            end
-            else
-            begin
-              ILDiscount := OL.AllowedDiscount;
-            end;
-
-            ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-            SoFarComboDiscount := SoFarComboDiscount + ILDiscount;
-            SoFarComboDiscount := GetRoundedUpDown(SoFarComboDiscount, AppDetails.DecimalPlaces);
-          end
-          else
-          begin
-            //if it's the last line, allocate whatever hasn't been pro rata-ed
-            if OL.LastNormalItem then
-              ILDiscount := FDiscountAmount - SoFarDiscount
-            else
-            begin              //pro rata discount and accumulate discount pro rata-ed so far
-              ILDiscount := OL.AllowedDiscount;
-              ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-              SoFarDiscount := SoFarDiscount + ILDiscount;
-              SoFarDiscount := GetRoundedUpDown(SoFarDiscount, AppDetails.DecimalPlaces);
-            end;
-          end;
-
-          if (AppDetails.TaxExclusivePrices) then begin
-            LineSub := OL.ToPay;
-            LineTax := GetRoundedUpDown(((OL.ToPay - ILDiscount) * OL.SalesTaxPercent) / 100, AppDetails.DecimalPlaces);
-            LineDisc := ILDiscount;
-            LineTotal := LineSub + LineTax - LineDisc;
-          end
-          else begin
-            LineTotal := (OL.ToPay - ILDiscount);
-          end;
-
-          if (OL.GLCode <> '') and (not OverrideIGGLCode) then
-          begin
-            OL.NetToPay := LineTotal;
-            if (OL.FORB = 'F') then begin
-              GLFoodTotal := GLFoodTotal + LineTotal;
-            end
-            else begin
-              GLBevTotal := GLBevTotal + LineTotal;
-            end;
-          end
-          else
-          begin
-            if (OL.FORB = 'F') then begin
-              FoodTotal := FoodTotal + LineTotal;
-            end
-            else begin
-              BevTotal := BevTotal + LineTotal;
-            end;
-          end;
-        end;
-
-        PhoenixTransaction := nil;
-
-        ListCount := (SurchargeList.Count - 1);
-        for I := 0 to (ListCount) do begin
-          SurchargeItem := SurchargeList.Items[I];
-
-          if (AppDetails.TaxExclusivePrices) then begin
-            LineSub := SurchargeItem.Amount;
-            LineTax := GetRoundedUpDown(((SurchargeItem.Amount * SurchargeItem.SalesTaxPercent) / 100), AppDetails.DecimalPlaces);
-            LineTotal := LineSub + LineTax;
-          end
-          else begin
-            LineTotal := SurchargeItem.Amount;
-          end;
-          LineTotal := GetRoundedUpDown(LineTotal, AppDetails.DecimalPlaces);
-
-          tmpItemGroup := GlobalMenuList.GetItemsItemGroup(SurchargeItem.ItemID);
-          if (Assigned(tmpItemGroup)) then
-            SurchargeItem.GLCode := tmpItemGroup.GLCode;
-
-          if (SurchargeItem.GLCode <> '') and (StrToIntDef(SurchargeItem.GLCode, 0) > 0) then
-          begin
-            if (not Assigned(PhoenixTransaction)) then
-              PhoenixTransaction := TPhoenixTransaction.Create;
-            PhoenixTransaction.AddPhoenixCategory(StrToInt(SurchargeItem.GLCode), LineTotal, True);
-          end
-          else
-            MiscTotal := MiscTotal + LineTotal;
-        end;
-
-        if (Assigned(TL)) then
-        begin
-          if (not Assigned(PhoenixTransaction)) then
-            PhoenixTransaction := TPhoenixTransaction.Create;
-
-          PhoenixTransaction.GuestNumber := GlbPhoenixAccount.GuestNumber;
-          PhoenixTransaction.RoomNumber := GlbPhoenixAccount.RoomNumber;
-          PhoenixTransaction.GuestName := GlbPhoenixAccount.GuestName;
-          PhoenixTransaction.InvoiceID := WBInvoices.RefreshID;
-          if (GlbTable.Invoiced > 0) then begin
-            PhoenixTransaction.Covers := 0;
-          end
-          else begin
-            PhoenixTransaction.Covers := GlbTable.Guests;
-          end;
-
-          PhxTotal := TL.TLPayment;
-          TipTotal := TL.TLTip;
-
-          PhoenixTransaction.BreakdownType := 1;
-          PhoenixTransaction.Refund := False;
-
-          ListPT.Add(PhoenixTransaction);
-        end
-        else if (AppDetails.PhoenixExtendedTender) then
-        begin
-          if (not Assigned(PhoenixTransaction)) then
-            PhoenixTransaction := TPhoenixTransaction.Create;
-
-          PhoenixTransaction.GuestNumber := AppDetails.PhoenixTenGuestNumber;
-          PhoenixTransaction.RoomNumber := AppDetails.PhoenixTenRoomNumber;
-          PhoenixTransaction.GuestName := '';
-          PhoenixTransaction.InvoiceID := WBInvoices.RefreshID;
-          if (GlbTable.Invoiced > 0) then begin
-            PhoenixTransaction.Covers := 0;
-          end
-          else begin
-            PhoenixTransaction.Covers := GlbTable.Guests;
-          end;
-
-          PhoenixTransaction.BreakdownType := 1;
-          PhoenixTransaction.Refund := False;
-
-          ListPT.Add(PhoenixTransaction);
-        end;
-
-        if (Assigned(PhoenixTransaction)) then begin
-          AddPhoenixValues(AppDetails.PhoenixExtendedTender);
-
-          if (AppDetails.PhoenixExtendedTender) then begin
-            //Get the tips first
-            ListCount := (TLList.Count - 1);
-            for I := 0 to ListCount do begin
-              TL := TLList.Items[I];
-              if (TL.TLTypeID <> GetTLTID(TLTPhoenix)) then begin
-                TipTotal := TipTotal + TL.TLTip;
-              end;
-            end;
-            if (TipTotal <> 0) then begin
-              PhoenixTransaction.AddPhoenixCategory(TipCat, TipTotal);
-            end;
-
-            for I := 0 to ListCount do begin
-              TL := TLList.Items[I];
-              if (TL.TLTypeID <> GetTLTID(TLTPhoenix)) then begin
-                TenderLineType := GetTenderLineTypeRecord(TL.TLType);
-
-                PhoenixTransaction.AddPhoenixCategory(StrToIntDef(TenderLineType.LibGLCode, 0), TL.TLPayment + TL.TLTip);
-              end;
-            end;
-          end
-          else if (TipTotal <> 0) then begin
-            PhoenixTransaction.AddPhoenixCategory(TipCat, TipTotal);
-          end;
-        end;
-
-        if ((AppDetails.PhoenixAllTransactions) and (ListPT.Count <= 0)) then
-        begin
-          if (not Assigned(PhoenixTransaction)) then
-            PhoenixTransaction := TPhoenixTransaction.Create;
-
-          PhoenixTransaction.GuestNumber := AppDetails.PhoenixTenGuestNumber;
-          PhoenixTransaction.RoomNumber := AppDetails.PhoenixTenRoomNumber;
-          PhoenixTransaction.InvoiceID := WBInvoices.RefreshID;
-          if (GlbTable.Invoiced > 0) then begin
-            PhoenixTransaction.Covers := 0;
-          end
-          else begin
-            PhoenixTransaction.Covers := GlbTable.Guests;
-          end;
-
-          PhoenixTransaction.BreakdownType := 1;
-          PhoenixTransaction.Refund := False;
-
-          ListPT.Add(PhoenixTransaction);
-        end;
-
-        if (Assigned(PhoenixTransaction)) then begin
-          if (PhoenixTransaction.ListPhoenixCategorys.Count = 0) then begin
-            PhoenixTransaction.AddPhoenixCategory(FoodCat, 0);
-          end;
-        end;
-      end;
-    end;
-
-    Result := DoPhoenixTransactionList(ListPT);
-  finally
-    for I := (ListPT.Count - 1) downto 0 do begin
-      PhoenixTransaction := ListPT.Items[I];
-      PhoenixTransaction.Free;
-      ListPT.Delete(I);
-    end;
-    ListPT.Free;
-  end;
-end;
-{*******************************************************************************
-Calculates and send the transactions to the Micros 4700 spec system.
-
-Change History
-#00338# 23/08/2012 JBB Breakdown into subtotals with tax and discounts.
-*******************************************************************************}
-
-function TformPaymentTable.SendMicros4700Transactions(AOLList: TList): Boolean;
-var
-  TL: TTL;
-  I: Integer;
-  MT: TMicros4700Transaction;
-  TenderLineType: TTenderLineType;  
-  PaymentTotal: Currency;
-  GLFoodTotal, GLBevTotal: Currency;
-  FoodSub, FoodTax, FoodTaxBefore, FoodDisc, FoodDiscBefore, FoodTotal: Currency;
-  BevSub, BevTax, BevTaxBefore, BevDisc, BevDiscBefore, BevTotal: Currency;
-  MiscSub, MiscTax, MiscTaxBefore, MiscDisc, MiscDiscBefore, MiscTotal: Currency;
-  LineSub, LineTax, LineTaxBefore, LineDisc, LineDiscBefore, LineTotal: Currency;
-  Ratio: Double;
-  MaxI: Integer;
-  SoFarComboDiscount, SoFarDiscount, ILDiscount: Currency;
-  OL: TOrderLine;
-  SurchargeItem: TSurchargeItem;
-  tmpItemGroup: TItemGroup;
-  FoodCat, BevCat, MiscCat, TipCat: String;
-  tmpFoodCat, tmpBevCat: String;
-  OverrideIGGLCode: Boolean;
-
-  procedure AddMicros4700Values(DoEverything: Boolean);
-    procedure AllocateAgainstM4700Total(ACategory: String; ATotal: Currency);
-    var
-      Ratio: Double;
-      Value: Currency;
-    begin
-      if ((MT.PostingValue > ATotal) or (DoEverything)) then begin
-        Ratio := 1;
-      end
-      else if (ATotal > 0) then begin
-        Ratio := (MT.PostingValue / ATotal);
-      end
-      else begin
-        Ratio := 0;
-      end;
-
-      Value := GetRoundedUpDown(ATotal * Ratio, AppDetails.DecimalPlaces);
-      if (Value <> 0) then begin
-        MT.AddMicros4700Category(ACategory, Value, True);
-      end;
-
-      MT.PostingValue := MT.PostingValue - (ATotal * Ratio);
-    end;
-
-    procedure AllocateGLOLsAgainstM4700Total(ForB: string; ATotal: Currency);
-    var
-      I: Integer;
-      aAmtToAlloc: Currency;
-    begin
-      //if there is a GL Food/Bev total, it is distributed across the order
-      //lines below, where there is a GLCode, and the ForB param matches
-      if ATotal > 0 then
-      begin
-        //loop through each order line
-        MaxI := (AOLList.Count - 1);
-        for I := 0 to MaxI do
-        begin
-          OL := AOLList.Items[I];
-
-          //if find an order line with a GLCode (from item's itemgroup)
-          if (OL.GLCode <> '') and (OL.FORB = ForB) then
-          begin
-            //allocate the net amount to pay on the orderline (or less, if remaining total is smaller)
-            if OL.NetToPay <= ATotal then
-              aAmtToAlloc := OL.NetToPay
-            else
-              aAmtToAlloc := ATotal;
-            AllocateAgainstM4700Total(OL.ForB + OL.GLCode, aAmtToAlloc);
-
-            //remove amount just allocated from remaining total
-            ATotal := ATotal - aAmtToAlloc;
-            if ATotal <= 0 then
-              Break;
-          end;
-        end;
-      end;
-    end;
-
-  begin
-    AllocateGLOLsAgainstM4700Total('F', GLFoodTotal);
-    AllocateGLOLsAgainstM4700Total('B', GLBevTotal);
-    AllocateAgainstM4700Total(FoodCat, FoodTotal);
-    AllocateAgainstM4700Total(BevCat, BevTotal);
-    AllocateAgainstM4700Total(MiscCat, MiscTotal);
-  end;
-
-begin
-  MT := TMicros4700Transaction.Create;
-  Result := False;
-  try
-    TL := TLList.GetTLOfTypeID(GetTLTID(TLTMicros4700Account));
-    if (not Assigned(TL)) then
-      TL := TLList.GetTLOfTypeID(GetTLTID(TLTMicros4700));
-    if ((not Assigned(TL)) and (AppDetails.Micros4700ExtendedTender) and (AppDetails.Micros4700AllTransactions <> 1)) then
-    begin
-    //This should never happen cos we should only come here if MicrosTransExist
-      Exit;
-    end;
-
-    MT.RoomNumber := GlbMicros4700Account.RoomNumber;
-    MT.SubFolio := GlbMicros4700Account.SubFolio;
-    MT.InvoiceID := WBInvoices.RefreshID;
-
-    if Assigned(TL) then
-    begin
-      MT.PostingValue := TL.TLPayment + TL.TLTip;
-      MT.TipValue := TL.TLTip;
-
-      TenderLineType := GetTenderLineTypeRecord(TL.TLType);
-      MT.Payment := StrToIntDef(TenderLineType.LibGLCode, 0)
-    end;
-    MT.FoodValue := 0;
-    MT.BevValue := 0;
-    MT.MiscValue := 0;
-
-    MT.BreakdownType := AppDetails.Micros4700BreakdownType;
-    MT.RevenueCenter := AppDetails.Micros4700RevenueCenter;
-    MT.Refund := False;
-
-    try
-      //We are already in a Transaction so another one does not need to be started
-      with dm.sp do begin
-        SetStoredProcName('GETSALECATEGORYINFO');
-
-        ParamByName('psalecategoryid').AsInteger := GlbTable.SaleCategoryID;
-        ParamByName('currenttime').AsInteger := CurrentTime;
-        ParamByName('currentday').AsInteger := CurrentDay;
-        Execute;
-
-        if (FieldByName('salecategoryid').IsNull) then begin
-          dm.tr.Rollback;   //Jon 14-07-2003
-          ShowQuickMsg(sSaleCatNotFound);
-          Exit;
-        end;
-
-        MT.ServingPeriod := FieldAsInt(FieldByName('fidservingtime'), 0);
-
-        if ((FieldAsInt(FieldByName('tpfidservingtime'))) > 0) then begin
-          MT.ServingPeriod := FieldAsInt(FieldByName('tpfidservingtime'));
-        end;
-
-        FoodCat := 'F' + FieldAsString(FieldByName('libglf'));
-        BevCat := 'B' + FieldAsString(FieldByName('libglb'));
-        MiscCat := 'M' + FieldAsString(FieldByName('libglmisc'));
-        TipCat := 'T' + FieldAsString(FieldByName('libgltip'));
-
-        tmpFoodCat := 'F' + FieldAsString(FieldByName('tplibglf'));
-        tmpBevCat := 'B' + FieldAsString(FieldByName('tplibglb'));
-        OverrideIGGLCode := FieldAsBool(FieldByName('overrideigglcode'));
-        if ((tmpFoodCat <> 'F') and (tmpBevCat <> 'B')) then begin
-          FoodCat := tmpFoodCat;
-          BevCat := tmpBevCat;
-        end;
-
-      end;
-    except
-      on e: exception do begin
-        dm.tr.Rollback;   //Jon 14-07-2003
-        ShowMessage(e.message);
-        Exit;
-      end;
-    end;
-
-    if (AppDetails.Micros4700BreakdownType = 1) then begin
-      FoodSub := 0;
-      FoodTax := 0;
-      FoodTaxBefore := 0;
-      FoodDisc := 0;
-      FoodDiscBefore := 0;
-      FoodTotal := 0;
-      BevSub := 0;
-      BevTax := 0;
-      BevTaxBefore := 0;
-      BevDisc := 0;
-      BevDiscBefore := 0;
-      BevTotal := 0;
-      MiscSub := 0;
-      MiscTax := 0;
-      MiscTaxBefore := 0;
-      MiscDisc := 0;
-      MiscDiscBefore := 0;
-      MiscTotal := 0;
-      SoFarDiscount := 0;
-      SoFarComboDiscount := 0;
-      MaxI := (AOLList.Count - 1);
-      for I := 0 to MaxI do begin
-        OL := AOLList.Items[I];
-
-        if (FDiscountAmount <= 0) then begin
-          ILDiscount := 0;
-        end
-        else
-        begin
-          //if it's the last line, allocate whatever hasn't been pro rata-ed
-          if (I = MaxI) then begin
-            ILDiscount := FDiscountAmount - SoFarDiscount;
-          end
-          else begin
-            //pro rata discount and accumulate discount pro rata-ed so far
-            ILDiscount := OL.AllowedDiscount;
-            (*if (not FUseDiscountAmount) then
-            begin
-              ILDiscount := OL.AllowedDiscount;
-            end
-            else begin
-              ILDiscount := ((OL.ToPay / FToPay) * FDiscountAmount);   //Jon 25-6-2001
-            end;*)
-
-            ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-            SoFarDiscount := SoFarDiscount + ILDiscount;
-            SoFarDiscount := GetRoundedUpDown(SoFarDiscount, AppDetails.DecimalPlaces);
-          end;
-        end;
-
-        if (AppDetails.TaxExclusivePrices) then
-        begin
-          LineSub := OL.ToPay;
-          LineTax := GetRoundedUpDown(((OL.ToPay - ILDiscount) * OL.SalesTaxPercent) / 100, AppDetails.DecimalPlaces);
-          LineTaxBefore := GetRoundedUpDown((OL.ToPay * OL.SalesTaxPercent) / 100, AppDetails.DecimalPlaces);
-          LineDisc := ILDiscount;
-          LineDiscBefore := ILDiscount;
-          LineTotal := LineSub + LineTax - LineDisc;
-        end
-        else
-        begin
-          LineTax := GetRoundedUpDown((OL.ToPay - ILDiscount) * ((OL.SalesTaxPercent) / (100 + OL.SalesTaxPercent)), AppDetails.DecimalPlaces);
-          LineTaxBefore := GetRoundedUpDown((OL.ToPay * OL.SalesTaxPercent) / (100 + OL.SalesTaxPercent), AppDetails.DecimalPlaces);
-          LineDisc := GetRoundedUpDown((ILDiscount * 100) / (100 + OL.SalesTaxPercent), AppDetails.DecimalPlaces);
-          LineDiscBefore := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-          LineSub := GetRoundedUpDown(OL.ToPay - LineTax, AppDetails.DecimalPlaces);
-          LineTotal := (OL.ToPay - ILDiscount);
-        end;
-
-        if (OL.FORB = 'F') then
-        begin
-          FoodSub := FoodSub + LineSub;
-          FoodTax := FoodTax + LineTax;
-          FoodTaxBefore := FoodTaxBefore + LineTaxBefore;
-          FoodDisc := FoodDisc + LineDisc;
-          FoodDiscBefore := FoodDiscBefore + LineDiscBefore;
-          FoodTotal := FoodTotal + LineTotal;
-        end
-        else
-        begin
-          BevSub := BevSub + LineSub;
-          BevTax := BevTax + LineTax;
-          BevTaxBefore := BevTaxBefore + LineTaxBefore;
-          BevDisc := BevDisc + LineDisc;
-          BevDiscBefore := BevDiscBefore + LineDiscBefore;
-          BevTotal := BevTotal + LineTotal;
-        end;
-      end;
-
-      MaxI := (SurchargeList.Count - 1);
-      for I := 0 to MaxI do begin
-        SurchargeItem := SurchargeList.Items[I];
-
-        if (AppDetails.TaxExclusivePrices) then
-        begin
-          LineSub := SurchargeItem.Amount;
-          LineTax := GetRoundedUpDown((SurchargeItem.Amount * SurchargeItem.SalesTaxPercent) / 100, AppDetails.DecimalPlaces);
-          LineTaxBefore := LineTax;
-          LineDisc := 0;
-          LineDiscBefore := 0;
-          LineTotal := LineSub + LineTax;
-        end
-        else
-        begin
-          LineSub := ((SurchargeItem.Amount * 100) / (100 + SurchargeItem.SalesTaxPercent));
-          LineTotal := SurchargeItem.Amount;
-          LineTax := GetRoundedUpDown(LineTotal * ((SurchargeItem.SalesTaxPercent) / (100 + SurchargeItem.SalesTaxPercent)), AppDetails.DecimalPlaces);
-          LineTaxBefore := LineTax;
-          LineDisc := 0;
-          LineDiscBefore := 0;
-        end;
-
-        MiscSub := MiscSub + LineSub;
-        MiscTax := MiscTax + LineTax;
-        MiscTaxBefore := MiscTaxBefore + LineTaxBefore;
-        MiscDisc := MiscDisc + LineDisc;
-        MiscDiscBefore := MiscDiscBefore + LineDiscBefore;
-        MiscTotal := MiscTotal + LineTotal;
-      end;
-
-      PaymentTotal := TL.TLPayment;
-
-      if (PaymentTotal > FoodTotal) then
-      begin
-        Ratio := 1;
-      end
-      else if (FoodTotal > 0) then
-      begin
-        Ratio := (PaymentTotal / FoodTotal);
-      end
-      else
-      begin
-        Ratio := 0;
-      end;
-
-      MT.FoodValue := GetRoundedUpDown(FoodTotal * Ratio, AppDetails.DecimalPlaces);
-      MT.FoodSub := GetRoundedUpDown(FoodSub * Ratio, AppDetails.DecimalPlaces);
-      MT.FoodTax := GetRoundedUpDown(FoodTax * Ratio, AppDetails.DecimalPlaces);
-      MT.FoodTaxBefore := GetRoundedUpDown(FoodTaxBefore * Ratio, AppDetails.DecimalPlaces);
-      MT.FoodDisc := GetRoundedUpDown(MT.FoodSub + MT.FoodTax - MT.FoodValue, AppDetails.DecimalPlaces);
-      MT.FoodDiscBefore := GetRoundedUpDown(MT.FoodSub + MT.FoodTaxBefore - MT.FoodValue, AppDetails.DecimalPlaces);
-      PaymentTotal := PaymentTotal - MT.FoodValue;
-
-      if (PaymentTotal > BevTotal) then
-      begin
-        Ratio := 1;
-      end
-      else if (BevTotal > 0) then
-      begin
-        Ratio := (PaymentTotal / BevTotal);
-      end
-      else
-      begin
-        Ratio := 0;
-      end;
-
-      MT.BevValue := GetRoundedUpDown(BevTotal * Ratio, AppDetails.DecimalPlaces);
-      MT.BevSub := GetRoundedUpDown(BevSub * Ratio, AppDetails.DecimalPlaces);
-      MT.BevTax := GetRoundedUpDown(BevTax * Ratio, AppDetails.DecimalPlaces);
-      MT.BevTaxBefore := GetRoundedUpDown(BevTaxBefore * Ratio, AppDetails.DecimalPlaces);
-      MT.BevDisc := GetRoundedUpDown(MT.BevSub + MT.BevTax - MT.BevValue, AppDetails.DecimalPlaces);
-      MT.BevDiscBefore := GetRoundedUpDown(MT.BevSub + MT.BevTaxBefore - MT.BevValue, AppDetails.DecimalPlaces);
-      PaymentTotal := PaymentTotal - MT.BevValue;
-
-
-      if (PaymentTotal > MiscTotal) then
-      begin
-        Ratio := 1;
-      end
-      else if (MiscTotal > 0) then
-      begin
-        Ratio := (PaymentTotal / MiscTotal);
-      end
-      else
-      begin
-        Ratio := 0;
-      end;
-
-      MT.MiscValue := GetRoundedUpDown(MiscTotal * Ratio, AppDetails.DecimalPlaces);
-      MT.MiscSub := GetRoundedUpDown(MiscSub * Ratio, AppDetails.DecimalPlaces);
-      MT.MiscTax := GetRoundedUpDown(MiscTax * Ratio, AppDetails.DecimalPlaces);
-      MT.MiscTaxBefore := GetRoundedUpDown(MiscTaxBefore * Ratio, AppDetails.DecimalPlaces);
-      MT.MiscDisc := GetRoundedUpDown(MT.MiscSub + MT.MiscTax - MT.MiscValue, AppDetails.DecimalPlaces);
-      MT.MiscDiscBefore := GetRoundedUpDown(MT.MiscSub + MT.MiscTaxBefore - MT.MiscValue, AppDetails.DecimalPlaces);
-    end
-    else if (AppDetails.Micros4700BreakdownType = 2) then
-    begin
-      MaxI := (AOLList.Count - 1);
-
-      GLFoodTotal := 0;
-      GLBevTotal := 0;
-      FoodTotal := 0;
-      BevTotal := 0;
-      MiscTotal := 0;
-      SoFarDiscount := 0;
-      SoFarComboDiscount := 0.00;      
-
-      for I := 0 to MaxI do begin
-        OL := AOLList.Items[I];
-
-        if ((FDiscountAmount <= 0) and (FComboDiscount <= 0)) then
-        begin
-          ILDiscount := 0;
-        end
-        else if OL.ComboID > 0 then
-        begin
-          if OL.LastComboItem then
-          begin
-            ILDiscount := FComboDiscount - SoFarComboDiscount;
-          end
-          else
-          begin
-            ILDiscount := OL.AllowedDiscount;
-          end;
-
-          ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-          SoFarComboDiscount := SoFarComboDiscount + ILDiscount;
-          SoFarComboDiscount := GetRoundedUpDown(SoFarComboDiscount, AppDetails.DecimalPlaces);
-        end
-        else
-        begin
-          //if it's the last line, allocate whatever hasn't been pro rata-ed
-          if OL.LastNormalItem then
-            ILDiscount := FDiscountAmount - SoFarDiscount
-          else
-          begin              //pro rata discount and accumulate discount pro rata-ed so far
-            ILDiscount := OL.AllowedDiscount;
-            ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-            SoFarDiscount := SoFarDiscount + ILDiscount;
-            SoFarDiscount := GetRoundedUpDown(SoFarDiscount, AppDetails.DecimalPlaces);
-          end;
-        end;
-
-
-        if (AppDetails.TaxExclusivePrices) then begin
-          LineSub := GetRoundedUpDown(OL.ToPay, AppDetails.DecimalPlaces);
-          LineTax := GetRoundedUpDown(((OL.ToPay - ILDiscount) * OL.SalesTaxPercent) / 100, AppDetails.DecimalPlaces);
-          LineDisc := ILDiscount;
-          LineTotal := LineSub + LineTax - LineDisc;
-        end
-        else begin
-          LineTotal := (OL.ToPay - ILDiscount);
-        end;
-
-        if (OL.GLCode <> '') and (not OverrideIGGLCode) then begin
-          OL.NetToPay := LineTotal;
-          if (OL.FORB = 'F') then begin
-            GLFoodTotal := GLFoodTotal + LineTotal;
-          end
-          else begin
-            GLBevTotal := GLBevTotal + LineTotal;
-          end;
-        end
-        else begin
-          if (OL.FORB = 'F') then begin
-            FoodTotal := FoodTotal + LineTotal;
-          end
-          else begin
-            BevTotal := BevTotal + LineTotal;
-          end;
-        end;
-      end;
-
-      MaxI := (SurchargeList.Count - 1);
-      for I := 0 to (MaxI) do begin
-        SurchargeItem := SurchargeList.Items[I];
-
-        if (AppDetails.TaxExclusivePrices) then
-        begin
-          LineSub := GetRoundedUpDown(SurchargeItem.Amount, AppDetails.DecimalPlaces);
-          LineTax := GetRoundedUpDown((SurchargeItem.Amount * SurchargeItem.SalesTaxPercent) / 100, AppDetails.DecimalPlaces);
-          LineTotal := LineSub + LineTax;
-        end
-        else begin
-          LineTotal := SurchargeItem.Amount;
-        end;
-
-        tmpItemGroup := GlobalMenuList.GetItemsItemGroup(SurchargeItem.ItemID);
-        if (Assigned(tmpItemGroup)) then
-          SurchargeItem.GLCode := tmpItemGroup.GLCode;
-
-        if (SurchargeItem.GLCode <> '') then
-        begin
-          MT.AddMicros4700Category('M' + SurchargeItem.GLCode, LineTotal, True);
-        end
-        else
-          MiscTotal := MiscTotal + LineTotal;
-      end;
-
-
-      if (not Assigned(TL)) and ((AppDetails.Micros4700ExtendedTender) or (AppDetails.PhoenixAllTransactions)) then
-      begin
-        MT.RoomNumber :=  AppDetails.Micros4700FolioID;
-        MT.SubFolio := AppDetails.Micros4700SubFolio;
-      end;
-
-      AddMicros4700Values(AppDetails.Micros4700ExtendedTender);
-
-
-      if (AppDetails.Micros4700ExtendedTender) then begin
-        //Get the tips first
-        MaxI := (TLList.Count - 1);
-        for I := 0 to MaxI do begin
-          TL := TLList.Items[I];
-          if (TL.TLTypeID <> GetTLTID(TLTMicros4700)) and (TL.TLTypeID <> GetTLTID(TLTMicros4700Account)) then begin
-            MT.TipValue := MT.TipValue + TL.TLTip;
-          end;
-        end;
-        if (MT.TipValue<> 0) then begin
-          MT.AddMicros4700Category(TipCat, MT.TipValue);
-        end;
-
-        for I := 0 to MaxI do begin
-          TL := TLList.Items[I];
-          if (TL.TLTypeID <> GetTLTID(TLTMicros4700)) and (TL.TLTypeID <> GetTLTID(TLTMicros4700Account)) then begin
-            TenderLineType := GetTenderLineTypeRecord(TL.TLType);
-
-            MT.AddMicros4700Category('T' + TenderLineType.LibGLCode, -(TL.TLPayment + TL.TLTip), True);
-          end;
-        end;
-      end
-      else if (MT.TipValue <> 0) then begin
-        MT.AddMicros4700Category(TipCat, MT.TipValue);
-      end;
-    end;
-
-    if (DoMicros4700Transaction(MT)) then
-    begin
-      with dm.sp do
-      begin
-        try
-          SetStoredProcName('INSERT_INVOICEMICROS4700');
-          ParamByName('invoiceid').AsInteger := MT.InvoiceID;
-          BoolAsParam(ParamByName('bulkpost'), False);
-          Execute;
-
-        except
-          on e: exception do begin
-            dm.tr.Rollback;   //Jon 14-07-2003
-            ShowMessage(e.message);
-            Exit;
-          end;
-        end;
-      end;
-      Result := True;
-    end;
-  finally
-    MT.Free;
-  end;
-end;
-{******************************************************************************}
-function TformPaymentTable.SendNZATransactions(AOLList: TList): Boolean;
-var
-  NZAFood, NZABev, NZATip: Currency;
-  NZAFoodTax, NZABevTax, NZATipTax: Currency;
-  TotalFood, TotalBev, NZAAmt: Currency;
-  TotalFoodTax, TotalBevTax: Currency;
-  NZAStockF, NZAStockB, NZAStockTip: string;
-  ListCount: Integer;
-  I: Integer;
-  TL: TTL;
-  OL: TOrderLine;
-  SoFarDiscount, ILDiscount: Currency;
-  NZAInvoiceData: TNZAInvoiceData;
-  NZAInvoiceLineList: TList;
-
-begin
-  I := 0;
-  ListCount := TLList.Count;
-  while ((I < ListCount) and (TTL(TLList.Items[I]).TLTypeID <> GetTLTID(TLTNZAGold))) do begin
-    Inc(I);
-  end;
-  if (I >= ListCount) then
-  begin
-    //This should never happen cos we should only come here if nzatransexist
-    Result := False;
-    Exit;
-  end;
-  TL := TLList.Items[I];
-
-  NZAAmt := TL.TLPayment;
-  NZATip := TL.TLTip;
-
-  ListCount := AOLList.Count;
-
-  TotalFood := 0;
-  TotalBev := 0;
-  TotalFoodTax := 0;
-  TotalBevTax := 0;
-  SoFarDiscount := 0;
-
-  for I := 0 to (ListCount - 1) do begin
-    OL := AOLList.Items[I];
-    if (FDiscountAmount = 0) then begin
-      ILDiscount := 0.00;
-    end
-    else if (I = (ListCount - 1)) then begin
-      ILDiscount := FDiscountAmount - SoFarDiscount;
-    end
-    else begin
-      //pro rata discount and accumulate discount pro rata-ed so far
-      ILDiscount := ((((OL.ToPay/FToPay) * FDiscountAmount) * 100)) / 100;
-      SoFarDiscount := SoFarDiscount + ILDiscount;
-    end;
-    ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-    SoFarDiscount := GetRoundedUpDown(SoFarDiscount, AppDetails.DecimalPlaces);
-
-    if (OL.ForB = 'F') then begin
-      if (AppDetails.TaxExclusivePrices) then begin
-        TotalFood := TotalFood + (((OL.ToPay - ILDiscount) * (100 + OL.SalesTaxPercent)) / 100);
-        TotalFoodTax := GetRoundedUpDown(TotalFoodTax + (((OL.ToPay - ILDiscount) * (OL.SalesTaxPercent)) / 100), AppDetails.DecimalPlaces);
-      end
-      else begin
-        TotalFood := TotalFood + OL.ToPay - ILDiscount;
-        TotalFoodTax := GetRoundedUpDown(TotalFoodTax + (((OL.ToPay - ILDiscount) * (OL.SalesTaxPercent)) / (100 + OL.SalesTaxPercent)), AppDetails.DecimalPlaces);
-      end;
-    end
-    else begin
-      if (AppDetails.TaxExclusivePrices) then begin
-        TotalBev := TotalBev + (((OL.ToPay - ILDiscount) * (100 + OL.SalesTaxPercent)) / 100);
-        TotalBevTax := GetRoundedUpDown(TotalBevTax + (((OL.ToPay - ILDiscount) * (OL.SalesTaxPercent)) / 100), AppDetails.DecimalPlaces);
-      end
-      else begin
-        TotalBev := TotalBev + OL.ToPay - ILDiscount;
-        TotalBevTax := GetRoundedUpDown(TotalBevTax + (((OL.ToPay - ILDiscount) * (OL.SalesTaxPercent)) / (100 + OL.SalesTaxPercent)), AppDetails.DecimalPlaces);
-      end;
-    end;
-  end;
-
-  if (NZAAmt > TotalFood) then begin
-    NZAFood := TotalFood;
-    NZABev := NZAAmt - TotalFood;
-  end
-  else begin
-    NZAFood := NZAAmt;
-    NZABev := 0;
-  end;
-
-  NZAFoodTax := 0;
-  NZABevTax := 0;
-  NZATipTax := 0;    //Jon 03-02-2003
-  if (TotalFood > 0) then begin
-    NZAFoodTax := (NZAFood * TotalFoodTax) / TotalFood;
-  end;
-  if (TotalBev > 0) then begin
-    NZABevTax := (NZABev * TotalBevTax) / TotalBev;
-  end;
-
-  try
-    //We are already in a Transaction so another one does not need to be started
-    with dm.sp do begin
-      SetStoredProcName('GETSALECATEGORYINFO');
-
-      ParamByName('psalecategoryid').AsInteger := GlbTable.SaleCategoryID;
-      ParamByName('currenttime').AsInteger := CurrentTime;
-      ParamByName('currentday').AsInteger := CurrentDay;
-      Execute;
-
-      if (FieldByName('salecategoryid').IsNull) then begin
-        ShowQuickMsg(sSaleCatNotFound);
-        Result := False;
-        Exit;
-      end;
-
-      NZAStockF := FieldByName('nzastockf').AsString;
-      NZAStockB := FieldByName('nzastockb').AsString;
-      NZAStockTip := FieldByName('nzastocktip').AsString;
-
-      if ((FieldByName('tpnzastockf').AsString <> '') and
-      (FieldByName('tpnzastockb').AsString <> '')) then begin
-        NZAStockF := FieldByName('tpnzastockf').AsString;
-        NZAStockB := FieldByName('tpnzastockb').AsString;
-      end;
-    end;
-  except
-    on e: exception do begin
-      Result := False;
-      ShowMessage(e.message);
-      Exit;
-    end;
-  end;
-
-//  NZADesc := AppDetails.TerminalName + ' Ref# ' + IntToStr(WBInvoices.RefreshID);    Jon 03-10-2003
-
-  if (((NZAFood > 0) and (NZAStockF = '')) or
-      ((NZABev > 0) and (NZAStockB = '')) or
-      ((NZATip > 0) and (NZAStockTip = ''))) then begin
-    ShowQuickMsg(sNoStockCodeProvided);
-    Result := False;
-    Exit;
-  end;
-
-  NZAInvoiceData.Account := NZAAccount;
-  NZAInvoiceData.Date := Now;
-  NZAInvoiceData.GSTInc := True;
-  NZAInvoiceData.IntRef := IntToStr(WBInvoices.RefreshID);
-
-  if (AppDetails.NZATaxExclusive) then begin    //Jon 21-02-2003
-    NZAFood := NZAFood - NZAFoodTax;
-    NZABev := NZABev - NZABevTax;
-    NZATip := NZATip - NZATipTax;
-  end;
-
-  NZAInvoiceLineList := TList.Create;
-
-  if (AppDetails.NZAOneInvoiceLine) then begin
-    NZAInvoiceLineList.Add(NewPNZAInvoiceLineData(NZAStockF, NZAFood + NZABev, NZAFoodTax + NZABevTax, 'I'));
-  end
-  else begin
-    if (NZAFood > 0) then begin
-      NZAInvoiceLineList.Add(NewPNZAInvoiceLineData(NZAStockF, NZAFood, NZAFoodTax, 'I'));
-    end;
-    if (NZABev > 0) then begin
-      NZAInvoiceLineList.Add(NewPNZAInvoiceLineData(NZAStockB, NZABev, NZABevTax, 'I'));
-    end;
-  end;
-  if (NZATip > 0) then begin
-    NZAInvoiceLineList.Add(NewPNZAInvoiceLineData(NZAStockTip, NZATip, NZATipTax, 'I'));
-  end;
-
-  Result := DoNZATransactions(NZAInvoiceData, NZAInvoiceLineList);
-  ClearNZAInvoiceLineDataList(NZAInvoiceLineList);
-  NZAInvoiceLineList.Free;
-end;
-{******************************************************************************}
-function TformPaymentTable.SendEvolutionTransactions(AOLList: TList): Boolean;
-var
-  iLineNo: Integer;
-
-  varTL: TTL;
-  iTLIDx: Integer;
-  eTotTLAmt: Extended; //total tendered
-  eEvoTLAmt: Extended; //total tendered to Evo
-  eEvoTLTip: Extended; //total tip to Evo
-  eEvoTLProp: Extended; //proportion of Evo tender to Total tender
-
-  varOL: TOrderLine;
-  iOLIDx: Integer;
-  eILQty: Extended;  //proportional line qty
-  eILDisc: Extended; //proportional line disc
-  eILAmt: Extended;  //proportional line amount
-  eILDiscPerc: Extended;
-
-  varSC: TSurchargeItem;
-  iSCIDx: Integer;
-
-  eITDisc_Food: Extended;    //disc total for food
-  eITAmt_Food: Extended;     //amount total for food
-  eITDisc_Bev: Extended;     //disc total for bev
-  eITAmt_Bev: Extended;      //amount total for bev
-  eITDisc_SC: Extended;      //surcharge disc total
-  eITDisc_SC_Food: Extended; //surcharge disc food total
-  eITDisc_SC_Bev: Extended;  //surcharge disc bev total
-  eITAmt_SC: Extended;       //surcharge amount total
-  eITAmt_SC_Food: Extended;  //surcharge amount food total
-  eITAmt_SC_Bev: Extended;   //surcharge amount bev total
-  eEvoFoodProp: Extended; //proportion of Food total to Food+Bev Total (pre-surcharge)
-
-  NZAStockF, NZAStockB, NZAStockTip: string;
-
-  aInvoiceDescr: string;
-  iSaleCategoryPL, iInvoicePL: Integer;
-  aCodesNotFound: string;
-  varEvoItemF: PGlbEvoSCItem;
-  varEvoItemB: PGlbEvoSCItem;
-  varEvoItemTip: PGlbEvoSCItem;
-begin
-  ClearEvoInvoice;
-
-  //get sale category information (sale category, price level, stock codes)
-  try
-    //We are already in a Transaction so another one does not need to be started
-    with dm.sp do begin
-      SetStoredProcName('GETSALECATEGORYINFO');    //getsalecategoryinfo
-      ParamByName('psalecategoryid').AsInteger := GlbTable.SaleCategoryID;
-      ParamByName('currenttime').AsInteger := CurrentTime;
-      ParamByName('currentday').AsInteger := CurrentDay;
-      Execute;
-
-      if (FieldByName('salecategoryid').IsNull) then begin
-        ShowQuickMsg(sSaleCatNotFound);
-        Result := False;
-        Exit;
-      end;
-
-      NZAStockF := FieldByName('nzastockf').AsString;
-      NZAStockB := FieldByName('nzastockb').AsString;
-      NZAStockTip := FieldByName('nzastocktip').AsString;
-
-      aInvoiceDescr := FieldByName('salecategory').AsString; //varchar(15)
-      iSaleCategoryPL := 0; //not specified
-
-      if ((FieldByName('tpnzastockf').AsString <> '') and
-      (FieldByName('tpnzastockb').AsString <> '')) then begin
-        NZAStockF := FieldByName('tpnzastockf').AsString;
-        NZAStockB := FieldByName('tpnzastockb').AsString;
-      end;
-    end;
-  except
-    on e: exception do begin
-      Result := False;
-      ShowMessage(e.message);
-      Exit;
-    end;
-  end;
-
-  //if in a sale category period, add period's custom price level name to invoice description
-  if ((iSaleCategoryPL <> 0) and (AppDetails.PriceLevelName[iSaleCategoryPL] <> '')) then begin
-    if (aInvoiceDescr <> '') then begin
-      aInvoiceDescr := aInvoiceDescr + ' ';
-    end;
-    aInvoiceDescr := aInvoiceDescr + AppDetails.PriceLevelName[iSaleCategoryPL]; //varchar(12)
-  end;
-
-  aInvoiceDescr := aInvoiceDescr + '  #' + IntToStr(WBInvoices.RefreshID); //varchar(15)
-
-  //calc total Evolution tender amount/tip, loop just in case more than one Evo tender line (should not be)
-  eTotTLAmt := 0;
-  eEvoTLAmt := 0;
-  eEvoTLTip := 0;
-  for iTLIDx := 0 to Pred(TLList.Count) do begin
-    varTL := TLList.Items[iTLIDx];
-    eTotTLAmt := eTotTLAmt + varTL.TLPayment;
-
-    if (varTL.TLTypeID = GetTLTID(TLTEvolution)) then begin
-      eEvoTLAmt := eEvoTLAmt + varTL.TLPayment;
-      eEvoTLTip := eEvoTLTip + varTL.TLTip;
-    end;
-  end;
-  eEvoTLProp := eEvoTLAmt / eTotTLAmt;
-
-  //check Evo F/B/Tip stock codes specified
-  if (((not AppDetails.EvolutionItemisedInvoicing) and ((NZAStockF = '') or (NZAStockB = ''))) or
-      ((eEvoTLTip <> 0) and (NZAStockTip = ''))) then begin
-    ShowQuickMsg(sNoStockCodeProvided);
-    Result := False;
-    Exit;
-  end;
-
-  aCodesNotFound := '';
-  varEvoItemF := nil;
-  varEvoItemB := nil;
-  varEvoItemTip := nil;
-
-  //get Evo F/B stock item information, if not using itemised invoicing
-  if (not AppDetails.EvolutionItemisedInvoicing) then begin
-    if (not GlbEvoSCItems.FindEvoSCItem(NZAStockF, varEvoItemF)) then begin
-      aCodesNotFound := aCodesNotFound + NZAStockF + ', ';
-    end;
-    if (not GlbEvoSCItems.FindEvoSCItem(NZAStockB, varEvoItemB)) then begin
-      aCodesNotFound := aCodesNotFound + NZAStockB + ', ';
-    end;
-  end;
-
-  //get Evo Tip stock item information, if need to save a tip invoice line
-  if (eEvoTLTip <> 0) then begin
-    if (not GlbEvoSCItems.FindEvoSCItem(NZAStockTip, varEvoItemTip)) then begin
-      aCodesNotFound := aCodesNotFound + NZAStockTip + ', ';
-    end;
-  end;
-
-  //if any of the needed stock codes are not found in Evolution, then error and exit
-  if (aCodesNotFound <> '') then begin
-    Delete(aCodesNotFound, Length(aCodesNotFound) - 1, 2); //remove last comma and space
-    ShowQuickMsg(Format(sStockCodeNotFoundInEvol, [aCodesNotFound]));
-    Result := False;
-    Exit;
-  end;
-
-  //initialise invoice disc/amount F/B totals
-  iLineNo := 0;
-  eITDisc_Food := 0;
-  eITAmt_Food := 0;
-  eITDisc_Bev := 0;
-  eITAmt_Bev := 0;
-  eITDisc_SC := 0;
-  eITAmt_SC := 0;
-
-  //go through OLList (order lines being invoiced), add itemised Evo invoice lines or increment totals
-  for iOLIDx := 0 to Pred(AOLList.Count) do begin
-    varOL := TOrderLine(AOLList[iOLIDx]);
-    if (varOL.ItemID <> 0) then begin    //don't do modifiers yet
-      //work out proportional invoice amounts, based on portion of tender being transfered to Evo
-      eILDisc := varOL.ILDiscount * eEvoTLProp;
-      eILAmt := varOL.ILAmount * eEvoTLProp;
-
-      //add itemised invoice line
-      if (AppDetails.EvolutionItemisedInvoicing) then begin
-        eILQty := varOL.Qty * eEvoTLProp;
-        eILDiscPerc := GetRoundedUpDown((eILDisc / eILAmt) * 100, 4);
-
-        Inc(iLineNo);
-        AddToEvoInv(iLineNo, varOL.ItemString, varOL.UnitPrice, varOL.OLPriceLevel,
-          eILDiscPerc, varOL.SalesTaxPercent, eILQty, eILDisc, eILAmt,
-          EvoGetStockLink(eitItem, varOL.ItemID), GlbEvoItemDef.iINVTaxTypeID);
-      end
-      else begin      //increment F/B totals
-        if (varOL.ForB = 'F') then begin
-          eITDisc_Food := eITDisc_Food + eILDisc;
-          eITAmt_Food := eITAmt_Food + eILAmt;
-        end
-        else begin    //varOL.ForB = 'B'
-          eITDisc_Bev := eITDisc_Bev + eILDisc;
-          eITAmt_Bev := eITAmt_Bev + eILAmt;
-        end;
-      end;
-    end;
-  end;
-
-  //go through each surcharge item, add itemised Evo invoice lines or increment totals
-  for iSCIDx := 0 to Pred(SurchargeList.Count) do begin
-    varSC := TSurchargeItem(SurchargeList.Items[iSCIDx]);
-    if (varSC.Amount <> 0) then begin
-      //work out proportional invoice amounts, based on portion of tender being transfered to Evo
-      eILDisc := 0 * eEvoTLProp;
-      eILAmt := varSC.Amount * eEvoTLProp;
-
-      //add itemised invoice line
-      if (AppDetails.EvolutionItemisedInvoicing) then begin
-        eILQty := 1 * eEvoTLProp;
-
-        Inc(iLineNo);
-        AddToEvoInv(iLineNo, varSC.ItemAbbrev, varSC.Amount, 1,
-          0, varSC.SalesTaxPercent, eILQty, eILDisc, eILAmt,
-          EvoGetStockLink(eitItem, varSC.ItemID), GlbEvoItemDef.iINVTaxTypeID);
-      end
-      else begin    //increment surcharge totals
-        eITDisc_SC := eITDisc_SC + eILDisc;
-        eITAmt_SC := eITAmt_SC + eILAmt;
-      end;
-    end;
-  end;
-
-  //if not itemising invoices, add F/B total invoice lines
-  if (not AppDetails.EvolutionItemisedInvoicing) then begin
-    //set invoice price level
-    if (iSaleCategoryPL <> 0) then begin
-      iInvoicePL := iSaleCategoryPL;
-    end
-    else begin
-      iInvoicePL := 1; //default price level
-    end;
-
-    //add surcharge total onto F/B totals pro-rata
-    if (eITAmt_SC <> 0) then begin
-      if ((eITAmt_Food + eITAmt_Bev) <> 0) then begin
-        eEvoFoodProp := eITAmt_Food / (eITAmt_Food + eITAmt_Bev);
-      end
-      else begin
-        eEvoFoodProp := 1; //avoid divide by zero, should never happen
-      end;
-
-      //split surcharge discount total into F/B amounts
-      eITDisc_SC_Food := GetRoundedUpDown(eITDisc_SC * eEvoFoodProp, 4);
-      eITDisc_SC_Bev := eITDisc_SC - eITDisc_SC_Food;
-
-      //split surcharge amount total into F/B amounts
-      eITAmt_SC_Food := GetRoundedUpDown(eITAmt_SC * eEvoFoodProp, 4);
-      eITAmt_SC_Bev := eITAmt_SC - eITAmt_SC_Food;
-
-      //add split surcharge F/B amounts to F/B totals
-      eITDisc_Food := eITDisc_Food + eITDisc_SC_Food;
-      eITAmt_Food := eITAmt_Food + eITAmt_SC_Food;
-      eITDisc_Bev := eITDisc_Bev + eITDisc_SC_Bev;
-      eITAmt_Bev := eITAmt_Bev + eITAmt_SC_Bev;
-    end;
-
-    //add food/beverage Evo invoice lines
-    if (eITAmt_Food <> 0) then begin
-      eILQty := 1;
-      eILDiscPerc := GetRoundedUpDown((eITDisc_Food / eITAmt_Food) * 100, 4);
-
-      Inc(iLineNo);
-      AddToEvoInv(iLineNo, varEvoItemF.Description_1, eITAmt_Food, iInvoicePL,
-        eILDiscPerc, varEvoItemF.TaxRate, eILQty, eITDisc_Food, eITAmt_Food,
-        varEvoItemF.StockLink, varEvoItemF.idTaxRate);
-    end;
-    if (eITAmt_Bev <> 0) then begin
-      eILQty := 1;
-      eILDiscPerc := GetRoundedUpDown((eITDisc_Bev / eITAmt_Bev) * 100, 4);
-
-      Inc(iLineNo);
-      AddToEvoInv(iLineNo, varEvoItemB.Description_1, eITAmt_Bev, iInvoicePL,
-        eILDiscPerc, varEvoItemB.TaxRate, eILQty, eITDisc_Bev, eITAmt_Bev,
-        varEvoItemB.StockLink, varEvoItemB.idTaxRate);
-    end;
-  end;
-
-  //insert any tip invoice line
-  if (eEvoTLTip <> 0) then begin
-    eILQty := 1;
-    eILDisc := 0;
-    eILAmt := eEvoTLTip;
-
-    Inc(iLineNo);
-    AddToEvoInv(iLineNo, varEvoItemTip.Description_1, eEvoTLTip, 1,
-      0, varEvoItemTip.TaxRate, eILQty, eILDisc, eILAmt,
-      varEvoItemTip.StockLink, varEvoItemTip.idTaxRate);
-  end;
-
-  SetEvoInvHdr(GlbTable.Guests, WBInvoices.RefreshID, aInvoiceDescr);
-  Result := EvoSaveInvoice;
-end;
-{******************************************************************************}
-function TformPaymentTable.SendICRTouchTransactions(AOLList: TList): Boolean;
-var
-  TL: TTL;
-  OL: TOrderLine;
-  lICRPosting: TICRTouchPosting;
-  lICRItem: TICRTouchSaleItem;
-  lOLList: TList;
-  I: Integer;
-  lTenderAvailable: Currency;
-  lRatio: Double;
-  lGroup: Integer;
-  SoFarComboDiscount, SoFarDiscount, ILDiscount: Currency;
-  LineValue, LineSub, LineTax, LineDisc, LineTotal: Currency;
-
-  function SortOLList(Item1, Item2: Pointer): Integer;
-  var
-    lG1, lG2: Integer;
-    OL1, OL2: TOrderLine;
-
-  begin
-    OL1 := TOrderLine(Item1);
-    OL2 := TOrderLine(Item2);
-    lG1 := StrToIntDef(OL1.GLCode, 0);
-    lG2 := StrToIntDef(OL2.GLCode, 0);
-    if (lG1 > lG2) then
-    begin
-      Result := 1;
-    end
-    else if (lG1 < lG2) then
-    begin
-      Result := -1;
-    end
-    else if ((OL1.ForB = 'B') and (OL2.ForB = 'F')) then
-    begin
-      Result := 1;
-    end
-    else if ((OL1.ForB = 'F') and (OL2.ForB = 'B')) then
-    begin
-      Result := -1;
-    end
-    else if (OL1.OrderLineID > OL2.OrderLineID) then
-    begin
-      Result := 1;
-    end
-    else if (OL1.OrderLineID < OL2.OrderLineID) then
-    begin
-      Result := -1;
-    end
-    else
-    begin
-      Result := 0;
-    end;
-  end;
-
-begin
-  Result := False;
-  lICRPosting := TICRTouchPosting.Create;
-  lOLList := TList.Create;
-  try
-    TL := TLList.GetTLOfTypeID(GetTLTID(TLTRoomCharge));
-    if (not Assigned(TL)) then
-    begin
-      //This should never happen cos we should only come here if there is a room charge
-      Result := False;
-      Exit;
-    end;
-    lTenderAvailable := TL.TLPayment;
-
-    for I := 0 to AOLList.Count - 1 do
-    begin
-      OL := AOLList.Items[I];
-      if (OL.ItemID > 0) then
-      begin
-        lOLList.Add(OL);
-      end;
-    end;
-
-    SoFarDiscount := 0;
-    SoFarComboDiscount := 0.00;
-
-    lOLList.Sort(@SortOLList);
-
-    lICRPosting.TerminalID := AppDetails.TerminalID;
-    lICRPosting.TerminalName := AppDetails.TerminalName;
-    lICRPosting.RoomNumber := GlbICRTouchFolio.RoomNumber;
-    lICRPosting.FolioNumber := GlbICRTouchFolio.FolioNumber;
-
-    try
-      //We are already in a Transaction so another one does not need to be started
-      with dm.sp do
-      begin
-        SetStoredProcName('GETSALECATEGORYINFO');
-
-        ParamByName('psalecategoryid').AsInteger := GlbTable.SaleCategoryID;
-        ParamByName('currenttime').AsInteger := CurrentTime;
-        ParamByName('currentday').AsInteger := Currentday;
-        Execute;
-
-        if (FieldByName('salecategoryid').IsNull) then
-        begin
-          dm.tr.Rollback;   //Jon 14-07-2003
-          ShowQuickMsg(sSaleCatNotFound);
-          Exit;
-        end;
-
-        lICRPosting.ShiftNumber := FieldAsInt(FieldByName('fidservingtime'));
-        if ((FieldAsInt(FieldByName('tpfidservingtime'))) > 0) then begin
-          lICRPosting.ShiftNumber := FieldAsInt(FieldByName('tpfidservingtime'));
-        end;
-      end;
-    except
-      on e: exception do
-      begin
-        dm.tr.Rollback;   //Jon 14-07-2003
-        ShowMessage(e.message);
-        Exit;
-      end;
-    end;
-
-    lICRPosting.ConseqNumber := WBInvoices.RefreshID;
-    lICRPosting.CheckNumber := WBInvoices.RefreshID;
-    lICRPosting.TabNumber := GlbTable.TableNo;
-    lICRPosting.Covers := GlbTable.Guests;        
-    lICRPosting.PriceLevel := GlbTable.PriceLevel;
-    lICRPosting.StaffID := GlbLogin.StaffID;
-    lICRPosting.Tip := TL.TLTip;
-    if (GlbAccount.AccountID > 0) then
-    begin
-      lICRPosting.AccountName := GlbAccount.AccountName;
-    end;
-
-    //Add the items until we're out of tender
-    for I := 0 to lOLList.Count - 1 do
-    begin
-      if (lTenderAvailable > 0) then
-      begin
-        OL := lOLList.Items[I];
-
-        lGroup := StrToIntDef(OL.GLCode, 0);
-        if (not(lGroup in [1..CN_ICRTotalsArraySize])) then
-        begin
-          if (OL.ForB = 'F') then
-          begin
-            lGroup := 2;
-          end
-          else
-          begin
-            lGroup := 1;
-          end;
-        end;
-
-        if ((FDiscountAmount <= 0) and (FComboDiscount <= 0)) then
-        begin
-          ILDiscount := 0;
-        end
-        else if (OL.ComboID > 0) then
-        begin
-          {if OL.LastComboItem then
-          begin
-            ILDiscount := FComboDiscount - SoFarComboDiscount
-          end
-          else
-          begin}
-            ILDiscount := OL.AllowedDiscount;
-          {end;}
-
-          ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-          SoFarComboDiscount := SoFarComboDiscount + ILDiscount;
-          SoFarComboDiscount := GetRoundedUpDown(SoFarComboDiscount, AppDetails.DecimalPlaces);
-        end
-        else
-        begin
-          //if it's the last line, allocate whatever hasn't been pro rata-ed
-          {if OL.LastNormalItem then
-            ILDiscount := FDiscountAmount - SoFarDiscount
-          else
-          begin              //pro rata discount and accumulate discount pro rata-ed so far}
-            ILDiscount := OL.AllowedDiscount;
-            ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-            SoFarDiscount := SoFarDiscount + ILDiscount;
-            SoFarDiscount := GetRoundedUpDown(SoFarDiscount, AppDetails.DecimalPlaces);
-          {end;}
-        end;
-
-        if (AppDetails.TaxExclusivePrices) then
-        begin
-          LineValue := GetRoundedUpDown((OL.ToPay * (100 + OL.SalesTaxPercent)) / 100, AppDetails.DecimalPlaces);
-          LineSub := GetRoundedUpDown(OL.ToPay, AppDetails.DecimalPlaces);
-          LineTax := GetRoundedUpDown((OL.ToPay - ILDiscount) * OL.SalesTaxPercent / 100, AppDetails.DecimalPlaces);
-          LineDisc := ((ILDiscount * (100 + OL.SalesTaxPercent)) / 100);
-          LineTotal := LineSub + LineTax - LineDisc;
-        end
-        else
-        begin
-          LineValue := GetRoundedUpDown(OL.ToPay, AppDetails.DecimalPlaces);
-          //LineSub := GetRoundedUpDown((OL.ToPay * 100) / (100 + OL.SalesTaxPercent), AppDetails.DecimalPlaces);
-          LineTotal := (OL.ToPay - ILDiscount);
-          LineTax := GetRoundedUpDown(LineTotal * ((OL.SalesTaxPercent) / (100 + OL.SalesTaxPercent)), AppDetails.DecimalPlaces);
-          LineDisc := ILDiscount;
-        end;
-
-        if (LineTotal <= lTenderAvailable) then
-        begin
-          lRatio := 1;
-        end
-        else
-        begin
-          lRatio := lTenderAvailable / LineTotal;
-        end;
-
-
-        lICRItem := TICRTouchSaleItem.Create;
-        lICRItem.PLUNumber := OL.ItemID;
-        lICRItem.Quantity := OL.Qty * lRatio;
-        lICRItem.Value := LineValue * lRatio;
-        lICRItem.ItemText := OL.ItemString;
-        lICRItem.PLUDepartment := OL.ItemGroupID;   //?
-        lICRItem.PLUGroup := lGroup;
-        //lICRItem.StatusFlag := 0;                   //?
-        if (OL.SalesTaxPercent = 0) then
-        begin
-          lICRItem.TaxRate := 0;
-        end
-        else if (OL.SalesTaxPercent = 9) then  //Because I'm a lazy bastard. This should probably have sort of lookup on the itemgroups to determine the TaxRate ID.
-        begin
-          lICRItem.TaxRate := 2;
-        end
-        else
-        begin
-          lICRItem.TaxRate := 1;
-        end;
-        lICRPosting.AddSaleItem(lICRItem);
-        lICRPosting.SaleTotal := lICRPosting.SaleTotal + LineTotal * lRatio;
-        lICRPosting.Sub[lGroup] := lICRPosting.Sub[lGroup] + LineTotal * lRatio;
-        lICRPosting.Tax[lGroup] := lICRPosting.Tax[lGroup] + LineTax * lRatio;
-        lICRPosting.DiscountTotal := lICRPosting.DiscountTotal + LineDisc * lRatio;
-        lTenderAvailable := lTenderAvailable - LineTotal * lRatio;
-      end;
-    end;
-
-    Result := lICRPosting.SavePosting(AppDetails.ICRTouchPostingsPath);
-    if (AppDetails.ICRTouchPostingsLogPath <> '') then
-    begin
-      lICRPosting.SavePosting(AppDetails.ICRTouchPostingsLogPath);
-    end;
-  finally
-    lICRPosting.Free;
-    lOLList.Free;
-  end;
-end;
-{******************************************************************************}
-function TformPaymentTable.SendMewsTransactions(AOLList: TList; SPNumber, TheTenderID: Integer): Boolean;
-var
-  TL: TTL;
-  I: Integer;
-  TransactionList: TMewsTransactionList;
-  Transaction: TMewsTransaction;
-  MewsItem: TMewsItem;
-  MewsPayment: TMewsPayment;
-  OL: TOrderLine;
-  TenderLineType: TTenderLineType;
-  TipCat, OutletId, ServiceId: string;
-  TimePeriodID: Integer;
-  CustomerId, DisplayName, RoomNumber: string;
-begin
-  Transaction := nil;
-  TransactionList :=  TMewsTransactionList.Create;
-  Result := False;
-  try
-  //Build the room transfer first
-    TL := TLList.GetTLOfTypeID(GetTLTID(TLTMews));
-    if ((not Assigned(TL)) and (not (AppDetails.MewsAddOutletBills))) then
-    begin
-     //This should never happen cos we should only come here if MicrosTransExist
-      Exit;
-    end;
-
-    try
-      //We are already in a Transaction so another one does not need to be started
-      with dm.GetSP(SPNumber) do
-      begin
-        SetStoredProcName('GETSALECATEGORYINFO', SPNumber);
-
-        ParamByName('psalecategoryid').AsInteger := GlbTable.SaleCategoryID;
-        ParamByName('currenttime').AsInteger := CurrentTime;
-        ParamByName('currentday').AsInteger := CurrentDay;
-        Execute;
-
-        TipCat := FieldAsString(FieldByName('libgltip'));
-        TimePeriodID := FieldAsInt(FieldByName('timeperiodid'));
-
-        SetStoredProcName('GETSALECATEGORYMEWS', SPNumber);
-        ParamByName('salecategoryid').AsInteger := GlbTable.SaleCategoryID;
-        Execute;
-
-        ServiceId := FieldAsString(FieldByName('serviceguid'));
-        OutletId := FieldAsString(FieldByName('outletguid'));
-
-        if (TimePeriodID > 0) then
-        begin
-          SetStoredProcName('GETTIMEPERIODMEWS', SPNumber);
-          ParamByName('timeperiodid').AsInteger := TimePeriodID;
-          Execute;
-
-          ServiceId := FieldAsString(FieldByName('serviceguid'), ServiceId);
-          OutletId := FieldAsString(FieldByName('outletguid'), OutletId);
-        end;
-      end;
-    except
-      on e: exception do begin
-        dm.tr.Rollback;   //Jon 14-07-2003
-        ShowMessage(e.message);
-        Exit;
-      end;
-    end;
-
-
-    if Assigned(TL) then
-    begin
-      Transaction := TransactionList.NewMewsTransaction;
-      Transaction.CustomerId := GlbMewsAccount.CustomerId;
-      Transaction.ServiceId := ServiceId;
-      Transaction.InvoiceID := WBInvoices.RefreshID;
-      CustomerId := GlbMewsAccount.CustomerId;
-      DisplayName := GlbMewsAccount.DisplayName;
-      RoomNumber := GlbMewsAccount.RoomNumber;
-    end
-    else if (AppDetails.MewsAddOutletBills) then
-    begin
-      Transaction := TransactionList.NewMewsTransaction;
-      Transaction.ServiceId := ServiceId;
-      Transaction.OutletId := OutletId;
-      Transaction.InvoiceID := WBInvoices.RefreshID;
-      CustomerId := '';
-      DisplayName := '';
-      RoomNumber := '';
-    end;
-
-    if (Assigned(Transaction)) then
-    begin
-      for I:= 0 to (AOLList.Count -1) do
-      begin
-        OL := AOLList.Items[I];
-        MewsItem := Transaction.Items.NewMewsItem;
-        MewsItem.Name := OL.ItemString;
-        MewsItem.UnitCount := ceil(OL.Qty);
-        MewsItem.GrossValue := (OL.ToPay - OL.ILDiscount);
-        MewsItem.TaxCode := OL.GLCode2;
-        MewsItem.AccountingCategoryId := OL.GLCode;
-      end;
-
-      if Assigned(TL) then
-      begin
-        if (TL.TLTip > 0) then
-        begin
-          MewsItem := Transaction.Items.NewMewsItem;
-          MewsItem.Name := 'Tip';
-          MewsItem.UnitCount := 1;
-          MewsItem.GrossValue := TL.TLTip;
-          MewsItem.TaxCode := AppDetails.MewsTaxCode;
-          MewsItem.AccountingCategoryId := TipCat;
-        end;
-      end;
-
-      for I:= 0 to (TLList.Count - 1) do
-      begin
-        TL := TLList.Items[I];
-        if (TL.TLTypeID <> GetTLTID(TLTMews)) then
-        begin
-          if (TL.TLTip > 0) then
-          begin
-            MewsItem := Transaction.Items.NewMewsItem;
-            MewsItem.Name := 'Tip';
-            MewsItem.UnitCount := 1;
-            MewsItem.GrossValue := TL.TLTip;
-            MewsItem.TaxCode := AppDetails.MewsTaxCode;
-            MewsItem.AccountingCategoryId := TipCat;
-          end;
-
-          TenderLineType := GetTenderLineTypeRecord(TL.TLType);
-          MewsPayment := Transaction.Payments.NewMewsPayment;
-          MewsPayment.Name := TL.TLTypeName;
-          MewsPayment.GrossValue := TL.TLTender;
-          MewsPayment.AccountingCategoryId := TenderLineType.LibGLCode;
-        end;
-      end;
-    end;
-
-    Result := DoMewsTransactionList(TransactionList);
-
-    Transaction := TransactionList.GetMewsTransaction(0);
-    if Assigned(Transaction) then
-    begin
-      try
-        with dm.GetSP(SPNumber) do
-        begin
-          SetStoredProcName('EDIT_TENDERMEWS', SPNumber);
-          ParamByName('tenderid').AsInteger := TheTenderID;
-          StringAsParam(ParamByName('billguid'), Transaction.OrderId);
-          StringAsParam(ParamByName('customerguid'), CustomerId);
-          StringAsParam(ParamByName('displayname'), DisplayName);
-          StringAsParam(ParamByName('roomnumber'), RoomNumber);
-          ExecProc;
-        end;
-      except
-        on e: exception do
-        begin
-          Result := False;
-          dm.tr.Rollback;   //Jon 14-07-2003
-          ShowMessage(e.message);
-          Exit;
-        end;
-      end;
-    end;
-
-  finally
-    TransactionList.Free;
-  end;
-end;
-{*******************************************************************************
-Creates and send the details of the invoice to the Table Management interface.
-
-Change history
-#00445# 10/10/2012 JBB Created procedure.
-*******************************************************************************}
-procedure TformPaymentTable.SendTableManagementTransactions(aOLList: TList);
-var
-  ListCount: Integer;
-  I: Integer;
-  OL: TOrderLine;
-  TL: TTL;
-  SurchargeItem: TSurchargeItem;
-  SoFarComboDiscount, SoFarDiscount, ILDiscount: Currency;
-  TabManILList: TTableManagementILList;
-  IL: TTableManagementIL;
-begin
-  TabManILList := TTableManagementILList.Create;
-  try
-    ListCount := aOLList.Count;
-    SoFarDiscount := 0;
-    SoFarComboDiscount := 0;
-    IL := nil;
-    for I := 0 to (ListCount - 1) do begin
-      OL := aOLList.Items[I];
-
-      if ((FDiscountAmount <= 0) and (FComboDiscount <= 0)) then
-      begin
-        ILDiscount := 0;
-      end
-      else if OL.ComboID > 0 then
-      begin
-        if OL.LastComboItem then
-        begin
-          ILDiscount := (FComboDiscount - SoFarComboDiscount);
-        end
-        else
-        begin
-          ILDiscount := OL.AllowedDiscount;
-        end;
-
-        ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-        SoFarComboDiscount := SoFarComboDiscount + ILDiscount;
-        SoFarComboDiscount := GetRoundedUpDown(SoFarComboDiscount, AppDetails.DecimalPlaces);
-      end
-      else
-      begin
-        //if it's the last line, allocate whatever hasn't been pro rata-ed
-        if OL.LastNormalItem then
-          ILDiscount := FDiscountAmount - SoFarDiscount
-        else
-        begin              //pro rata discount and accumulate discount pro rata-ed so far
-          ILDiscount := OL.AllowedDiscount;
-          ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-          SoFarDiscount := SoFarDiscount + ILDiscount;
-          SoFarDiscount := GetRoundedUpDown(SoFarDiscount, AppDetails.DecimalPlaces);
-        end;
-      end;
-
-
-      ILDiscount := GetRoundedUpDown(ILDiscount, AppDetails.DecimalPlaces);
-      SoFarDiscount := GetRoundedUpDown(SoFarDiscount, AppDetails.DecimalPlaces);
-
-      IL := TabManILList.AddIL;
-      IL.ItemID := OL.ItemID;
-      IL.ItemName := OL.ItemString;
-      IL.Qty := OL.Qty;
-      IL.ForB := OL.ForB;
-      IL.UnitPrice := OL.UnitPrice;
-      IL.Discount := ILDiscount;
-
-      if (AppDetails.TaxExclusivePrices) then begin
-        IL.Value := (((OL.ToPay - ILDiscount) * (100 + OL.SalesTaxPercent)) / 100);
-        IL.SalesTax := GetRoundedUpDown(((OL.ToPay - ILDiscount) * (OL.SalesTaxPercent)) / 100, AppDetails.DecimalPlaces);
-      end
-      else
-      begin
-        IL.Value := OL.ToPay - ILDiscount;
-        IL.SalesTax := GetRoundedUpDown(((OL.ToPay - ILDiscount) * (OL.SalesTaxPercent)) / (100 + OL.SalesTaxPercent), AppDetails.DecimalPlaces);
-      end;
-
-      if (OL.UnitPrice <> 0) then
-        IL.ItemCount := Trunc(OL.QtyLeft) - Trunc(OL.QtyLeft + 0.0000001 - (OL.ToPay / OL.UnitPrice))
-      else
-        IL.ItemCount := Round(OL.Qty);
-    end;
-
-    ListCount := (SurchargeList.Count - 1);
-    for I := 0 to ListCount do begin
-      SurchargeItem := SurchargeList.Items[I];
-
-      IL := TabManILList.AddIL;
-      IL.ItemID := SurchargeItem.ItemID;
-      IL.ItemName := SurchargeItem.ItemAbbrev;
-      IL.ForB := 'M';
-      IL.Discount := 0;
-      IL.ItemCount := 1;
-      IL.Qty := 1;
-      IL.UnitPrice := SurchargeItem.Amount;
-      if (AppDetails.TaxExclusivePrices) then
-      begin
-        IL.Value := (SurchargeItem.Amount * (100 + SurchargeItem.SalesTaxPercent) / 100);
-        IL.SalesTax := ((SurchargeItem.Amount * SurchargeItem.SalesTaxPercent) / 100);
-      end
-      else
-      begin
-        IL.Value := SurchargeItem.Amount;
-        IL.SalesTax := GetRoundedUpDown((SurchargeItem.Amount * SurchargeItem.SalesTaxPercent) / (100 + SurchargeItem.SalesTaxPercent), AppDetails.DecimalPlaces);
-      end;
-    end;
-
-    ListCount := (TLList.Count - 1);
-    for I := 0 to ListCount do
-    begin
-      TL := TLList.Items[I];
-      if (TL.TLTip > 0) then
-      begin
-        if ((not Assigned(IL)) or (IL.ItemName <> 'Tip')) then
-        begin
-          IL := TabManILList.AddIL;
-          IL.ItemID := 0;
-          IL.ItemName := 'Tip';
-          IL.ForB := 'T';
-          IL.Discount := 0;
-          IL.ItemCount := 1;
-          IL.Qty := 1;
-          IL.UnitPrice := IL.UnitPrice + TL.TLTip;
-          IL.SalesTax := 0;
-        end;
-        IL.Value := IL.Value + TL.TLTip;
-      end;
-    end;
-
-    STableManagementIntegration.CreateInvoice(TabManILList);
-  finally
-    TabManILList.Free;
-  end;
-end;
-{*******************************************************************************}
-function TformPaymentTable.SendTaxCoreTransactions(AOLList: TList): Boolean;
-var
-  I: Integer;
-  OL: TOrderLine;
-  SurchargeItem: TSurchargeItem;
-  tmpItemGroup: TItemGroup;
-begin
-  with TaxCoreTransactionData do
-  begin
-    if (AppDetails.FiscalTaxCoreTrainingMode) then
-      IT := tcitTraining
-    else
-      IT := tcitNormal;
-
-    TT := tcttSale;
-    if (TLList.Count > 0) then
-      PaymentType := GetTenderLineTypeRecord(TLList.Items[0].TLType).TaxCorePaymentType
-    else
-      PaymentType := tcptother;
-
-    Cashier := GlbLogin.StaffName;
-    InvoiceNumber := WBInvoices.RefreshID;
-    ReferentDocumentNumber := '';
-
-    ItemList.Clear;
-    for I := 0 to (aOLList.Count - 1) do
-    begin
-      OL := aOLList.Items[I];
-      with ItemList.NewTaxCoreItem do
-      begin
-        Name := OL.ItemString;
-        GTIN := OL.GTIN;
-
-        Quantity := OL.Qty;
-        UnitPrice := OL.UnitPrice;
-        TotalAmount := OL.ILAmount - OL.ILDiscount;
-        Labels.CommaText := OL.TaxCoreLabel;
-      end;
-    end;
-
-    for I := 0 to (SurchargeList.Count -1) do
-    begin
-      SurchargeItem := SurchargeList.Items[I];
-      with ItemList.NewTaxCoreItem do
-      begin
-        Name := SurchargeItem.ItemAbbrev;
-        GTIN := '';
-
-        Quantity := 1;
-        UnitPrice := SurchargeItem.Amount;
-        TotalAmount := SurchargeItem.Amount;
-        tmpItemGroup := GlobalMenuList.GetItemsItemGroup(SurchargeItem.ItemID);
-        if (Assigned(tmpItemGroup)) then
-          Labels.CommaText := tmpItemGroup.TaxCoreLabel;
-      end;
-    end;
-  end;
-  Result := DoTaxCoreSignInvoice;
-end;
-{*******************************************************************************
-Callback from when the OK button is pressed
-*******************************************************************************}
-procedure TformPaymentTable.cmdOkClick(Sender: TObject);
-var
-  I: Integer;
-  ConfirmationResult: TModalResult;
-  TL: TTL;
-  SaveInvoice: Boolean;
-  tmpList: TList;
-  fAmount: Currency;
-  aCombo: string;
-  aComboIndex: Integer;
-  tmpOL: TOrderLine;
-  tmpPaymentOnSelectedItems: Boolean;
-  tmpAmountSplittingStarted: Boolean;
-begin
-  LogMessage(ltPaymentTrace, '39' + #9);
-  tmpPaymentOnSelectedItems := False;
-  tmpAmountSplittingStarted := False;
-
-  if (DoingTablePayment) then
-  begin
-    LogMessage(ltPaymentTrace, '40' + #9);
-    Exit;
-  end;
-
-  if (GlbEvent.EventID > 0) then
-  begin
-    SetGlbEvent(GlbEvent.EventID, True);
-
-    if ((GlbEvent.Available - FHostSubsidy + FDiscountAmount) < 0) then
-    begin
-      VisibleWindow := vwTender;
-      ShowMsg(sEventSpendLimitReached);
-      txtAvail.Text := FormatCurrencyNoSign(GlbEvent.Available - FHostSubsidy + FDiscountAmount);
-      Exit;
-    end;
-  end;
-
-  if not ValidateGoodySale then
-    Exit;
-
-  if NFManual and (not NFEMode) then
-  begin
-    if not GetNFManualExtraDetails then
-      Exit;
-  end;
-
-  LogMessage(ltPaymentTrace, '41' + #9);
-  try
-    DoingTablePayment := True;
-
-    //if any negative amounts then ask for pinno
-    if ((TLList.Count > 0) and (not (ManagerAuthorise.Authorise and ManagerAuthorise.AuthorisePriv6))) then
-    begin
-      LogMessage(ltPaymentTrace, '54' + #9);
-      for I := 0 to (TLList.Count - 1) do begin
-        case TTL(TLList.Items[I]).TLType of
-          TLTVoucher, TLTOther, TLTGuestHosp, TLTStaffHosp, TLTManagerHosp: begin
-            //check if have privilege
-            if (not (VerifyPriv(6))) then begin
-              ShowMsg(sCannotCompleteTabPayGetHelp);
-              LogMessage(ltPaymentTrace, '42' + #9);
-              Exit;
-            end;
-
-            //verify pinno
-            if (not GlbPrivs[6].AvoidPINCheck) then begin
-              if (not VerifyPinNo) then begin
-                LogMessage(ltPaymentTrace, '43' + #9);
-                Exit;
-              end;
-            end;
-
-            LogMessage(ltPaymentTrace, '55' + #9);
-            Break;
-          end;
-        end;
-      end;
-    end;
-
-    LogMessage(ltPaymentTrace, '44' + #9);
-    if (GlbLogin.TillID = 0) then begin
-      ShowQuickMsg(sLogonToTill);
-      Exit;
-    end;
-    if (FStillDue < -0.01) then
-    begin
-      VisibleWindow := vwTender;
-      ShowQuickMsg(Format(sPayOverBy, [FormatCurrencySign(Abs(FStillDue))]));
-      Exit;
-    end
-    else if ((FStillDue > 0.01) and (AppDetails.OneBill) and (not OnAccount)) then
-    begin
-      VisibleWindow := vwTender;
-      ShowQuickMsg(Format(sOneBillPayShortBy, [FormatCurrencySign(Abs(FStillDue))]));
-      Exit;
-    end
-    else if ((FStillDue > 0.01) and (not AppDetails.OneBill) and ((not OnAccount))) then
-    begin
-      VisibleWindow := vwTender;
-      ShowQuickMsg(Format(sPayShortBy, [FormatCurrencySign(Abs(FStillDue))]));
-      Exit;
-    end
-    else if (AppDetails.OneBill and ((GetRoundedUpDown(GlbTable.Uninvoiced, 2) - RoundNearest(FToPay, 2)) > 0.01 ) ) then
-    begin
-      VisibleWindow := vwTender;
-      ShowQuickMsg(Format(sOneBillMakeFullPay, [FormatCurrencySign(Abs(FStillDue))]));
-      Exit;
-    end;
-
-    LogMessage(ltPaymentTrace, '45' + #9);
-    SetItemSelection;
-    LogMessage(ltPaymentTrace, '46' + #9);
-
-    if ((LoyaltyReward.LoyaltyRewardID > 0) and (LoyaltyReward.RewardOffer = roItem) and (LoyaltyReward.AvailableQty > 0)) then
-    begin
-      LogMessage(ltPaymentTrace, '47' + #9 + 'LoyaltyReward.LoyaltyRewardID=' + IntToStr(LoyaltyReward.LoyaltyRewardID)+ ', LoyaltyReward.AvailableQty=' + FloatToStr(LoyaltyReward.AvailableQty));
-      if (ShowConf(sFreeLoyaltyRewardNotUsed) = mrYes) then
-      begin
-        LogMessage(ltPaymentTrace, '48' + #9);
-        ResetLoyaltyReward;
-        tmpList := TList.Create;
-        try
-          LogMessage(ltPaymentTrace, '49' + #9);
-          GetAllSelectedOLs(tmpList);
-          LogMessage(ltPaymentTrace, '57' + #9);
-
-          for i:=0 to tmpList.Count-1 do
-          begin
-            tmpOL := TOrderLine(tmpList.Items[i]);
-            tmpOL.LoyaltyFreeQty := 0;
-            tmpOL.LoyaltyFreeDiscount := 0;
-          end;
-
-          LogMessage(ltPaymentTrace, '50' + #9);
-          CalculateToPay;
-        finally
-          tmpList.Clear;
-          FreeAndNil(tmpList);
-        end;
-      end;
-      VisibleWindow := vwTender;
-      LogMessage(ltPaymentTrace, '51' + #9);
-      Exit;
-    end;
-           
-    if AppDetails.PaymentAutoComplete or FSelectedItemsNotPaidFull then
-    begin
-      LogMessage(ltPaymentTrace, '52' + #9);
-      FGetAllItems := True;
-    end;
-
-    if (FRecordType = rtTenderedItems) then
-    begin
-      LogMessage(ltPaymentTrace, '53' + #9);
-      ClearAllOrderLines;
-      LogMessage(ltPaymentTrace, '58' + #9);
-    end;
-
-    tmpList := TList.Create;
-    LogMessage(ltPaymentTrace, '56' + #9);
-    GetAllSelectedOLs(tmplist);
-    LogMessage(ltPaymentTrace, '59' + #9);
-
-    if ((OnAccount) and (GlbAccount.CreditLimitActive)) then begin
-      if (FStillDue > (GlbAccount.CreditLimit - GlbAccount.CurrentBalance)) then begin
-        ShowMsg(Format(sCannotChargeCust, [FormatCurrencyNoSign(FStillDue), FormatCurrencySign(-GlbAccount.CurrentBalance), FormatCurrencySign(GlbAccount.CreditLimit)]));
-        FRecordType := rtBoth;
-        Exit;
-      end;
-    end;
-
-    if ((OLToPayList.Count = 0) and (tmpList.Count = 0)) then
-    begin
-      ShowQuickMsg(sNoOrdLinesSelectedToPay);
-      FRecordType := rtBoth;
-      cmdToPayClick(Self);
-      Exit;
-    end;
-
-    LogMessage(ltPaymentTrace, '60' + #9);
-    if (FStillDue < -0.01) then
-    begin
-      VisibleWindow := vwTender;
-      ShowQuickMsg(Format(sPayOverBy, [FormatCurrencySign(Abs(FStillDue))]));
-      FRecordType := rtBoth;
-    end
-    else if ((FStillDue > 0.01) and (AppDetails.OneBill) and (not OnAccount)) then
-    begin
-      VisibleWindow := vwTender;
-      ShowQuickMsg(Format(sOneBillPayShortBy, [FormatCurrencySign(Abs(FStillDue))]));
-      FRecordType := rtBoth;
-    end
-    else if ((FStillDue > 0.01) and (not AppDetails.OneBill) and ((not OnAccount))) then
-    begin
-      VisibleWindow := vwTender;
-      ShowQuickMsg(Format(sPayShortBy, [FormatCurrencySign(Abs(FStillDue))]));
-      FRecordType := rtBoth;
-    end
-    else
-    begin
-      LogMessage(ltPaymentTrace, '61' + #9);
-
-      SurplusOnAccount := False;
-      if ((AppDetails.PaymentAllowChangeOnAccount) and (FChange > 0) and (GlbAccount.AccountID <> 0) and (GlbAccount.AllowCredit)) then
-      begin
-        LogMessage(ltPaymentTrace, '91' + #9);
-        ConfirmationResult := ShowConfWithCancel(Format(sCreditChangeToAcct, [FormatCurrencySign(FChange)]));
-        if (ConfirmationResult = mrCancel) then begin
-          LogMessage(ltPaymentTrace, '62' + #9);
-          Exit;
-        end
-        else if (ConfirmationResult = mrYes) then begin
-          LogMessage(ltPaymentTrace, '63' + #9);
-          SurplusOnAccount := True;
-        end;
-      end;
-
-      if AppDetails.wiGroupEnabled and wiGroupPOSSrv.CheckInformDiscNotAllowed(True,
-        FDiscountAmount + FComboDiscount + FLoyaltyFreeItemDiscount) then
-        Exit;
-
-      //if AppDetails.wiGroupEnabled and wiGroupPOSSrv.CheckInformComboDiscNotAllowed(True,
-      //  FComboDiscount) then
-      //  Exit;
-
-      if AppDetails.wiGroupEnabled and wiGroupPOSSrv.CheckInformOTAcctNotAllowed(True,
-        GlbAccount.AccountID > 0) then
-        Exit;
-
-      if AppDetails.wiGroupEnabled and wiGroupPOSSrv.CheckInformEventNotAllowed(True,
-        GlbEvent.EventID > 0) then
-        Exit;
-
-      if AppDetails.wiGroupEnabled and wiGroupPOSSrv.CheckInformExtAcctNotAllowed(True,
-        sExternalAccountIntegration.ProviderCardsPresent > 0) then
-        Exit;
-
-      LogMessage(ltPaymentTrace, '64' + #9);
-      if ((AppDetails.EnableCombo) and CheckForUnFinishedCombos(tmplist, aCombo, aComboIndex)) then
-      begin
-        VisibleWindow := vwTender;
-        ShowQuickMsg(Format(sFinishPartlyPaidCombos, [aCombo]));
-        FRecordType := rtBoth;
-        Exit;
-      end;
-
-      LogMessage(ltPaymentTrace, '65' + #9);
-      SaveInvoice := True;
-      if AppDetails.OneBill then
-      begin
-        LogMessage(ltPaymentTrace, '92' + #9);
-        if FToPay < GlbTable.Uninvoiced then
-        begin
-          SaveInvoice := False;
-          LogMessage(ltPaymentTrace, '66' + #9);
-        end;
-      end;
-      if SaveInvoice then
-      begin
-        LogMessage(ltPaymentTrace, '67' + #9);
-        tmpPaymentOnSelectedItems := PaymentOnSelectedItems;
-        tmpAmountSplittingStarted := AmountSplitingStarted;
-        PaymentOnSelectedItems := False;
-        AmountSplitingStarted := False;
-        SaveInvoice := TryPaymentTable;
-        LogMessage(ltPaymentTrace, '68' + #9 + 'SaveInvoice=' + BoolToStr(SaveInvoice, True));
-        if (SaveInvoice) then
-          LogMessage(ltTableManagement, 'Table Payment saved invoice')
-        else
-          LogMessage(ltTableManagement, 'Table Payment saved invoice failed');
-      end
-      else
-      begin
-        SaveInvoice := True;
-        LogMessage(ltPaymentTrace, '69' + #9);
-      end;
-      FGetAllItems := False;
-
-      if (SaveInvoice) then
-      begin
-        LogMessage(ltPaymentTrace, '70' + #9);
-        AmountSplitingStarted := False;
-        FSelectedItemsNotPaidFull := False;
-        ItemsSelectedManually := False;
-        FUseItemDiscounts := False;
-        PaymentOnSelectedItems := False; //Remember the change calculated for the message
-        LastThroughAccount := (GlbAccount.AccountID > 0);
-
-        LastChange := FChange;
-        LastTable := GlbTable.TableNo;
-
-        TLList.RecalculateTotals(FPayment, FTip, FChange, FTender, FRounding);
-        LogMessage(ltPaymentTrace, '71' + #9 + 'FPayment=' + FloatToStr(FPayment) + ', FTip=' + FloatToStr(FTip) +
-          ', FChange=' + FloatToStr(FChange) + ', FTender=' + FloatToStr(FTender) + ', FRounding=' + FloatToStr(FRounding));
-
-        LogMessage(ltPaymentTrace, '72' + #9 + 'FToPay=' + FloatToStr(FToPay) + ', FSurcharge=' + FloatToStr(FSurcharge) +
-          ', FDiscountAmount=' + FloatToStr(FDiscountAmount) + ', FComboDiscount=' + FloatToStr(FComboDiscount) +
-          ', FLoyaltyFreeItemDiscount=' + FloatToStr(FLoyaltyFreeItemDiscount) + ', FSalesTax=' + FloatToStr(FSalesTax));
-
-        if ((GlbEvent.EventID <= 0) or (SubsidyCalc.IsHostTransaction)) then
-          FStillDue := GetRoundedUpDown(CalculateStillDue(FToPay + FSurcharge, FDiscountAmount + FComboDiscount + FLoyaltyFreeItemDiscount, FPayment, FSalesTax), AppDetails.DecimalPlaces)
-        else
-          FStillDue := GetRoundedUpDown(CalculateStillDue(FToPay + FSurcharge, FComboDiscount + FLoyaltyFreeItemDiscount, FPayment, FSalesTax), AppDetails.DecimalPlaces);
-
-        LastPayment := FPayment;
-        LastStillDue := FStillDue;
-        LastOnAccount := (
-                          (OnAccount or ((GlbEvent.EventID > 0) and (not SubsidyCalc.IsHostTransaction) )) and
-                          (LastStillDue > 0)
-                         );
-        LogMessage(ltPaymentTrace, '73' + #9 + 'FStillDue=' + FloatToStr(FStillDue) + ', LastOnAccount=' + BoolToStr(LastOnAccount, True));
-        ClearTempItemList;
-
-        //Do Cash Cam Doofrey here
-        if (AppDetails.CashCamEnabled) then begin
-          PaymentTableCashCam;
-        end;
-
-        txtSumToPay.Text := '';
-        txtStillDue.Text := '';
-        txtPayment.Text := '';
-        txtBalDue.Text := '';
-
-        if (LastOnAccount) then
-        begin
-          ShowQuickMsg(Format(sLastTableTenderedDetails, [LastTable, FormatCurrencySign(LastPayment), FormatCurrencySign(Abs(LastStillDue))]));
-        end
-        else if ((LastPayment > 0) or LastThroughAccount) then
-        begin
-          ShowQuickMsg(Format(sLastTableTenderedDetails1, [LastTable, FormatCurrencySign(LastPayment), FormatCurrencySign(LastChange)]));
-        end;
-
-        LogMessage(ltPaymentTrace, '74' + #9);
-        if (TLList.TenderTypeExists(TLTPrepaid)) then begin
-          for I := (TLList.Count - 1) downto 0 do begin
-            TL := TLList.Items[I];
-            if (TL.TLType = TLTPrepaid) then begin
-              GlbTable.PrepaidBalance := (GlbTable.PrepaidBalance - TL.TLTender);
-            end;
-          end;
-        end;
-
-        //Try finalise any wiGroup tenders
-        if AppDetails.wiGroupEnabled then
-          wiGroupPOSSrv.CheckAdviseFinaliseTLs;
-
-        //if still more to pay on table, stay in screen
-        fAmount := GlbTable.Uninvoiced;
-        GlbTable.Uninvoiced := GetRoundedUpDown(fAmount - GetRoundedUpDown(FToPay, AppDetails.DecimalPlaces), AppDetails.DecimalPlaces);
-        GlbTable.Invoiced := GetRoundedUpDown(GlbTable.Invoiced  + GetRoundedUpDown(FToPay, AppDetails.DecimalPlaces), AppDetails.DecimalPlaces);
-        if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-        begin
-          GlbTable.Uninvoiced := TruncateTo(fAmount - FToPay, 2);
-          GlbTable.Invoiced := TruncateTo(GlbTable.Invoiced  + FToPay, 2);
-        end;
-        LogMessage(ltPaymentTrace, '75' + #9 + 'fAmount=' + FloatToStr(fAmount) + ', GlbTable.Uninvoiced=' + FloatToStr(GlbTable.Uninvoiced) +
-          ', GlbTable.Invoiced=' + FloatToStr(GlbTable.Invoiced));
-
-        if (GlbTable.Uninvoiced >= 0.01) then
-        begin
-          LogMessage(ltPaymentTrace, '76' + #9);
-          ShowPaymentTable;
-          LogMessage(ltPaymentTrace, '77' + #9);
-        end
-        else
-        begin
-          LogMessage(ltPaymentTrace, '78' + #9);
-
-          if ((AppDetails.OneBill) and (AppDetails.EnableFiscalPrinting) and (SendFiscalInvoice)) then
-          begin
-            LogMessage(ltPaymentTrace, '79' + #9);
-            DM.tr.Commit;
-          end;
-
-          sExternalAccountIntegration.ClearPresentedCards;   //do now, so Tenderline are unprotected so can be cleared
-          ClearAllTenderLines; //so TLList.Count= 0, so not prompted in cmdHideClick
-          LogMessage(ltPaymentTrace, '80' + #9);
-
-          if ((AppDetails.PaymentAllowPrePay) and (GlbTable.PrepaidBalance <> 0)) then
-          begin
-            LogMessage(ltPaymentTrace, '81' + #9);
-            FormAlphaBlend.ShowAlphaBlend;
-            if (GlbTable.WhenOpened > 0) then
-              DoDialogPrepay(GlbTable.GroupID, True, True);
-            FormAlphaBlend.HideAlphaBlend;
-          end;
-
-          if ((AppDetails.EFTPOSEnablePreAuth) and (GlbTable.EFTPOSTxnRef <> '')) then
-          begin
-            LogMessage(ltPaymentTrace, '82' + #9);
-            formEFTPOSIntegration.EFTPOSTxnRef := GlbTable.EFTPOSTxnRef;
-            if AppDetails.EFTPOSType = ecSektorVault then
-              formEFTPOSIntegration.SektorVaultAccountID := GlbTable.ReferenceNo;
-
-            if (formEFTPOSIntegration.DoEftposEdit(GlbTable.SpendLimit, 0, ettPreAuth)) then
-            begin
-              LogMessage(ltPaymentTrace, '83' + #9);
-              dm.tr.StartTransaction;
-              with dm.sp do
-              begin
-                SetStoredProcName('SETTABLEEFTPOSTXNREF');
-                ParamByName('groupid').AsInteger := GlbTable.GroupID;
-                ParamByName('loginid').AsInteger := GlbLogin.LoginID;
-                ParamNull(ParamByName('eftpostxnref'));
-                ExecProc;
-                if (not FieldByName('errorcode').IsNull) then begin
-                  ShowErrorMsg(FieldByName('errorcode').AsInteger);
-                  dm.tr.Rollback;
-                  Exit;
-                end;
-
-                //try to close table
-                if ((AppDetails.PaymentAutoCloseTable) and (GlbTable.Booking.BookingType = btNone)) or
-                   ((not AppDetails.PaymentAutoCloseTable) and
-                   ((AppDetails.PaymentSaleCategoryID <> 0) and (AppDetails.PaymentSaleCategoryID <> GlbTable.SaleCategoryID))) then begin
-                  SetStoredProcName('CLOSE_TABLE');
-
-                  ParamByName('groupid').AsInteger := GlbTable.GroupID;
-                  ParamByName('loginid').AsInteger := GlbLogin.LoginID;
-                  ExecProc;
-                end;
-              end;
-              dm.tr.Commit;
-              LogMessage(ltPaymentTrace, '84' + #9);
-            end;
-          end;
-
-          LogMessage(ltPaymentTrace, '85' + #9);
-          STableManagementIntegration.CloseTable;
-          LogMessage(ltPaymentTrace, '86' + #9);
-          PostMessage(Self.Handle, WM_CLOSE, 0, 0);
-          LogMessage(ltPaymentTrace, '87' + #9);
-        end;
-      end
-      else
-      begin
-        LogMessage(ltPaymentTrace, '88' + #9);
-        PaymentOnSelectedItems := tmpPaymentOnSelectedItems;
-        AmountSplitingStarted := tmpAmountSplittingStarted;
-        if (not sExternalAccountIntegration.CanContinueSale) then
-        begin
-          LogMessage(ltPaymentTrace, '89' + #9);
-          sExternalAccountIntegration.CheckLoadedRedemptions;  //we failed completing transaction, ask to clear redemptions
-        end;
-      end;
-    end;
-  finally
-    if Assigned(tmpList) then
-    begin
-      tmpList.Clear;
-      tmpList.Free;
-    end;
-    DoingTablePayment := False;
-    LogMessage(ltPaymentTrace, '90' + #9);
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.SetOLCols;
-begin
-  LogMessage(ltPaymentTrace, '303' + #9);
-  grdUnInvoicedList.RowCount := 2;
-  grdUnInvoicedList.FixedRows := 1;
-  SetUnInvoicedOLCols;
-
-  grdUnInvoicedList.Cells[0, 1] := '';
-  grdUnInvoicedList.Cells[1, 1] := '';
-  grdUnInvoicedList.Cells[2, 1] := '';
-  grdUnInvoicedList.Cells[3, 1] := '';
-  grdUnInvoicedList.Cells[4, 1] := '';
-  grdUnInvoicedList.Cells[5, 1] := '';
-  grdUnInvoicedList.Cells[6, 1] := '';
-  grdUnInvoicedList.Cells[7, 1] := '';
-  grdUnInvoicedList.Cells[8, 1] := '';
-  grdUnInvoicedList.Cells[9, 1] := '';
-
-  with grdToPay do
-  begin
-    RowCount := 2;
-    FixedRows := 1;
-    ColCount := 5;
-
-    ColWidths[0] := 27;
-    ColWidths[1] := 25;
-    ColWidths[2] := 153;
-    ColWidths[3] := 45;
-    ColWidths[4] := 45;
-
-    Cells[0, 0] := sQryPos;
-    Cells[1, 0] := sQryQty;
-    Cells[2, 0] := sItem;
-    Cells[3, 0] := sDue;
-    Cells[4, 0] := sToPay;
-
-    Cells[0, 1] := '';
-    Cells[1, 1] := '';
-    Cells[2, 1] := '';
-    Cells[3, 1] := '';
-    Cells[4, 1] := '';
-  end;
-  LogMessage(ltPaymentTrace, '304' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.CalculateToPay(LoadAllowedDisc: Boolean = False; DisplayDiscount: Boolean = True);
-var
-  I: Integer;
-  SalesTaxPercent: Real;
-  RoundedToPay: Currency;
-  SurchargeItem: TSurchargeItem;
-  aOL: TOrderLine;
-  rDiscPercToUse: Real;
-  tmpList: TList;
-begin
-  LogMessage(ltPaymentTrace, '167' + #9 + 'LoadAllowedDisc=' + BoolToStr(LoadAllowedDisc, True) + ', DisplayDiscount=' + BoolToStr(DisplayDiscount, True));
-  FToPay := 0;
-  FSalesTax := 0;
-  FSalesTaxCalculated := False;
-  FSurcharge := 0.00;
-  FLoyaltyFreeItemDiscount := 0;
-
-  tmpList := TList.Create;
-  try
-    LogMessage(ltPaymentTrace, '585' + #9);
-    GetAllSelectedOLs(tmpList);
-    if (tmpList.Count > 0) then
-    begin
-      for I := 0 to (tmpList.Count - 1) do
-      begin
-        aOL := tmpList.Items[I];
-        LogMessage(ltPaymentTrace, '168' + #9 + 'aOL.OrderLineID=' + IntToStr(aOL.OrderLineID) + ', aOL.ToPay=' + FloatToStr(aOL.ToPay) +
-          ', aOL.LoyaltyFreeDiscount=' + FloatToStr(aOL.LoyaltyFreeDiscount) + 'aOL.SalesTaxPercent=' + FloatToStr(aOL.SalesTaxPercent));
-
-        FToPay := FToPay + aOL.ToPay;
-        FLoyaltyFreeItemDiscount := GetRoundedUpDown(FLoyaltyFreeItemDiscount + aOL.LoyaltyFreeDiscount, AppDetails.DecimalPlaces);
-
-        SalesTaxPercent := aOL.SalesTaxPercent;
-        RoundedToPay := GetRoundedUpDown(aOL.ToPay, AppDetails.DecimalPlaces);
-
-        if (AppDetails.TaxExclusivePrices) then begin
-          FSalesTax := FSalesTax + ((RoundedToPay * SalesTaxPercent) / 100);
-        end
-        else begin
-          FSalesTax := FSalesTax + ((RoundedToPay * SalesTaxPercent) / (100 + SalesTaxPercent));
-        end;
-      end;
-    end;
-    FLoyaltyFreeItemDiscount := 0;
-    FSalesTax := GetRoundedUpDown(FSalesTax, AppDetails.DecimalPlaces);
-    LogMessage(ltPaymentTrace, '169' + #9 + 'FToPay=' + FloatToStr(FToPay) + ', FSalesTax=' + FloatToStr(FSalesTax));
-
-    CalculateSubsidy(tmpList, LoadAllowedDisc, DisplayDiscount);
-
-    LogMessage(ltPaymentTrace, '170' + #9);
-    CalculateAccTypeItemDiscount(tmpList);
-
-    if DisplayDiscount then
-    begin
-      LogMessage(ltPaymentTrace, '171' + #9);
-      UpdateScreenAfterCalculateDiscount;
-    end;
-
-    //when using account type discounting, FDiscountPercent is zero, so we need
-    //to temporarily calculate a percentage, in order to calculate the sales tax
-    if ((FUseItemDiscounts) or (FComboDiscount > 0)) then
-    begin
-      if (FToPay <> 0) then
-      begin
-        rDiscPercToUse := ((FDiscountAmount + FComboDiscount) / FToPay) * 100;
-      end
-      else begin
-        rDiscPercToUse := 0;
-      end;
-      LogMessage(ltPaymentTrace, '172' + #9 + 'rDiscPercToUse=' + FloatToStr(rDiscPercToUse) + ', FUseItemDiscounts=' + BoolToStr(FUseItemDiscounts, True) +
-        ', FComboDiscount=' + FloatToStr(FComboDiscount) + ', FDiscountAmount=' + FloatToStr(FDiscountAmount));
-    end
-    else begin
-      rDiscPercToUse := FDiscountPercent;
-      LogMessage(ltPaymentTrace, '173' + #9 + 'rDiscPercToUse=' + FloatToStr(rDiscPercToUse));
-    end;
-
-    if AppDetails.EnableFiscalPrinting then
-    begin
-      if (OLToPayList.Count > 0) then
-      begin
-        for I := 0 to (OLToPayList.Count - 1) do
-        begin
-          aOL := OLToPayList.Items[I];
-          if (aOL.ItemID > 0) then
-            FSalesTax := FSalesTax + (((aOL.ToPay - (aOL.topay * rDiscPercToUse/100)) * aOL.SalesTaxPercent ) / 100);
-          FSalesTax := GetRoundedUpDown(FSalesTax, AppDetails.DecimalPlaces);
-        end;
-      end;
-    end
-    else
-      FSalesTax := FSalesTax * ((100 - rDiscPercToUse) / 100);
-
-    FSalesTax := GetRoundedUpDown(FSalesTax, AppDetails.DecimalPlaces);
-    LogMessage(ltPaymentTrace, '174' + #9 + 'FSalesTax=' + FloatToStr(FSalesTax));
-
-    for I := 0 to (SurchargeList.Count - 1) do
-    begin
-      SurchargeItem := SurchargeList.Items[I];
-      if AppDetails.EnableFiscalPrinting then
-      begin
-        FSalesTax := FSalesTax + ((SurchargeItem.Amount * SurchargeItem.SalesTaxPercent) / 100);
-      end
-      else
-      begin
-        if (AppDetails.TaxExclusivePrices) then
-        begin
-          FSalesTax := FSalesTax + ((SurchargeItem.Amount * SurchargeItem.SalesTaxPercent) / 100);
-        end
-        else
-        begin
-          FSalesTax := FSalesTax + ((SurchargeItem.Amount * SurchargeItem.SalesTaxPercent) / (100 + SurchargeItem.SalesTaxPercent));
-        end;
-      end;
-      FSalesTax := GetRoundedUpDown(FSalesTax, AppDetails.DecimalPlaces);
-      LogMessage(ltPaymentTrace, '586' + #9 + 'SurchargeItem.ItemID=' + IntToStr(SurchargeItem.ItemID) + ', FSalesTax=' + FloatToStr(FSalesTax));
-    end;
-
-    LogMessage(ltPaymentTrace, '175' + #9);
-    LoadTLs(LANone);
-    LogMessage(ltPaymentTrace, '587' + #9 + 'FSurcharge=' + FloatToStr(FSurcharge));
-
-    if FToPay + FSurcharge < 0 then
-      txtSumToPay.Text := '0.00'
-    else
-      txtSumToPay.Text := FormatCurrencyNoSign(RoundNearest(FToPay + FSurcharge, 2) );
-
-    if (AppDetails.TaxExclusivePrices) then begin
-      txtSalesTax.Text := FormatCurrencyNoSign(FSalesTax);
-    end;
-
-    LogMessage(ltPaymentTrace, '176' + #9 + 'FStillDue=' + FloatToStr(FStillDue) + ', FRequired=' + FloatToStr(FRequired));
-    FStillDue := GetRoundedUpDown(FStillDue, AppDetails.DecimalPlaces);
-    FRequired := GetRoundedUpDown(FRequired, AppDetails.DecimalPlaces);
-
-    if FRequired < 0 then
-      txtStillDue.Text := '0.00'
-    else
-      txtStillDue.Text := FormatCurrencyNoSign(FRequired);
-
-    if (GlbAccount.AllowCredit) then
-    begin
-      LogMessage(ltPaymentTrace, '177' + #9);
-      lblAvailDollarSign.Visible := True;
-      txtAvail.Visible := True;
-      if (GlbEvent.EventID <= 0) then
-      begin
-        lblAvail.Caption := DoubleAmpersand(GlbAccount.AccountName);
-        txtAvail.Text := FormatCurrencyNoSign(Abs(GlbAccount.CurrentBalance));
-
-        if ((GlbAccount.CurrentBalance) > 0.00) then begin
-          txtAvail.Font.Color := clRed;
-          txtAvail.Color := clWhite;
-        end
-        else begin
-          txtAvail.Font.Color := clBlack;
-          txtAvail.Color := $00FFFF80;
-        end;
-
-      end
-      else
-      begin
-        lblAvail.Caption := DoubleAmpersand(sAvailable);
-        txtAvail.Text := FormatCurrencyNoSign(GlbEvent.Available - FHostSubsidy + FDiscountAmount);
-        txtAvail.Font.Color := clBlack;
-        txtAvail.Color := $00FFFF80;
-      end;
-      pnlAvail.Visible := True;
-      pnlLoyalty.Visible := (GlbEvent.EventID <= 0);
-      lblTitle.Visible := False;
-    end
-    else if (GlbAccount.AccountID > 0) then
-    begin
-      LogMessage(ltPaymentTrace, '178' + #9);
-      lblAvailDollarSign.Visible := False;
-      txtAvail.Visible := False;
-      lblAvail.Caption := DoubleAmpersand(GlbAccount.AccountName);
-      lblTitle.Visible := False;
-      pnlLoyalty.Visible := True;
-      pnlAvail.Visible := True;
-    end
-    else begin
-      LogMessage(ltPaymentTrace, '179' + #9);
-      lblTitle.Visible := True;
-      pnlLoyalty.Visible := False;
-      pnlAvail.Visible := False;
-    end;
-  finally
-    BroadcastCDAMessage;
-    tmpList.Clear; //Temporary list. Object in this list is part of another list. So no need to clear the objects.
-    tmpList.Free;
-    LogMessage(ltPaymentTrace, '180' + #9);
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.UpdateScreenAfterCalculateDiscount;
-var
-  I: Integer;
-  Balance: Currency;
-begin
-  LogMessage(ltPaymentTrace, '443' + #9);
-  txtDiscountPercent.Text := FormatPercent(FDiscountPercent);
-  txtDiscountAmount.Text := FormatCurrencyNoSign(FDiscountAmount + FLoyaltyFreeItemDiscount);
-
-  //Dont show discount for guest transaction
-  if ((GlbEvent.EventID > 0) and (GlbEvent.AccountID > 0) and (GlbEvent.SubsidyID > 0) and (not OnAccount)) then
-  begin
-    txtDiscountPercent.Text := '';
-    txtDiscountAmount.Text := '';
-    cmdDiscountPercent.Enabled := False;
-    cmdDiscountAmount.Enabled := False;
-  end
-  else if ((GlbEvent.EventID > 0) and (GlbEvent.AccountID > 0) and (GlbEvent.SubsidyID > 0) and (OnAccount)) then
-  begin
-    cmdDiscountPercent.Enabled := True;
-    cmdDiscountAmount.Enabled := True;
-  end;
-
-  if (GlbTable.SaleCategorySurchargeItemID <> 0) then begin
-    if (SaleCategorySurchargeItem = nil) then begin
-      SaleCategorySurchargeItem := TSurchargeItem.Create;
-      SaleCategorySurchargeItem.ItemID := GlbTable.SaleCategorySurchargeItemID;
-      SaleCategorySurchargeItem.ItemAbbrev := GlbTable.SaleCategorySurchargeItemAbbrev;
-      SaleCategorySurchargeItem.Percent := GlbTable.SaleCategorySurchargePercent;
-      SaleCategorySurchargeItem.Fixed := GlbTable.SaleCategorySurchargeFixed;
-      SaleCategorySurchargeItem.SalesTaxPercent := GlbTable.SaleCategorySurchargeSTRate;
-      SaleCategorySurchargeItem.SurchargeType := stSaleCategory;
-
-      SurchargeList.Add(SaleCategorySurchargeItem);
-    end;
-    SaleCategorySurchargeItem.Amount := SaleCategorySurchargeItem.Fixed + GetRoundedUpDown((FToPay - FLoyaltyFreeItemDiscount - FDiscountAmount- FComboDiscount) * SaleCategorySurchargeItem.Percent / 100, AppDetails.DecimalPlaces);
-  end;
-
-  FSurcharge := 0;
-  for I := 0 to (SurchargeList.Count - 1) do begin
-    FSurcharge := FSurcharge + GetRoundedUpDown(TSurchargeItem(SurchargeList[I]).Amount, AppDetails.DecimalPlaces);
-  end;
-  FSurcharge := GetRoundedUpDown(FSurcharge, AppDetails.DecimalPlaces);
-
-  //    This one line above is probably crap. It probably needs to be added at a later point.
-//    Test and see. Don't forget about SalesTax doofreys where they come up.
-
-  if (AppDetails.TaxExclusivePrices) then
-  begin      //Jon 30-5-2001
-    if (FSalesTaxCalculated) then
-    begin
-      if ((GlbEvent.EventID <=0) or (SubsidyCalc.IsHostTransaction)) then
-        Balance := FToPay + FSurcharge - FDiscountAmount - FComboDiscount - FLoyaltyFreeItemDiscount - FTotalSubsidyAllowed + FSalesTax  //Jon 30-5-2001
-      else
-        Balance := FToPay + FSurcharge  - FComboDiscount - FLoyaltyFreeItemDiscount - FHostSubsidy + FSalesTax
-    end                                   //Jon 30-5-2001
-    else begin                            //Jon 30-5-2001
-      if ((GlbEvent.EventID <=0) or (SubsidyCalc.IsHostTransaction)) then
-        Balance := FToPay + FSurcharge - FDiscountAmount - FComboDiscount - FLoyaltyFreeItemDiscount - FTotalSubsidyAllowed + ((FSalesTax * (100 - FDiscountPercent)) / 100)
-      else
-        Balance := FToPay + FSurcharge - FComboDiscount - FLoyaltyFreeItemDiscount - FHostSubsidy + ((FSalesTax * (100 - FDiscountPercent)) / 100)
-    end;                                  //Jon 30-5-2001
-  end                                     //Jon 30-5-2001
-  else
-  begin
-    if ((GlbEvent.EventID <=0) or (SubsidyCalc.IsHostTransaction)) then
-      Balance := FToPay + FSurcharge - FDiscountAmount - FComboDiscount - FLoyaltyFreeItemDiscount - FTotalSubsidyAllowed
-    else
-      Balance := FToPay + FSurcharge - FComboDiscount - FLoyaltyFreeItemDiscount - FHostSubsidy;
-  end;
-
-  if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-    Balance := TruncateTo(Balance, 2)
-  else
-    Balance := GetRoundedUpDown(Balance, AppDetails.DecimalPlaces);
-
-  if Balance < 0 then
-    txtBalDue.Text := '0.00'
-  else
-    txtBalDue.Text := FormatCurrencyNoSign(Balance);
-
-  if (FSalesTaxCalculated) then begin
-    if ((GlbEvent.EventID <=0) or (SubsidyCalc.IsHostTransaction)) then
-      FStillDue := CalculateStillDue(FToPay, FDiscountAmount+ FComboDiscount + FLoyaltyFreeItemDiscount+FTotalSubsidyAllowed, FPayment, FSalesTax)
-    else
-      FStillDue := CalculateStillDue(FToPay, FComboDiscount + FLoyaltyFreeItemDiscount + FHostSubsidy, FPayment, FSalesTax)
-  end
-  else begin
-    if ((GlbEvent.EventID <=0) or (SubsidyCalc.IsHostTransaction)) then
-      FStillDue := CalculateStillDue(FToPay, FDiscountAmount + FComboDiscount + FLoyaltyFreeItemDiscount+FTotalSubsidyAllowed, FPayment, ((FSalesTax * (100 - FDiscountPercent)) / 100))
-    else
-      FStillDue := CalculateStillDue(FToPay, FComboDiscount + FLoyaltyFreeItemDiscount+FHostSubsidy, FPayment, FSalesTax);
-  end;
-
-  if ((GlbAccount.AccountID > 0) and (OnAccount)) then begin
-    if ((GlbAccount.CreditLimitActive) and (FStillDue > (GlbAccount.CreditLimit - GlbAccount.CurrentBalance))) then begin
-      FRequired := (FStillDue - (GlbAccount.CreditLimit - GlbAccount.CurrentBalance));
-    end
-    else begin
-      FRequired := 0;
-    end;
-  end
-  else begin
-    FRequired := FStillDue;
-  end;
-  FStillDue := GetRoundedUpDown(FStillDue, AppDetails.DecimalPlaces);
-  if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-    FRequired := TruncateTo(FRequired, 2)
-  else
-    FRequired := GetRoundedUpDown(FRequired, Appdetails.DecimalPlaces);
-  if FRequired < 0 then
-    txtStillDue.Text := '0.00'
-  else
-    txtStillDue.Text := FormatCurrencyNoSign(FRequired);
-end;
-
-{******************************************************************************}
-procedure TformPaymentTable.CalculateAccTypeItemDiscount(AList: TList);
-begin
-  LogMessage(ltPaymentTrace, '445' + #9);
-  if not FUseDiscountAmount then
-    FDiscountAmount := 0;
-
-  CalculateComboAndAccountDiscounts(AList);
-
-  if FComboDiscount > 0 then
-    txtComboDisc.Text := FormatFloat(PRICEFORMAT, FComboDiscount);
-  txtComboDisc.Visible := (FComboDiscount > 0);
-  lblComboDisc.Visible := (FComboDiscount > 0);
-end;
-{******************************************************************************}
-function TformPaymentTable.AddOrderLine(AList:TList; AOLIndex: Integer):Boolean; //Add to OLToPayList
-var
-  I: Integer;
-  aOL, SOL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '539' + #9 + 'AOLIndex=' + IntToStr(AOLIndex));
-  Result := False;
-  if not Assigned(AList) then
-    Exit;
-
-  if AOLIndex <= AList.Count-1 then
-    SOL := AList.Items[AOLIndex]
-  else
-    Exit;
-
-  if SOL.OrderLineID <= 0 then
-    Exit;
-
-  if ((SOL.Uninvoiced <= 0) and ((not AppDetails.PaymentAllowZeroPriceInvoices) or (SOL.ILCount > 0))) then begin
-    LogMessage(ltPaymentTrace, '540' + #9 + 'SOL.OrderLineID=' + IntToStr(SOL.OrderLineID) + ', SOL.Uninvoiced=' + FloatToStr(SOL.Uninvoiced) + ', SOL.ILCount=' + IntToStr(SOL.ILCount));
-    //Don't allow it to 0 paid for twice
-    Exit;
-  end;
-
-  //go through existing OLToPayList, if find a match, update ToPay amount then exit
-  for i := 0 to (OLToPayList.Count - 1) do
-  begin
-    aOL := OLToPayList.Items[I];
-    if ((aOL.OrderLineID = SOL.OrderLineID)) then
-    begin
-      LogMessage(ltPaymentTrace, '541' + #9 + 'i=' + IntToStr(i) + ', aOL.OrderLineID=' + IntToStr(aOL.OrderLineID) + ', aOL.ComboID=' + IntToStr(aOL.ComboID) +
-        ', aOL.LoyaltyItemID=' + IntToStr(aOL.LoyaltyItemID) + ', aOL.LoyaltyFreeQty=' + FloatToStr(aOL.LoyaltyFreeQty) + ', SOL.Uninvoiced=' + FloatToStr(SOL.Uninvoiced) +
-        ', aOL.UnitPrice=' + FloatToStr(aOL.UnitPrice));
-
-      if ((LoyaltyReward.LoyaltyRewardID > 0) and (LoyaltyReward.RewardOffer = roItem) and (aOL.ComboID <= 0) and (aOL.LoyaltyItemID > 0)) then
-      begin
-        LoyaltyReward.AvailableQty := LoyaltyReward.AvailableQty + aOL.LoyaltyFreeQty;
-        LogMessage(ltPaymentTrace, '542' + #9 + 'LoyaltyReward.LoyaltyRewardID' + IntToStr(LoyaltyReward.LoyaltyRewardID) + ', LoyaltyReward.AvailableQty=' + FloatToStr(LoyaltyReward.AvailableQty));
-      end;
-
-      if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-        aOL.ToPay := TruncateTo(SOL.Uninvoiced, 2)
-      else
-        aOL.ToPay := CRoundTo(SOL.Uninvoiced, 2);
-
-      if (aOL.UnitPrice > 0) then begin
-        aOL.Qty := CRoundTo(aOL.ToPay / aOL.UnitPrice, 4);
-      end
-      else begin
-        aOL.Qty := 0;
-      end;
-
-      LogMessage(ltPaymentTrace, '543' + #9 + 'aOL.ToPay=' + FloatToStr(aOL.ToPay) + ', aOL.Qty=' + FloatToStr(aOL.Qty) + ', aOL.QtyChanged=' + BoolToStr(aOL.QtyChanged, True));
-
-      if (LoyaltyReward.RewardOffer = roItem)  then
-      begin
-        LogMessage(ltPaymentTrace, '544' + #9);
-		    AllocateItemLoyalty(aOL);
-      end;
-
-      grdItemAutoClick := True;
-      grdToPay.Row := i + 1;
-      LogMessage(ltPaymentTrace, '545' + #9);
-      UpdateGrdToPayCells(grdToPay.Row);
-      Result := True;
-      LogMessage(ltPaymentTrace, '546' + #9);
-      Exit;
-    end;
-  end;
-
-  //not found so create and add to oltopaylist
-  aOL := TOrderLine.Create;
-  with aOL do
-  begin
-    ShowZeroPriceItem := SOL.ShowZeroPriceItem;
-    OrderID := SOL.OrderID;
-    AlreadyCombined := False;
-    OrderLineID := SOL.OrderLineID;
-    ItemID := SOL.ItemID;
-    ItemGroupID := SOL.ItemGroupID;
-    TaxSituation := SOL.TaxSituation;
-    CSOSN := SOL.CSOSN;
-    CSTICMS := SOL.CSTICMS;
-    ProductOrigin := 0;
-    CFOP := SOL.CFOP;
-    BarCode := SOL.Barcode;
-    NCMProductCode := SOL.NCMProductCode;
-    CST_PIS := SOL.CST_PIS;
-    CST_COFFINS := SOL.CST_COFFINS;
-    if Length(CSTICMS) >= 3 then
-    begin
-      ProductOrigin := StrToIntDef(Copy(CSTICMS, 1,1),0);
-      CSTICMS := Copy(CSTICMS,2,Length(CSTICMS)-1);
-    end;
-    OLQty := SOL.Qty;
-    ItemString := SOL.ItemString;
-    ModsString := SOL.ModsString;
-    OLPriceLevel := SOL.OLPriceLevel;
-    SalesTaxPercent := SOL.SalesTaxPercent;
-    Qty := SOL.Qty;
-    UnitPrice := SOL.UnitPrice;
-    OriginalUnitPrice := SOL.OriginalUnitPrice;
-    AllowedDiscount := SOL.AllowedDiscount;
-    GTIN := SOL.GTIN;
-    TaxCoreLabel := SOL.TaxCoreLabel;
-
-    if (AppDetails.OneBill) and (FUseDiscountAmount) then
-    begin
-      if (OLToPayList.Count = 0) then
-        FDiscountAmount := 0;
-
-      FDiscountAmount := FDiscountAmount + SOL.AllowedDiscount;
-      LogMessage(ltPaymentTrace, '547' + #9 + 'SOL.AllowedDiscount=' + FloatToStr(SOL.AllowedDiscount) + ', FDiscountAmount=' + FloatToStr(FDiscountAmount));
-    end;
-
-    SubsidyAllowed := SOL.SubsidyAllowed;
-
-    ForB := SOL.ForB;
-    ItemGrpType := SOL.ItemGrpType;
-    WeighedItem := SOL.WeighedItem;
-    DiscountSchemeItemPercentage := SOL.DiscountSchemeItemPercentage;
-    DiscountSchemeItemAmount := 0;
-    DiscountSchemeItemTested := False;
-    DiscountSchemeID := 0;
-    TenderSeqID := 0;
-    LastNormalItem := False;
-    LastComboItem := False;
-
-    if not AppDetails.EnableCombo then
-    begin
-      ComboID := 0;
-      ComboGroupID := 0;
-      ComboIndex := 0;
-      ComboName := '';
-      ComboQty := 0;
-      ComboColourIndex := -1;
-    end
-    else
-    begin
-      ComboID := SOL.ComboID ;
-      ComboGroupID := SOL.ComboGroupID;
-      ComboIndex := SOL.ComboIndex;
-      ComboName := SOL.ComboName;
-      ComboQty := SOL.ComboQty;
-      ComboColourIndex := SOL.ComboColourIndex;
-    end;
-    FreeComboItem := SOL.FreeComboItem;
-    ApplyDiscountType := SOL.ApplyDiscountType;
-    ILDiscount := 0;
-    Positions := SOL.Pos;
-
-    Uninvoiced := CRoundTo(SOL.Uninvoiced, 2);
-    ToPay := aOL.Uninvoiced;
-    Due := aOL.Uninvoiced;
-    Invoiced := 0;
-
-    if (UnitPrice > 0) then
-    begin
-      LogMessage(ltPaymentTrace, '548' + #9);
-      Qty := CRoundTo(ToPay / UnitPrice, 4);
-    end;
-
-    if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-    begin
-      Qty := TruncateTo(Qty, 3);
-      UnitPrice := TruncateTo(UnitPrice, 2);
-      OriginalUnitPrice := TruncateTo(OriginalUnitPrice, 2);
-      UnInvoiced := TruncateTo(UnInvoiced, 2);
-    end;
-
-    QtyLeft := Qty;
-
-    if (LoyaltyReward.RewardOffer <> roItem) or (ComboID > 0) then
-    begin
-      LogMessage(ltPaymentTrace, '549' + #9);
-      LoyaltyItemID := -1;
-      LoyaltyFreeQty := 0;
-      LoyaltyFreeDiscount := 0;
-    end;
-
-    QtyChanged := SOL.QtyChanged;
-
-    LogMessage(ltPaymentTrace, '558' + #9 + 'aOL.OrderLineID=' + IntToStr(aOL.OrderLineID) + ', aOL.ComboID=' + IntToStr(aOL.ComboID) +
-      ', aOL.Uninvoiced=' + FloatToStr(aOL.Uninvoiced) + ', aOL.ToPay=' + FloatToStr(aOL.ToPay) + ', aOL.Due=' + FloatToStr(aOL.Due) + ', aOL.Invoiced=' + FloatToStr(aOL.Invoiced) +
-      ', aOL.UnitPrice=' + FloatToStr(aOL.UnitPrice) + ', aOL.Qty=' + FloatToStr(aOL.Qty) + ', aOL.QtyLeft=' + FloatToStr(aOL.QtyLeft) + 'aOL.QtyChanged=' + BoolToStr(aOL.QtyChanged, True));
-
-    if ((LoyaltyReward.LoyaltyRewardID > 0) and (LoyaltyReward.RewardOffer = roItem)) then
-    begin
-      LoyaltyItemID := SOL.LoyaltyItemID;
-      if not FoundFirstLoyaltyFreeItem then
-      begin
-        LoyaltyItemID := TestLoyaltyItem(LoyaltyReward.LoyaltyRewardID, ItemID);
-      end;
-
-      LogMessage(ltPaymentTrace, '550' + #9 + 'LoyaltyReward.LoyaltyRewardID' + IntToStr(LoyaltyReward.LoyaltyRewardID) + ', LoyaltyReward.AvailableQty=' + FloatToStr(LoyaltyReward.AvailableQty) +
-        ', aOL.LoyaltyItemID=' + IntToStr(aOL.LoyaltyItemID));
-      AllocateItemLoyalty(aOL);
-    end;
-
-    ILAmount := 0;
-    GLCode := SOL.GLCode;
-    GLCode2 := SOL.GLCode2;
-    NetToPay := 0;
-  end;
-
-  //Add OL to OLToPayList
-  OLToPayList.Add(aOL);
-  LogMessage(ltPaymentTrace, '559' + #9);
-
-  //add to grid
-  GridUpdating := True;
-  with grdToPay do
-  begin
-    if (OLToPayList.Count > 1) then
-    begin
-      RowCount := RowCount + 1;
-    end;
-    Row := RowCount-1;
-    if Row = 0 then
-    begin
-      LogMessage(ltPaymentTrace, '560' + #9);
-      RowCount := RowCount + 1;
-    end;
-
-    GridUpdating := False;
-    LogMessage(ltPaymentTrace, '555' + #9);
-    UpdateGrdToPayCells(Row);
-    LogMessage(ltPaymentTrace, '561' + #9);
-    Result := True;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.AddAllOrderLines;
-begin
-  LogMessage(ltPaymentTrace, '276' + #9);
-  LoadUnInvoicedOlsToOLToPayList(UnInvoicedOlsToPay);
-  LogMessage(ltPaymentTrace, '277' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.DeleteOrderLine;
-var
-  i, j: Integer;
-  OL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '502' + #9);
-  with grdToPay do
-  begin
-    if (OLToPayList.Count = 0) then  //exit if nothing to clear
-      Exit;
-
-    OL := OLToPayList.Items[Row-1];
-    if OL.TenderSeqID > 0 then
-    begin
-      ShowQuickMsg(sCanNotDeleteTenderedItem);
-      Exit;
-    end;
-
-    if (OLToPayList.Count = 1) then
-    begin
-      ClearAllOrderLines;
-      FoundFirstLoyaltyFreeItem := False;
-      if (CDAServer.Connected) then
-      begin
-        CDAServer.CDAData.onetapFunction := ofTablePaymentByItem;
-        CDAServer.SendCDAMessage;
-      end;
-    end
-    else
-    begin
-      // delete from the OLList
-      // UpdateSourceOLValues(OL.OrderLineID, -1*OL.Qty, -1*OL.Invoiced);
-      // DeleteFromFullList(OL.OrderLineID);
-      OLToPayList.Delete(Row - 1);
-      if ((OL.LoyaltyItemID > 0) and (OL.LoyaltyFreeQty > 0) and (OL.LoyaltyFreeDiscount > 0) and (LoyaltyReward.RewardOffer = roItem)) then
-        FoundFirstLoyaltyFreeItem := False;
-
-      //delete from the grid
-      for i := Row to RowCount-1 do
-      begin
-        Cells[0, i] := Cells[0, i+1];
-        Cells[1, i] := Cells[1, i+1];
-        Cells[2, i] := Cells[2, i+1];
-        Cells[3, i] := Cells[3, i+1];
-        Cells[4, i] := Cells[4, i+1];
-      end;
-      RowCount := RowCount - 1;
-
-      FDiscCalculator.OneBillUseDiscountAmount := False;
-
-      if (AppDetails.OneBill) and (FUseDiscountAmount) then
-        FDiscountAmount := FDiscountAmount - OL.AllowedDiscount;
-
-      if (FDiscountAmount < 0) then
-        FDiscountAmount := 0;
-
-      LogMessage(ltPaymentTrace, '421' + #9);
-      CalculateToPay;
-
-      if ((LoyaltyReward.LoyaltyRewardID > 0) and (LoyaltyReward.RewardOffer = roItem) and (OL.LoyaltyItemID > 0)) then
-      begin
-        LogMessage(ltPaymentTrace, '499' + #9);
-        LoyaltyReward.AvailableQty := LoyaltyReward.AvailableQty + OL.LoyaltyFreeQty;
-        TestAllOLsLoyaltyItem(OLToPayList, True);
-        for j := 0 to OLToPayList.Count-1 do
-        begin
-          LogMessage(ltPaymentTrace, '500' + #9);
-          UpdateGrdToPayCells(j + 1);
-          LogMessage(ltPaymentTrace, '566' + #9);
-        end;
-      end;
-      grdItemAutoClick := True;
-      LogMessage(ltPaymentTrace, '501' + #9);
-      grdToPayClick(nil);
-      LogMessage(ltPaymentTrace, '503' + #9);
-      OL.Free;
-    end;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdOLDeleteClick(Sender: TObject);
-var
-  i: Integer;
-  OL: TOrderLine;
-  lComboID, lComboIndex: Integer;
-  OkToDelete: Boolean;
-
-begin
-  LogMessage(ltPaymentTrace, '536' + #9);
-  if (DoingTablePayment) then begin   //Jon 25-02-2002
-    Exit;
-  end;
-
-  if (OLToPayList.Count = 0) then
-    Exit;
-
-  if (not sExternalAccountIntegration.CheckLoadedRedemptions) then Exit;
-
-  if (not FUseDiscountAmount) and (not (LoyaltyReward.RewardOffer in [roDiscount])) then
-    RecalculateDiscount := True;
-
-  with grdToPay do
-  begin
-    OL := OLToPayList.Items[Row-1];
-    lComboID := OL.ComboID;
-    lComboIndex := OL.ComboIndex;
-  end;
-
-  OkToDelete := True;
-  if lComboID > 0 then
-  begin
-    if ShowConf(sComboMustClearTogether) = mrNo then
-      OkToDelete := False;
-  end;
-
-  if OkToDelete then
-    DeleteOrderLine;
-
-  if ((lComboID > 0) and OkToDelete) then
-  begin
-    // delete all combo items in the selected list
-    for i := OLToPayList.Count-1 downto 0 do
-    begin
-      OL := OLToPayList.Items[i];
-      if ((OL.ComboID = lComboID) and (OL.ComboIndex = lComboIndex)) then
-      begin
-        grdToPay.Row := i + 1;
-        DeleteOrderLine;
-      end;
-    end;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdAllClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '535' + #9);
-  if (DoingTablePayment) then begin   //Jon 25-02-2002
-    Exit;
-  end;
-  
-  if (not sExternalAccountIntegration.CheckLoadedRedemptions) then Exit;
-
-  FDiscCalculator.OneBillUseDiscountAmount := False;
-  AddAllOrderLines;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdOLClearClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '537' + #9);
-  if (DoingTablePayment) then begin   //Jon 25-02-2002
-    Exit;
-  end;
-
-  if (OLToPayList.Count > 0) then
-  begin // JEH 15/5/1
-    
-    if (not sExternalAccountIntegration.CheckLoadedRedemptions) then Exit;
-
-    if (ShowConf(sClearAll) = mrYes) then
-    begin
-      if (not FUseDiscountAmount) and (not (LoyaltyReward.RewardOffer in [roDiscount])) then
-        RecalculateDiscount := True;
-      ClearUnTenderedOrderLines;
-    end;
-  end;
-
-  if (CDAServer.Connected) then
-  begin
-    CDAServer.CDAData.onetapFunction := ofTablePaymentByItem;
-    CDAServer.SendCDAMessage;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdDetailsClick(Sender: TObject);
-var
-  Notes: string;
-  TL: TTL;
-begin
-  if (DoingTablePayment) then begin   //Jon 25-02-2002
-    Exit;
-  end;
-
-  if TLList.Count > 0 then begin
-    TL := TLList.Items[grdTLs.Row - 1];
-
-    Notes := TL.TLNotes;
-
-    if (GetSingleNote(Notes, 40, sTenderLineDetail, sTenderLineDetailCol, tiMoneyBag, True)) then begin
-      TL.TLNotes := Notes;
-      LoadTLs(LAEdit);
-    end;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.AddTenderLine(TLType: TTLT; IntendedTenderTypeProviderID: Integer = 0; pTL: TTL = nil);
-var
-  fTotalAmount, Payment: Currency;
-  TL, OldTL: TTL;
-  I: Integer;
-  TenderLineType: TTenderLineType;
-  UsingRequired: Boolean;
-  tmpList: TList;
-  StillDue, EventDue: Currency;
-  SurchargeItem: TSurchargeItem;
-  FixedSurcharge, SurchargePercent: Currency;
-  SaleCategory: TSaleCategory;
-begin
-  LogMessage(ltPaymentTrace, '93' + #9);
-  if (GlbEvent.EventID > 0) then
-  begin
-    SetGlbEvent(GlbEvent.EventID, True);
-
-    if ((GlbEvent.Available - FHostSubsidy + FDiscountAmount) < 0) then
-    begin
-      ShowMsg(sEventSpendLimitReached);
-      txtAvail.Text := FormatCurrencyNoSign(GlbEvent.Available - FHostSubsidy + FDiscountAmount);
-      Exit;
-    end;
-  end;
-
-  AddingTender := True;
-
-  tmpList := TList.Create;
-  try
-    if TLList.Count = 0 then
-      SFiscalPrinting.CheckForPendingFiscalOperations;
-
-    LogMessage(ltPaymentTrace, '94' + #9);
-    GetAllSelectedOLs(tmpList);
-    LogMessage(ltPaymentTrace, '95' + #9);
-
-    StillDue := FStillDue;
-    LogMessage(ltPaymentTrace, '96' + #9 + 'FStillDue=' + FloatToStr(FStillDue));
-    cmdGetCPF.Enabled := False;
-    if (DoingTablePayment) then begin
-      LogMessage(ltPaymentTrace, '97' + #9);
-      Exit;
-    end;
-
-    if ((TLType in [TLTLibica, TLTFidelio, TLTPhoenix, TLTMicros4700, TLTMicros4700Account, TLTRoomCharge, TLTMews]) and TenderTypeExists(TLType)) then begin
-      ShowMsg(sRoomTransExists);
-      Exit;
-    end;
-    if ((TLType = TLTEvolution) and TenderTypeExists(TLTEvolution)) then begin
-      ShowMsg(sEvolTransExists);
-      Exit;
-    end;
-    if ((TLType = TLTNZAGold) and TenderTypeExists(TLTNZAGold)) then begin
-      ShowMsg(sNZAGoldTransExists);
-      Exit;
-    end;
-    if ((TLType = TLTPrepaid) and TenderTypeExists(TLTPrepaid)) then begin
-      ShowMsg(sPrepaidTenderExists);
-      Exit;
-    end;
-
-    LogMessage(ltPaymentTrace, '98' + #9);
-    Payment := GetDue;
-    if (TLType = TLTPrepaid) then begin
-      if (GlbTable.PrepaidBalance = 0) then begin
-        ShowMsg(sNoPrepaidBal);
-        Exit;
-      end;
-
-      if (GlbTable.PrepaidBalance < Payment) then begin
-        LogMessage(ltPaymentTrace, '99' + #9);
-        Payment := GlbTable.PrepaidBalance;
-      end;
-    end;
-    LogMessage(ltPaymentTrace, '474' + #9 + 'Payment=' + FloatToStr(Payment) + ', UsingRequired=' + BoolToStr(UsingRequired, True) + ', FRequired=' + FloatToStr(FRequired));
-
-    if TLType = TLTwiGroup then
-    begin
-      if wiGroupPOSSrv.CheckInformDiscNotAllowed(False, FDiscountAmount + FComboDiscount + FLoyaltyFreeItemDiscount) then
-        Exit;
-
-      //if wiGroupPOSSrv.CheckInformComboDiscNotAllowed(False, FComboDiscount) then
-      //  Exit;
-
-      if wiGroupPOSSrv.CheckInformOTAcctNotAllowed(False, GlbAccount.AccountID > 0) then
-        Exit;
-
-      if wiGroupPOSSrv.CheckInformEventNotAllowed(False, GlbEvent.EventID > 0) then
-        Exit;
-
-      if wiGroupPOSSrv.CheckInformExtAcctNotAllowed(False, sExternalAccountIntegration.ProviderCardsPresent > 0) then
-        Exit;
-
-      wiGroupPOSSrv.SetPayment(TLList, FToPay, SaleCategorySurchargeItem, OLToPayList);
-
-      if not wiGroupPOSSrv.ValidatePayment then
-        Exit;
-    end;
-
-    LogMessage(ltPaymentTrace, '100' + #9);
-    UsingRequired := False;
-    if (not Assigned(pTL)) then
-    begin
-      TL := TTL.Create;
-      TL.TLType := TLType;
-
-      if (IntendedTenderTypeProviderID > 0) then
-        TL.TLProviderID := IntendedTenderTypeProviderID;
-
-      LogMessage(ltPaymentTrace, '101' + #9 + 'TL.TLType=' + IntToStr(Ord(TL.TLType)) + ', TL.TLProviderID=' + IntToStr(TL.TLProviderID));
-
-      if TL.TLType = TLTwiGroup then
-      begin
-        LogMessage(ltPaymentTrace, '102' + #9);
-        wiGroupPOSSrv.SetTL(TL);
-      end
-      else if ((GlbAccount.AccountID > 0) and (OnAccount) and
-          (FRequired <> 0) and (FRequired <> Payment) and (not AppDetails.CashSaleSwapStillDueForTenders) and
-          (ShowConf(sUseRequiredAmt) = mrYes)) then begin
-        LogMessage(ltPaymentTrace, '103' + #9);
-        TL.TLPayment := FRequired;
-        UsingRequired := True;
-      end
-      else begin
-        LogMessage(ltPaymentTrace, '104' + #9);
-        TL.TLPayment := Payment;
-      end;
-
-      TL.TLTip := 0.00;
-      TL.TLChange := 0.00;
-      TL.TLTender := TL.TLPayment;
-      TL.TLTender := RoundToRounding(TL.TLTender, RoundForTLType(TL.TLType));
-      TL.TLRounding := (TL.TLPayment - TL.TLTender);
-
-      SaleCategory := GlobalMenuList.ListSaleCategorys.Find(GlbTable.SaleCategoryID);
-
-      LogMessage(ltPaymentTrace, '105' + #9 + 'TL.TLPayment=' + FloatToStr(TL.TLPayment) + ', TL.TLTip=' + FloatToStr(TL.TLTip) +
-        ', TL.TLChange=' + FloatToStr(TL.TLChange) + ', TL.TLTender=' + FloatToStr(TL.TLTender) + ', TL.TLRounding=' + FloatToStr(TL.TLRounding) +
-        ', GlbTable.SaleCategoryID=' + IntToStr(GlbTable.SaleCategoryID));
-
-      if Assigned(SaleCategory) and (SaleCategory.AutoTipPercent > 0) then
-      begin
-        TL.TLTip := TL.TLTender * (SaleCategory.AutoTipPercent/100);
-        TL.TLTip := RoundToRounding(TL.TLTip, RoundForTLType(TL.TLType));
-        TL.TLTender := TL.TLTender + TL.TLTip;
-        LogMessage(ltPaymentTrace, '106' + #9 + 'SaleCategory.AutoTipPercent' + FloatToStr(SaleCategory.AutoTipPercent) +
-          ', TL.TLTip=' + FloatToStr(TL.TLTip) + ', TL.TLTender=' + FloatToStr(TL.TLTender));
-      end;
-    end
-    else
-    begin
-      TL := pTL;
-
-      LogMessage(ltPaymentTrace, '107' + #9 + 'TL.TLType=' + IntToStr(Ord(TL.TLType)) + ', TL.TLProviderID=' + IntToStr(TL.TLProviderID) +
-        ', TL.TLPayment=' + FloatToStr(TL.TLPayment) + ', TL.TLTip=' + FloatToStr(TL.TLTip) +
-        ', TL.TLChange=' + FloatToStr(TL.TLChange) + ', TL.TLTender=' + FloatToStr(TL.TLTender) + ', TL.TLRounding=' + FloatToStr(TL.TLRounding) +
-        ', GlbTable.SaleCategoryID=' + IntToStr(GlbTable.SaleCategoryID));
-    end;
-
-    TL.PaymentType := ptNormal;
-    if PaymentOnSelectedItems then
-      TL.PaymentType := ptItemsSelected
-    else if AmountSplitingStarted then
-      TL.PaymentType := ptAmountSplit;
-    LogMessage(ltPaymentTrace, '108' + #9 + 'TL.PaymentType=' + IntToStr(Ord(TL.PaymentType)) +
-      ', PaymentOnSelectedItems=' + BoolToStr(PaymentOnSelectedItems, True) + ', AmountSplitingStarted=' + BoolToStr(AmountSplitingStarted, True));
-
-    fAmtToPay := FToPay - FLoyaltyFreeItemDiscount;
-    LogMessage(ltPaymentTrace, '109' + #9 + 'fAmtToPay=' + FloatToStr(fAmtToPay) + ', FToPay=' + FloatToStr(FToPay) +
-      ', FLoyaltyFreeItemDiscount=' + FloatToStr(FLoyaltyFreeItemDiscount));
-
-    If PaymentOnSelectedItems or AmountSplitingStarted  then
-    begin
-      fAmtToPay := fAmtToPay - FDiscountAmount - FComboDiscount + FSurcharge - FTotalSubsidyAllowed;
-      LogMessage(ltPaymentTrace, '110' + #9 + 'fAmtToPay=' + FloatToStr(fAmtToPay) + ', FDiscountAmount=' + FloatToStr(FDiscountAmount) +
-        ', FComboDiscount=' + FloatToStr(FComboDiscount) + ', FSurcharge=' + FloatToStr(FSurcharge) + ', FTotalSubsidyAllowed=' + FloatToStr(FTotalSubsidyAllowed));
-    end;
-
-    if ((AppDetails.EFTPOSEnablePreAuth) and (GlbTable.EFTPOSTxnRef <> '') and (TLType in [TLTEFTPOS, TLTVisa, TLTVisaEFTPOS, TLTAmex, TLTAmexEFTPOS, TLTDiners, TLTDinersEFTPOS, TLTMasterCard, TLTMasterCardEFTPOS])) then begin
-      LogMessage(ltPaymentTrace, '111' + #9);
-      //Check if no other Pre-Authed Transactions have been done.
-      TL.EFTPOSTxnRef := GlbTable.EFTPOSTxnRef;
-      for I := 0 to (TLList.Count - 1) do begin
-        OldTL := TLList.Items[I];
-        if (OldTL.PreAuthPayment) then begin
-          TL.EFTPOSTxnRef := '';
-          Break;
-        end;
-      end;
-    end;
-
-    if (AppDetails.EnableFiscalPrinting and AppDetails.EFTPOSIntegrated and (AppDetails.EFTPOSType in [ecTEFIPDaruma]) and (not(TLType in [TLTNone, TLTCash, TLTCheque]))) then
-    begin
-      SFiscalTEF.DoesCardDiscountEnabled('1');
-    end;
-
-    EventDue := FStillDue;
-    if ((TLType = TLTNone) or (Assigned(pTL)) or
-      (GetTL(TTPayment, TLAAdd, Payment, TL, False, True, False, True, False))) then
-    begin
-      LogMessage(ltPaymentTrace, '112' + #9 + 'TL.TLType=' + IntToStr(Ord(TL.TLType)));
-
-      if ((TLType = TLTPocketVoucher) and (AppDetails.PocketVoucherMerchantID <> '')) then
-      begin
-        LogMessage(ltPaymentTrace, '113' + #9);
-        TL.PocketVoucherCode := AppDetails.PocketVoucherPrePopCode;
-        if ((not GetNumPadString(TL.PocketVoucherCode, ' Voucher Code', tiPOCKETvoucher)) or
-            (not DoPocketVoucherTransaction(TL.PocketVoucherCode, TL.TLTender, FToPay, True))) then begin
-          LogMessage(ltPaymentTrace, '114' + #9);
-          TL.Free;
-          Exit;
-        end;
-      end;
-
-      TL.TEFCreditCardDiscount := 0;
-      if (AppDetails.EnableFiscalPrinting and AppDetails.EFTPOSIntegrated and (AppDetails.EFTPOSType in [ecTEFIPDaruma]) and  (not(TLType in [TLTNone, TLTCash, TLTCheque]))) then
-      begin
-        TL.TEFCreditCardDiscount := SFiscalTEF.LogCreditCardDiscount('LOGESTENDIDO');
-      end;
-
-      if (TL.TLType = TLTLibica) then begin
-        LibAccount := GlbLibicaAccount.Account;
-        LibRoom := GlbLibicaAccount.Room;
-        LibName := GlbLibicaAccount.Name;
-        LibStatus := GlbLibicaAccount.Status;
-      end
-      else if (TL.TLType = TLTNZAGold) then begin
-        NZAAccount := GlbNZAAccount.Account;
-        NZAAKey := GlbNZAAccount.AKey;
-        NZAName := GlbNZAAccount.Name;
-      end
-      else if (TL.TLType = TLTEvolution) then begin
-        EvolutionAccountNo := GlbEvoAccount.DCLink;
-        EvolutionAccount := GlbEvoAccount.Account;
-        EvolutionName := GlbEvoAccount.Name;
-        EvolutionAccExtra := GlbEvoAccount.AccExtra;
-      end;
-
-      TenderLineType := GetTenderLineTypeRecord(TL.TLType);
-      if (TenderLineType <> nil) then begin
-        TL.SurchargeItemID := TenderLineType.SurchargeItemID;
-        TL.SurchargeItemAbbrev := TenderLineType.SurchargeItemAbbrev;
-        TL.SurchargePercent := TenderLineType.SurchargePercent;
-        TL.SurchargeFixed := TenderLineType.SurchargeFixed;
-        TL.SurchargeSalesTaxPercent := TenderLineType.SurchargeSalesTaxPercent;
-        LogMessage(ltPaymentTrace, '115' + #9 + 'TL.SurchargeItemID=' + IntToStr(TL.SurchargeItemID));
-      end
-      else begin
-        TL.SurchargeItemID := 0;
-        LogMessage(ltPaymentTrace, '116' + #9);
-      end;
-
-      if ((AppDetails.EFTPOSEnablePreAuth) and (TL.PreAuthPayment)) then begin
-        //We have just used the preauth reference. So should clear it from memory
-        GlbTable.EFTPOSTxnRef := '';
-      end;
-      Inc(FTenderSeqID);
-
-      if ((PaymentOnSelectedItems or AmountSplitingStarted) and (TL.TLPayment < (FToPay + FSurcharge))) then
-      begin
-        LogMessage(ltPaymentTrace, '117' + #9);
-        if (not FSelectedItemsNotPaidFull) then
-        begin
-          LogMessage(ltPaymentTrace, '118' + #9);
-          ClearTempItemList;
-
-          LogMessage(ltPaymentTrace, '139' + #9);
-          CopyItemSToTempList;
-        end;
-      end
-      else if ((TL.PaymentType in [ptNormal])) then
-      begin
-        LogMessage(ltPaymentTrace, '119' + #9);
-        ClearTempItemList;
-      end;
-
-      fTotalAmount := TL.TLPayment - TL.TLSurcharge;
-      if (FDiscountPercent = 100) then
-        fTotalAmount := FToPay ;
-      LogMessage(ltPaymentTrace, '120' + #9 + 'FTenderSeqID=' + IntToStr(FTenderSeqID) + ', FTenderGrpID=' + IntToStr(FTenderGrpID) +
-        ', fTotalAmount=' + FloatToStr(fTotalAmount));
-
-      FixedSurcharge := 0;
-      SurchargePercent := 0;
-      if ((FSurcharge > 0) and (not (PaymentOnSelectedItems or AmountSplitingStarted)) and (fTotalAmount < FToPay)) then
-      begin
-        LogMessage(ltPaymentTrace, '121' + #9);
-        for I := 0 to (SurchargeList.Count - 1) do
-        begin
-          SurchargeItem := SurchargeList.Items[I];
-          if (SurchargeItem.SurchargeType = stSaleCategory) then //last sale category surcharge values would be used (as no break)
-          begin
-            LogMessage(ltPaymentTrace, '122' + #9);
-            FixedSurcharge := SurchargeItem.Fixed;
-            SurchargePercent := SurchargeItem.Percent;
-          end;
-        end;
-        //NB: Commented out the line below as it was reducing the amount to allocate against OLs by the fixed surcharge PER tenderline,
-        //resulting in the OLs not being fully allocated when there was more than one tender line. Leaving the amount not reduced is
-        //fine, as payments can then be fully allocated against all OLs and any extra (sale category surcharge amount) is simply ignored.
-        //fTotalAmount := GetRoundedUpDown((fTotalAmount-FixedSurcharge)/(1+(SurchargePercent/100)), AppDetails.DecimalPlaces);
-      end;
-
-      ReloadItems := False;
-      if ((PaymentOnSelectedItems or AmountSplitingStarted) and ((TL.TLPayment - TL.TLSurcharge) < (FToPay + FSurcharge))) then
-      begin
-        LogMessage(ltPaymentTrace, '123' + #9);
-        ReloadItemsForThePayment(TempItemList, fTotalAmount);
-      end
-      else if ((TL.PaymentType in [ptNormal])) then
-      begin
-        LogMessage(ltPaymentTrace, '124' + #9);
-        ReloadItemsForThePayment(UnInvoicedOlsToPay, fTotalAmount);
-      end;
-      ReloadItems := False;
-
-      LogMessage(ltPaymentTrace, '125' + #9);
-      CalculateToPay;
-
-      LogMessage(ltPaymentTrace, '126' + #9);
-      UpdateUnInvoicedOLValues(((PaymentOnSelectedItems or AmountSplitingStarted) and ((TL.TLPayment - TL.TLSurcharge) <= fAmtToPay)));
-
-      LogMessage(ltPaymentTrace, '127' + #9);
-      UpdateOLTenderID(FTenderSeqID);
-
-      LogMessage(ltPaymentTrace, '128' + #9);
-      TL.TenderSeqNo := FTenderSeqID;
-      TL.TenderGroupID := FTenderGrpID;
-      AssociateOLSToTender(TL, FTenderSeqID);
-
-      LogMessage(ltPaymentTrace, '129' + #9);
-      TLList.Add(TL);
-
-      LogMessage(ltPaymentTrace, '130' + #9);
-      LoadTLs(LAAdd);
-
-      if AppDetails.EnableFiscalPrinting then
-      begin
-        SWBEncryption.AuxiliaryData.TEFDone := '0';
-        if EFTPOSTransExists then
-          SWBEncryption.AuxiliaryData.TEFDone := '1';
-        SWBEncryption.GenerateEncryptedAuxFile;
-      end;
-
-      if (not AppDetails.OneBill) then
-      begin
-        LogMessage(ltPaymentTrace, '131' + #9);
-        FProcessedAllItems := False;
-        if ((PaymentOnSelectedItems or AmountSplitingStarted) and ((TL.TLPayment - TL.TLSurcharge) < fAmtToPay) and ((TL.TLPayment - TL.TLSurcharge) < StillDue) ) then
-        begin
-          LogMessage(ltPaymentTrace, '132' + #9);
-          ProcessTheRemainingItems((TL.TLPayment - TL.TLSurcharge));
-          FLoyaltyDiscount := 0;
-        end;
-
-        if ((not FProcessedAllItems) and (not (PaymentOnSelectedItems or AmountSplitingStarted))) then
-        begin
-          LogMessage(ltPaymentTrace, '133' + #9);
-          ClearAllOrderLines;
-
-          LogMessage(ltPaymentTrace, '140' + #9);
-          LoadUnInvoicedOlsToGrid(UnInvoicedOlsToPay, (TL.TLPayment - TL.TLSurcharge), fAmtToPay);
-          if (LoyaltyReward.RewardOffer <> roItem) then
-            FLoyaltyDiscount := 0;
-
-          LogMessage(ltPaymentTrace, '141' + #9);
-          AddAllOrderLines;
-        end;
-
-        if (not Assigned(pTL)) and
-           (((AppDetails.PaymentAutoComplete) or (TLType = TLTNone)) and
-            (((FStillDue = 0) and (GlbEvent.EventID <= 0)) or
-            ((GlbEvent.EventID > 0) and (not OnAccount) and (EventDue = TL.TLPayment)) or  // guest payment
-             ((UsingRequired) and (FRequired <= 0)))) then
-        begin
-          LogMessage(ltPaymentTrace, '134' + #9);
-          FRecordType := rtBoth;
-          Application.ProcessMessages;
-
-          LogMessage(ltPaymentTrace, '135' + #9);
-          ItemsSelectedManually := False;
-          if PaymentOnSelectedItems or AmountSplitingStarted then
-          begin
-            LogMessage(ltPaymentTrace, '136' + #9);
-            ItemsSelectedManually := True;
-          end;
-
-          LogMessage(ltPaymentTrace, '137' + #9);
-          cmdOkClick(Self);
-          LogMessage(ltPaymentTrace, '138' + #9);
-          Exit;
-        end;
-
-        if not FProcessedAllItems then
-        begin
-          LogMessage(ltPaymentTrace, '142' + #9);
-          FSelectedItemsNotPaidFull := False;
-          ClearTempItemList;
-          FRecordType := rtBoth;
-
-          LogMessage(ltPaymentTrace, '143' + #9);
-          RecalculateTotals;
-
-          ItemsSelectedManually := False;
-          if PaymentOnSelectedItems or AmountSplitingStarted then
-          begin
-            LogMessage(ltPaymentTrace, '144' + #9);
-            ItemsSelectedManually := True;
-          end;
-
-          if (not (PaymentOnSelectedItems or AmountSplitingStarted)) then
-          begin
-            LogMessage(ltPaymentTrace, '145' + #9);
-            ClearAllOrderLines;
-
-            LogMessage(ltPaymentTrace, '146' + #9);
-            LoadUnInvoicedOlsToGrid(UnInvoicedOlsToPay, TL.TLPayment, fAmtToPay);
-
-            LogMessage(ltPaymentTrace, '147' + #9);
-            AddAllOrderLines;
-          end;
-        end;
-
-        VisibleWindow := vwTender;
-        ManagerAuthorise.Authorise := False;
-        LastPayment := 0;
-        LastThroughAccount := False;
-        LastOnAccount := False;
-        LogMessage(ltPaymentTrace, '148' + #9);
-      end
-      else if (AppDetails.OneBill) then
-      begin
-        LogMessage(ltPaymentTrace, '149' + #9);
-        FProcessedAllItems := False;
-        if ((PaymentOnSelectedItems or AmountSplitingStarted) and ((TL.TLPayment - TL.TLSurcharge) < fAmtToPay) and ((TL.TLPayment - TL.TLSurcharge) < StillDue)) then
-        begin
-          LogMessage(ltPaymentTrace, '150' + #9);
-          ProcessTheRemainingItems((TL.TLPayment - TL.TLSurcharge));
-          FLoyaltyDiscount := 0;
-        end;
-
-        if not FProcessedAllItems then
-        begin
-          LogMessage(ltPaymentTrace, '151' + #9);
-          FSelectedItemsNotPaidFull := False;
-          ClearTempItemList;
-          FRecordType := rtBoth;
-          Inc(FTenderGrpID);
-
-          LogMessage(ltPaymentTrace, '152' + #9);
-          ClearAllOrderLines;
-
-          LogMessage(ltPaymentTrace, '153' + #9);
-          LoadUnInvoicedOlsToGrid(UnInvoicedOlsToPay, TL.TLPayment, fAmtToPay);
-          LoyaltyReward.AvailableQty := 0;
-          if (LoyaltyReward.RewardOffer <> roItem) then
-          begin
-            LogMessage(ltPaymentTrace, '154' + #9);
-            FLoyaltyDiscount := 0;
-          end;
-
-          LogMessage(ltPaymentTrace, '155' + #9);
-          AddAllOrderLines;
-          ItemsSelectedManually := False;
-          if PaymentOnSelectedItems or AmountSplitingStarted then
-          begin
-            LogMessage(ltPaymentTrace, '156' + #9);
-            ItemsSelectedManually := True;
-          end;
-          PaymentOnSelectedItems := False;
-          AmountSplitingStarted := False;
-        end;
-
-        LogMessage(ltPaymentTrace, '157' + #9);
-        CalculateToPay;
-
-        if (FUseDiscountAmount) and (GlbTable.Uninvoiced = FToPay) then
-        begin
-          LogMessage(ltPaymentTrace, '158' + #9);
-          FDiscountAmount := FDiscCalculator.OneBillDiscountAmount;
-        end;
-
-        LogMessage(ltPaymentTrace, '159' + #9);
-        RecalculateTotals;
-
-        LogMessage(ltPaymentTrace, '160' + #9);
-        CalculateToPay;
-
-        if (not Assigned(pTL)) and
-           (((AppDetails.PaymentAutoComplete)) and
-            (((FStillDue = 0) and (GlbEvent.EventID <= 0)) or
-            ((GlbEvent.EventID > 0) and (not OnAccount) and (EventDue = TL.TLPayment)) or  // guest payment
-             ((UsingRequired) and (FRequired <= 0)))) then
-        begin
-          LogMessage(ltPaymentTrace, '161' + #9);
-          FRecordType := rtBoth;
-          Application.ProcessMessages;
-
-          LogMessage(ltPaymentTrace, '162' + #9);
-          cmdOkClick(Self);
-          LogMessage(ltPaymentTrace, '163' + #9);
-          Exit;
-        end;
-        VisibleWindow := vwTender;
-        ManagerAuthorise.Authorise := False;
-
-        LastPayment := 0;
-        LastThroughAccount := False;
-        LastOnAccount := False;
-        LogMessage(ltPaymentTrace, '164' + #9);
-      end;
-    end
-    else
-    begin
-      LogMessage(ltPaymentTrace, '165' + #9);
-      TL.Free;
-    end;
-  finally
-    BroadcastCDAMessage;
-    AddingTender := False;
-    tmpList.Clear;
-    tmpList.Free;
-  end;
-  LogMessage(ltPaymentTrace, '166' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.EditTenderLine;
-var
-  Payment: Currency;
-  TL: TTL;
-  TenderLineType: TTenderLineType;
-begin
-  LogMessage(ltPaymentTrace, '453' + #9);
-  if (TLList.Count = 0) then
-  begin
-    Exit;
-  end;
-
-  TL := TLList.Items[grdTLs.Row - 1];
-
-  //cannot edit a wiGroup tender line
-  if TL.TLType = TLTwiGroup then
-    Exit;
-
-  Payment := TL.TLPayment;
-
-  if (GetTL(TTPayment, TLAEdit, Payment, TL, False, True, False, True, False)) then begin //akm 04.12.01
-    TenderLineType := GetTenderLineTypeRecord(TL.TLType);
-
-    if (Assigned(TenderLineType)) then begin
-      TL.SurchargeItemID := TenderLineType.SurchargeItemID;
-      TL.SurchargeItemAbbrev := TenderLineType.SurchargeItemAbbrev;
-      TL.SurchargePercent := TenderLineType.SurchargePercent;
-      TL.SurchargeFixed := TenderLineType.SurchargeFixed;
-      TL.SurchargeSalesTaxPercent := TenderLineType.SurchargeSalesTaxPercent;
-    end
-    else begin
-      TL.SurchargeItemID := 0;
-    end;
-
-    LoadTLs(LAEdit);
-
-    if ((TL.TLSurcharge <> 0) or (FSurcharge <> 0)) then begin
-      LogMessage(ltPaymentTrace, '423' + #9);
-      CalculateToPay;
-      LogMessage(ltPaymentTrace, '508' + #9);
-    end
-    else
-      BroadcastCDAMessage;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdCashClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '9' + #9);
-  AddTenderLine(TLTCash);
-  LogMessage(ltPaymentTrace, '10' + #9);
-  ShowMessage('Payment done');
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdEFTPOSClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '11' + #9);
-  AddTenderLine(TLTEFTPOS);
-  LogMessage(ltPaymentTrace, '12' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdChequeClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '13' + #9);
-  if ((AppDetails.PaymentAllowPrePay) and (GlbTable.PrepaidBalance <> 0)) then begin
-    AddTenderLine(TLTPrepaid);
-  end
-  else if (AppDetails.SmartCardInterface > 0) then begin
-    AddTenderLine(TLTSmartCard);
-  end
-  else if ((AppDetails.VoucherType = Integer(vtPocketVoucher)) and (AppDetails.PocketVoucherMerchantID <> '')) then
-  begin
-    AddTenderLine(TLTPocketVoucher);
-  end
-  else if AppDetails.wiGroupEnabled then
-    AddTenderLine(TLTwiGroup)
-  else
-  begin
-    AddTenderLine(TLTCheque);
-  end;
-  LogMessage(ltPaymentTrace, '14' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdOtherClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '15' + #9);
-  AddTenderLine(TLTOther);
-  LogMessage(ltPaymentTrace, '16' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdVisaClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '17' + #9);
-  AddTenderLine(TLTVisa);
-  LogMessage(ltPaymentTrace, '18' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdDinersClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '19' + #9);
-  AddTenderLine(TLTDiners);
-  LogMessage(ltPaymentTrace, '20' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdAMEXClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '21' + #9);
-  AddTenderLine(TLTAMEX);
-  LogMessage(ltPaymentTrace, '22' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdMasterCardClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '23' + #9);
-  AddTenderLine(TLTMasterCard);
-  LogMessage(ltPaymentTrace, '24' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdPMSClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '25' + #9);
-  case AppDetails.PMSType of
-    pmsLibica: AddTenderLine(TLTLibica);
-    pmsFidelio: AddTenderLine(TLTFidelio);
-    pmsPhoenix: AddTenderLine(TLTPhoenix);
-    pmsMicros4700: begin
-      if ((GlbAccount.AccountID > 0) and (GlbAccount.Folio <> '') and (ShowConf(format(sMicrosTransfer, [GlbAccount.Folio, GlbAccount.SubFolio])) = mrYes)) then
-        AddTenderLine(TLTMicros4700Account)
-      else
-        AddTenderLine(TLTMicros4700);
-    end;
-    pmsNZAGold: AddTenderLine(TLTNZAGold);
-    pmsEvolution: AddTenderLine(TLTEvolution);
-    pmsMiniBar, pmsICRTouch: AddTenderLine(TLTRoomCharge);
-    pmsMews: AddTenderLine(TLTMews);
-  end;
-  LogMessage(ltPaymentTrace, '26' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdVoucherClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '27' + #9);
-  AddTenderLine(TLTVoucher);
-  LogMessage(ltPaymentTrace, '28' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.DeleteTenderLine;
-var
-  Tender: Currency;
-  TL: TTL;
-begin
-  LogMessage(ltPaymentTrace, '454' + #9);
-  if (TLList.Count = 0) then begin
-    Exit;
-  end;
-
-  TL := TLList.Items[grdTLs.Row - 1];
-
-  if TL.isProtected then
-  begin
-    if (tl.TLType = TLTExternalProviders) then
-      ShowMsg('Please clear this tender via the External Accounts dialog');
-    Exit;
-  end;
-
-  //if EFTPOS integrated and is EFTPOS line, undo trans, if doesn't work showmsg & exit
-  if (AppDetails.EftposIntegrated) then
-  begin
-    if (TL.TLType in [TLTEFTPOS, TLTVisaEFTPOS, TLTAmexEFTPOS, TLTDinersEFTPOS, TLTMasterCardEFTPOS, TLTBarterCard]) then
-    begin
-      //undoing a payment, thus a refund is made to them
-      //NOTE: Even for a refund, the EFTPOS value must be a positive value
-      //formEFTPOSIntegration.EFTPOSTxnRef := TL.EFTPOSTxnRef;
-      //if (not formEFTPOSIntegration.DoEftposTrans(Tender, 0.00, ettRefund)) then begin
-      formEFTPOSIntegration.EFTPOSTLType := TL.TLType;
-      formEFTPOSIntegration.EFTPOSTxnRef := TL.EFTPOSTxnRef;
-      formEFTPOSIntegration.EFTPOSTxnAuthCode := TL.EFTPOSTxnAuthCode;
-      if AppDetails.EFTPOSType in [ecTEFIPDaruma] then
-      begin
-        formEFTPOSIntegration.DoEftposTrans(0, 0, ettFinalize, '');
-        SWBEncryption.AuxiliaryData.TEFDone := '0';
-        SWBEncryption.GenerateEncryptedAuxFile;
-      end
-      else if not formEFTPOSIntegration.DoEftposTrans(TL.TLTender, 0, ettRefund, TL.EFTPOSTxnRef, TL.TLType) then
-      begin
-        ShowMsg(sCannotClearEFtPosTender);
-        Exit;
-      end;
-      if AppDetails.EFTPOSType in [ecDps, ecSektor, ecSektorVault, ecSyncroPlus, ecSmartpaySmartLink, ecSmartLinkLiteWS, ecPaymentSenseWS] then
-        formEFTPOSIntegration.RemoveTransactionID(TL.EFTPOSTxnRef);
-    end;
-  end;
-  if (AppDetails.SmartCardInterface > 0) then
-  begin
-    if (TL.TLType = TLTSmartCard) then
-    begin
-      Tender := TL.TLTender;
-      //undoing a payment, thus a refund is made to them
-      //or undoing a refund, thus a payment is made from them
-      if (not DoSmartCardTransaction(-Tender)) then
-      begin
-        ShowMsg(sCannotClearSmartCardTender);
-        Exit;
-      end;
-    end;
-  end;
-
-  if AppDetails.wiGroupEnabled then
-    wiGroupPOSSrv.CheckReverseTransaction(TL);
-  //if PaymentOnSelectedItems or AmountSplitingStarted then
-
-  DeleteOLsOfTender(TL, TL.TenderSeqNo);
-
-  TLList.DisposeTL(TLList.IndexOf(TL));
-  LoadTLs(LADelete);
-
-  if LoyaltyReward.LoyaltyRewardID > 0 then
-  begin
-    ApplyLoyalty(OLToPayList, (TLList.Count > 0));
-    LogMessage(ltPaymentTrace, '424' + #9);
-    CalculateToPay;
-    LogMessage(ltPaymentTrace, '509' + #9);
-  end;
-
-  if AppDetails.wiGroupEnabled then
-    wiGroupPOSSrv.CheckClearToPay(TLList);
-end;
-
-{******************************************************************************}
-procedure TformPaymentTable.cmdTLDeleteClick(Sender: TObject);
-begin
-  if (DoingTablePayment) then begin   //Jon 25-02-2002
-    Exit;
-  end;
-  if (TLList.Count <= 0) then
-  begin
-    Exit;
-  end;
-
-  //if (((not PaymentOnSelectedItems) and (not AmountSplitingStarted)) or (ShowConf(sConfirmClearCurrentTender) = mrYes)) then
-  begin
-    DeleteTenderLine;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdTLClearClick(Sender: TObject);
-var
-  TL: TTL;
-begin
-  if (DoingTablePayment) then begin   //Jon 25-02-2002
-    Exit;
-  end;
-
-  if (TLList.Count > 0) then
-  begin
-    if (SuppressClearTenderMessage or (ShowConf(sClearAll) = mrYes)) then
-    begin
-      if (EFTPOSTransExists and (AppDetails.EFTPOSIntegrated)) then
-      begin
-        ShowMsg(sEftPosTenderLineFound);
-        Exit;
-      end;
-      if ((AppDetails.SmartCardInterface > 0) and (TLList.TenderTypeExists(TLTSmartCard))) then begin
-        ShowMsg(sClearSmartCardTenderLines);
-        Exit;
-      end;
-
-      if AppDetails.wiGroupEnabled and TLList.TenderTypeExists(TLTwiGroup) then
-      begin
-        ShowMsg(Format(sClearwiGroupTenderLines, [swiGroupTL, swiGroupTL]));
-        Exit;
-      end;
-
-      TL := TLList.Items[grdTLs.Row - 1];
-      if (AppDetails.EftposIntegrated and AppDetails.EnableFiscalPrinting and EFTPOSTransExists and (AppDetails.EFTPOSType in [ecTEFIPDaruma])) then
-      begin
-        if (TL.TLType in [TLTEFTPOS, TLTVisaEFTPOS, TLTAmexEFTPOS, TLTDinersEFTPOS, TLTMasterCardEFTPOS, TLTBarterCard]) then
-        begin
-          formEFTPOSIntegration.EFTPOSTLType := TL.TLType;
-          formEFTPOSIntegration.EFTPOSTxnRef := TL.EFTPOSTxnRef;
-          formEFTPOSIntegration.EFTPOSTxnAuthCode := TL.EFTPOSTxnAuthCode;
-          formEFTPOSIntegration.DoEftposTrans(0, 0, ettFinalize, '')
-        end;
-        if AppDetails.EnableFiscalPrinting then
-        begin
-          SWBEncryption.AuxiliaryData.TEFDone := '0';
-          SWBEncryption.GenerateEncryptedAuxFile;
-        end;
-      end;
-
-      ClearAllTenderLines;
-
-      if not SuppressClearTenderMessage then
-      begin
-        AddAllOrderLines;
-        LogMessage(ltPaymentTrace, '425' + #9);
-        CalculateToPay;
-        LogMessage(ltPaymentTrace, '510' + #9);
-      end;
-      FSelectedItemsNotPaidFull := False;
-      AmountSplitingStarted := False;
-      PaymentOnSelectedItems := False;
-    end;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdTenderClick(Sender: TObject);
-var
-  NoItemsSelected : Boolean;
-begin
-  LogMessage(ltPaymentTrace, '511' + #9);
-  NoItemsSelected := (OLToPayList.Count = 0);
-  if OLToPayList.Count > 0 then
-  begin
-    LogMessage(ltPaymentTrace, '512' + #9);
-    FRecordType := rtBoth;
-    PaymentOnSelectedItems := True;
-    ItemsSelectedManually := True;
-    FPayment := 0;
-  end
-  else
-  begin
-    LogMessage(ltPaymentTrace, '513' + #9);
-    PaymentOnSelectedItems := False;
-    FRecordType := rtBoth;
-    RecalculateTotals;
-    LogMessage(ltPaymentTrace, '514' + #9);
-    LoadTLs(LANone);
-  end;
-
-  if (DoingTablePayment) then begin
-    LogMessage(ltPaymentTrace, '515' + #9);
-    Exit;
-  end;
-
-  ReloadItems := True;
-  try
-    if not CheckForUnTenderedItems then
-    begin
-      LogMessage(ltPaymentTrace, '516' + #9);
-      AddAllOrderLines;
-    end;
-
-    VisibleWindow := vwTender;   //set now, before RecalculateTotals
-    LogMessage(ltPaymentTrace, '426' + #9);
-    CalculateToPay;
-    LogMessage(ltPaymentTrace, '517' + #9);
-
-    RefreshGoodyAccountDiscountAmount;
-  finally
-    if (NoItemsSelected) and CDAServer.Connected then
-    begin
-      CDAServer.CDAData.onetapFunction := ofTablePayment;
-      CDAServer.SendCDAMessage;
-    end;
-    RecalculateDiscount := False;
-    ReloadItems := False;
-  end;
-  LogMessage(ltPaymentTrace, '518' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdToPayClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '572' + #9);
-  if FSelectedItemsNotPaidFull and FUseItemDiscounts then
-  begin
-    ShowMsg(sPayOffCurrentItemSelection);
-    Exit;
-  end;
-
-  if AppDetails.wiGroupEnabled and wiGroupPOSSrv.CheckInformCompletePaymentFirst then
-    Exit;
-
-  if ((AppDetails.PaymentDisableSplitOnTender) and (TLList.Count > 0)) then
-    Exit;
-
-  if (not sExternalAccountIntegration.CheckLoadedRedemptions) then Exit;
-
-  if (DoingTablePayment) then
-  begin
-    LogMessage(ltPaymentTrace, '573' + #9);
-    Exit;
-  end;
-
-  LogMessage(ltPaymentTrace, '574' + #9);
-  grdUnInvoicedList.RePaint;
-
-  LogMessage(ltPaymentTrace, '575' + #9);
-  LoadUnInvoicedOlsToGrid(UnInvoicedOlsToPay, 0, FToPay);
-
-  if not (PaymentOnSelectedItems or AmountSplitingStarted) then
-  begin
-    LogMessage(ltPaymentTrace, '576' + #9);
-    ClearAllOrderLines;
-
-    LogMessage(ltPaymentTrace, '577' + #9);
-    ClearTempItemList;
-  end
-  else
-  begin
-    LogMessage(ltPaymentTrace, '578' + #9);
-    LoadSelectedToPayList;
-  end;
-
-  LogMessage(ltPaymentTrace, '579' + #9);
-  RecalculateTotals;
-
-  if (not FUseDiscountAmount) and (not (LoyaltyReward.RewardOffer in [roDiscount])) then
-  begin
-    LogMessage(ltPaymentTrace, '580' + #9);
-    RecalculateDiscount := True;
-  end;
-
-  AmountSplitingStarted := False;
-  FSelectedItemsNotPaidFull := False;
-  FRecordType := rtUnTenderedItems;
-  LogMessage(ltPaymentTrace, '581' + #9);
-  CalculateAmountForUntenderedItems;
-  PaymentOnSelectedItems := True;
-
-  LogMessage(ltPaymentTrace, '582' + #9);
-  BuildTenderSurchargeList;
-
-  VisibleWindow := vwToPay;
-  LogMessage(ltPaymentTrace, '583' + #9);
-  RecalculateTotals;
-
-  if CDAServer.Connected then
-  begin
-    CDAServer.CDAData.onetapFunction := ofTablePaymentByItem;
-    CDAServer.SendCDAMessage;
-  end;
-
-  LogMessage(ltPaymentTrace, '584' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdHideClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '607' + #9);
-
-  //if doing Goody sale, confirm clear all Goody details first
-  if InGoodySale then
-  begin
-    if (ShowConf(sConfirmClearGoodyDetails) <> mrYes) then
-      Exit
-    else
-      IniGoodyTrans;
-  end;
-
-  if (TLList.Count > 0)  then begin
-    if ShowConf(sCloseWithoutCompletingTender) <> mrYes then begin
-      LogMessage(ltPaymentTrace, '608' + #9);
-      Exit;
-    end
-    else
-    begin
-      if EFTPOSTransExists then begin
-        LogMessage(ltPaymentTrace, '609' + #9);
-        ShowMsg(sCloseWithoutCompletingTender);
-        Exit;
-      end;
-
-      if AppDetails.wiGroupEnabled and wiGroupPOSSrv.CheckInformCompletePaymentFirst then
-        Exit;
-    end;
-  end;
-
-  LogMessage(ltPaymentTrace, '610' + #9);
-  sExternalAccountIntegration.ClearPresentedCards;
-
-  LogMessage(ltPaymentTrace, '611' + #9);
-  ClearAllOrderLines;
-
-  inherited;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.ClearAllOrderLines;
-var
-  OL: TOrderLine;
-  I: Integer;
-begin
-  LogMessage(ltPaymentTrace, '272' + #9);
-  for I := (OLToPayList.Count - 1) downto 0 do
-  begin
-    OL := OLToPayList.Items[I];
-    if ((LoyaltyReward.LoyaltyRewardID > 0) and (LoyaltyReward.RewardOffer = roItem) and (OL.LoyaltyItemID > 0) and (OL.ComboID <= 0)) then
-    begin
-      if (OL.TenderSeqID <= 0) then
-        LoyaltyReward.AvailableQty := LoyaltyReward.AvailableQty + OL.LoyaltyFreeQty;
-    end;
-
-    OL.Free;
-    OLToPayList.Delete(I);
-  end;
-
-  //OLList.Clear;
-  with grdToPay do
-  begin
-    RowCount := 2;
-    Cells[0, 1] := '';
-    Cells[1, 1] := '';
-    Cells[2, 1] := '';
-    Cells[3, 1] := '0.00';
-    Cells[4, 1] := '0.00';
-    Row := 1;
-  end;
-  if (not FGetAllItems) then
-  begin
-    LogMessage(ltPaymentTrace, '273' + #9);
-    CalculateToPay();
-  end;
-
-  grdItemAutoClick := True;
-  LogMessage(ltPaymentTrace, '274' + #9);
-  grdToPayClick(nil);
-  LogMessage(ltPaymentTrace, '275' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.ClearAllSurcharges;
-var
-  SurchargeItem: TSurchargeItem;
-  I: Integer;
-
-begin
-  LogMessage(ltPaymentTrace, '415' + #9);
-  for I := (SurchargeList.Count - 1) downto 0 do begin
-    SurchargeItem := SurchargeList.Items[I];
-    SurchargeItem.Free;
-    SurchargeList.Delete(I);
-  end;
-  SaleCategorySurchargeItem := Nil;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.grdToPayClick(Sender: TObject);
-var
-  OL: TOrderLine;
-  Due: Currency;
-  Qty: Double;
-begin
-  LogMessage(ltPaymentTrace, '252' + #9 + 'DoCalcQty=' + BoolToStr(DoCalcQty, True) + ', grdToPay.Cells[4, grdToPay.Row]=' + grdToPay.Cells[4, grdToPay.Row]);
-  if (DoingTablePayment or GridUpdating) then
-  begin
-    LogMessage(ltPaymentTrace, '253' + #9);
-    Exit;
-  end;
-
-  //Added a ItemSplitPayment Popup
-  if (not grdItemAutoClick) and (not isbtnClick) and (grdItemManualClick) and (OLToPayList.Count > 0) then
-  begin
-    Due := TOrderLine(OLToPayList[grdToPay.Row-1]).Due;
-    Qty := TOrderLine(OLToPayList[grdToPay.Row-1]).OlQty;
-    LogMessage(ltPaymentTrace, '617' + #9 + 'ItemPrice=' + FloatToStr(TOrderLine(OLToPayList[grdToPay.Row-1]).UnitPrice) + ', Due=' + FloatToStr(Due) + ', Qty=' + FloatToStr(Qty));
-    if GetItemSplitPayment((TOrderLine(OLToPayList[grdToPay.Row-1]).UnitPrice), Due, Due, Qty) then
-    begin
-      LogMessage(ltPaymentTrace, '621' + #9 + 'ItemPrice=' + FloatToStr(TOrderLine(OLToPayList[grdToPay.Row-1]).UnitPrice) + ', Due=' + FloatToStr(Due) + ', Qty=' + FloatToStr(Qty));
-      if 0 < Due then
-      begin
-        if txtToPay.Text = FormatCurrencyNoSign(Due) then
-          txtToPay.Text := '';
-        txtToPay.Text := FormatCurrencyNoSign(Due);
-        LogMessage(ltPaymentTrace, '622' + #9);
-      end;
-      LogMessage(ltPaymentTrace, '623' + #9)
-    end;
-  end;
-
-  RefreshGoodyAccountDiscountAmount;
-
-  if (not DoCalcQty) then
-    ToPayString :=  '0.00';
-
-  JustSelected := True;
-  ReloadItems := True;
-
-  if (grdToPay.Cells[4, grdToPay.Row] = '') then begin
-    grdToPay.Cells[4, grdToPay.Row] := '0.00';
-  end;
-
-  if (OLToPayList.Count > 0) then
-  begin
-    LogMessage(ltPaymentTrace, '254' + #9);
-    DoCalcQty := True;
-
-    OL := OLToPayList.Items[grdToPay.Row - 1];
-    if not Assigned(OL) then
-    begin
-      LogMessage(ltPaymentTrace, '255' + #9);
-      Exit;
-    end;
-
-//    txtToPay.ReadOnly := (OL.ComboID > 0);
-//    txtQty.ReadOnly := (OL.ComboID > 0);
-//    txtToPay.Enabled := True;
-//    txtQty.Enabled := True;
-
-    if (ToPayString = '0.00') then
-      ToPayString := FormatCurrencyNoSign(OL.ToPay);
-    txtToPay.Text := ToPayString;
-    DoCalcQty := False;
-  end
-  else begin
-    LogMessage(ltPaymentTrace, '256' + #9);
-    DoCalcToPay := False;
-    DoCalcQty := False;
-    txtToPay.Text := '0.00';
-    txtQty.Text := '';
-//    txtToPay.Enabled := False;
-//    txtQty.Enabled := False;
-  end;
-
-  ReloadItems := False;
-  JustSelected := False;
-  grdItemAutoClick := False;
-  LogMessage(ltPaymentTrace, '257' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdOLUpClick(Sender: TObject);
-begin
-  PostMessage(grdUnInvoicedList.Handle, WM_VSCROLL, SB_PAGEUP, 0);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdOLDownClick(Sender: TObject);
-begin
-  PostMessage(grdUnInvoicedList.Handle, WM_VSCROLL, SB_PAGEDOWN, 0);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.txtSumToPayChange(Sender: TObject);
-begin
-  txtToPayCopy.Text := txtSumToPay.Text;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdToPayUpClick(Sender: TObject);
-begin
-  isbtnClick := True;
-  PostMessage(grdToPay.Handle, WM_KEYDOWN, VK_PRIOR, 0);
-  Application.ProcessMessages;
-  isbtnClick := False;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdToPayDownClick(Sender: TObject);
-begin
-  isbtnClick := True;
-  PostMessage(grdToPay.Handle, WM_KEYDOWN, VK_NEXT, 0);
-  Application.ProcessMessages;
-  isbtnClick := False;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdTLUpClick(Sender: TObject);
-begin
-  PostMessage(grdTLs.Handle, WM_KEYDOWN, VK_PRIOR, 0);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdTLDownClick(Sender: TObject);
-begin
-  PostMessage(grdTLs.Handle, WM_KEYDOWN, VK_NEXT, 0);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.DeselectAccount(SuppressConfirmation: Boolean=True; ConfirmationResult: TModalResult=mrNone);
-var
-  tmpList: TList;
-  tmpTLList: TTLList;
-  i: Integer;
-  TL: TTL;
-
-begin
-  LogMessage(ltPaymentTrace, '444' + #9);
-  if (GlbAccount.AccountID = 0) then Exit;
-
-  tmpList := TList.Create;
-  try
-    begin
-      if (TLList.Count = 0) or (ConfirmationResult in [mrNo]) then
-      begin
-        GlbAccount.Initialise;
-
-        txtAccountName.Text := '';
-
-        FDiscountPercent := 0.00;
-        FDiscountAmount := 0;
-        FUseDiscountAmount := False;
-        FUseItemDiscounts := False;
-        FLimitMaximum := False;    //Jon 16-12-2002
-        FMaxDiscount := 0.00;      //Jon 16-12-2002
-        FOrigDiscountPercent := 0.00;  //Jon 16-12-2002
-        FCurrentBalance := 0.00;   //Jon 18-10-2003
-
-        LoyaltyReward.LoyaltyRewardID := 0;
-        LoyaltyReward.RewardOffer := roNone;
-        LoyaltyReward.LoyaltyReward := '';
-        LoyaltyReward.LoyaltyPoints1 := 0;
-        LoyaltyReward.LoyaltyPoints2 := 0;
-        LoyaltyReward.Qty := 0;
-        FLoyaltyDiscount := 0;
-        FDiscountPercent := 0.00;
-        FDiscountAmount := 0;
-
-        RecalculateDiscount := True;
-
-        ClearItemLevelDiscounts(UnInvoicedOlsToPay);
-        ClearItemLevelSubsidy(UnInvoicedOlsToPay);
-        GetAllSelectedOLs(tmpList);
-        ClearItemLevelDiscounts(tmpList);
-        ClearItemLevelSubsidy(tmpList);
-        UpdateUnInvoicedListComboDetails;
-        UpdateScreenAfterCalculateDiscount;
-      end
-      else
-      begin
-        if AppDetails.EFTPOSIntegrated and EFTPOSTransExists then
-        begin
-          ShowMsg(sRefundTenderBeforeAcctChange, True);
-          Exit;
-        end
-        else if ((PaymentOnSelectedItems or AmountSplitingStarted)) and (not SuppressConfirmation) then
-        begin
-          ConfirmationResult := (ShowConf(sConfirmClearCurrentSelection));
-          if (ConfirmationResult = mrNo) then
-            Exit;
-        end;
-
-        GlbAccount.Initialise;
-
-        txtAccountName.Text := '';
-
-        FDiscountPercent := 0.00;
-        FDiscountAmount := 0;
-        FUseDiscountAmount := False;
-        FUseItemDiscounts := False;
-        FLimitMaximum := False;    //Jon 16-12-2002
-        FMaxDiscount := 0.00;      //Jon 16-12-2002
-        FOrigDiscountPercent := 0.00;  //Jon 16-12-2002
-        FCurrentBalance := 0.00;   //Jon 18-10-2003
-
-        LoyaltyReward.LoyaltyRewardID := 0;
-        LoyaltyReward.RewardOffer := roNone;
-        LoyaltyReward.LoyaltyReward := '';
-        LoyaltyReward.LoyaltyPoints1 := 0;
-        LoyaltyReward.LoyaltyPoints2 := 0;
-        LoyaltyReward.Qty := 0;
-        FLoyaltyDiscount := 0;
-        FDiscountPercent := 0.00;
-        FDiscountAmount := 0;
-
-        RecalculateDiscount := True;
-
-        if (ConfirmationResult = mrYes) then
-        begin   
-          tmpTLList:= TLList;
-          TLList := TTLList.Create;
-          ClearAllTenderLines;        
-          for i := 0 to tmpTLList.Count - 1 do
-          begin
-            TL := tmpTLList.Items[i];
-            DeleteOLsOfTender(TL, TL.TenderSeqNo); //so OLs become part of UnInvoicedOlsToPay
-          end;
-          PaymentOnSelectedItems := False;
-          AmountSplitingStarted := False;
-          FSelectedItemsNotPaidFull := False;
-
-          ClearItemLevelDiscounts(UnInvoicedOlsToPay);
-          ClearItemLevelSubsidy(UnInvoicedOlsToPay);
-          LoadUnInvoicedOlsToGrid(UnInvoicedOlsToPay, 0, FToPay);
-          AddAllOrderLines;
-          GetAllSelectedOLs(tmpList);
-          //ClearItemLevelDiscounts(tmpList);
-          //ClearItemLevelSubsidy(tmpList);
-          UpdateUnInvoicedListComboDetails;   //put combo discounts back on both uninvoiced and topay lists
-
-          //do separately to keep same TL order in TLList
-          for i := 0 to tmpTLList.Count - 1 do
-          begin
-            TL := tmpTLList.Items[i];
-            LogMessage(ltPaymentTrace, '31' + #9);
-            AddTenderLine(TL.TLType, 0, TL);
-            LogMessage(ltPaymentTrace, '32' + #9);
-          end;
-          for i := tmpTLList.Count - 1 downto 0 do
-          begin
-            tmpTLList.Delete(i);  //do this, so when freeing tmpTLList we dont free the TL objects just added to TLList
-          end;
-
-          UpdateScreenAfterCalculateDiscount;
-          tmpTLList.Free;
-        end;
-      end;
-
-      LogMessage(ltPaymentTrace, '427' + #9);
-      lblAllowItemLevelDiscount.Caption := '';
-      CalculateToPay;
-      LogMessage(ltPaymentTrace, '533' + #9);
-      ChangeAllowCreditLabel(False, False);
-    end;
-  finally
-    tmpList.Clear;
-    tmpList.Free;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.InitialiseAccountInfo(AShowAcctScanned: Boolean = True; PromptLoyalty: Boolean = True; VerifyNo: Boolean = True);
-begin
-  LogMessage(ltPaymentTrace, '450' + #9);
-  DeselectAccount;
-  cmdDiscountPercent.Enabled := False;
-  cmdDiscountAmount.Enabled := False;
-
-  if (GlbTable.AccountID > 0) then
-  begin
-    TryLookupPaymentTableAccount(GlbTable.AccountID, AShowAcctScanned, PromptLoyalty, VerifyNO);
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.BuildAccountButtons;
-const
-  DEFBUTTON_WIDTH = 76;
-  DEFBUTTON_HEIGHT = 48;
-
-var
-  cmdAccount: TfcCustomImageBtn;
-  ButtonSkin: TButtonSkin;
-  I: Integer;
-  TheLine: Integer;
-  NumberPerRow: Integer;
-  ButtonWidth: Integer;
-  ButtonHeight: Integer;
-
-begin
-  //clear any exixting controls in scrAccounts
-  while (scrAccounts.ControlCount > 0) do begin
-    scrAccounts.Controls[0].Free;
-  end;
-
-  I := 0;
-  TheLine := 0;
-  ButtonSkin := Skin.GetButtonSkin(bstAccount);
-  if ((Assigned(ButtonSkin)) and (ButtonSkin.WidthSet)) then begin
-    ButtonWidth := ButtonSkin.Width;
-  end
-  else begin
-    ButtonWidth := DEFBUTTON_WIDTH;
-  end;
-  if ((Assigned(ButtonSkin)) and (ButtonSkin.HeightSet)) then begin
-    ButtonHeight := ButtonSkin.Height;
-  end
-  else begin
-    ButtonHeight := DEFBUTTON_HEIGHT;
-  end;
-
-  if (Screen.Width > 800) then begin
-    NumberPerRow := ((Screen.Width - pnlTenderLines.Width - 20) div ButtonWidth);
-  end
-  else begin
-    NumberPerRow := 5;
-  end;
-
-  with dm.qrAccountButtons do begin
+    Width := ((799 * Screen.PixelsPerInch) div 96);
+    Height := ((568 * Screen.PixelsPerInch) div 96);
+  end;
+
+  //Set the grid datasources to their respective datasources. This is in case it is accidentally cleared in the dfm by the stupid datamodule delphi bug.
+  DBGridSaleCategories.DataSource := dm.dsSaleCategories;
+  navSaleCategories.DataSource := dm.dsSaleCategories;
+  DBGridSections.DataSource := dm.dsSections;
+  navSections.DataSource := dm.dsSections;
+  DBGridItemGroups.DataSource := dm.dsItemGroups;
+  DBGridStaffOrdersKPI.DataSource := dm.dsItemGroups;
+  navItemGroups.DataSource := dm.dsItemGroups;
+  DBGridStaffMembers.DataSource := dm.dsStaff;
+  navStaff.DataSource := dm.dsStaff;
+  DBGridTerminals.DataSource := dm.dsTerminals;
+  navTerminals.DataSource := dm.dsTerminals;
+  DBGridPeriodEnds.DataSource := dm.dsAccountPEs;
+  navPeriodEnds.DataSource := dm.dsAccountPEs;
+  DBGridCourses.DataSource := dm.dsCourses;
+  navCourses.DataSource := dm.dsCourses;
+  DBGridTills.DataSource := dm.dsTills;
+  navTills.DataSource := dm.dsTills;
+  DBGridDiscountSchemes.DataSource := dm.dsDiscountSchemes;
+  navDiscountSchemes.DataSource := dm.dsDiscountSchemes;
+  DBGridModGroups.DataSource := dm.dsModGroups;
+  navModGroups.DataSource := dm.dsModGroups;
+  DBGridSalePeriods.DataSource := dm.dsSalePeriods;
+  navSalePeriods.DataSource := dm.dsSalePeriods;
+  DBGridAccounts.DataSource := dm.dsAccountTypes;
+  fmAccountSelectionClick(sender);
+  navAccounts.DataSource := dm.dsAccounts;
+  DBGridCombos.DataSource := dm.dsCombos;
+  navCombos.DataSource := dm.dsCombos;
+  DBGridEvents.DataSource := dm.dsEvents;
+  DBGridAccountTypes.DataSource := dm.dsAccountTypes;
+
+  cmbOutlets.Clear;
+  FOutletList.Clear;
+
+  menuHelpUpdates.Enabled := AppDetails.UpdatePath <> '';
+
+  cmbOutlets.Items.Add(sAllOutlets);
+  FOutletList.Add(-1);//sinu added for localisation
+
+  with dm.qrOutlets do begin
     First;
-    while (not EOF) do begin
-      if (not FieldAsBool(FieldByName('accinactive'))) then begin
-        Skin.CreateNewButton(cmdAccount, TComponent(scrAccounts), TWinControl(scrAccounts), bstAccount);
-
-        cmdAccount.Font.Name := 'Arial';
-        cmdAccount.Font.Style := [fsBold];
-        cmdAccount.Font.Size := 8;
-
-        cmdAccount.Caption := DoubleAmpersand(FieldByName('buttoncaption').AsString);
-        cmdAccount.Tag := FieldByName('accountid').AsInteger;
-        cmdAccount.OnClick := AccountClick;
-        if ((not Assigned(ButtonSkin)) or (not ButtonSkin.WidthSet)) then begin
-          cmdAccount.Width := ButtonWidth;
-        end;
-        if ((not Assigned(ButtonSkin)) or (not ButtonSkin.HeightSet)) then begin
-          cmdAccount.Height := ButtonHeight;
-        end;
-
-        cmdAccount.Top := TheLine * ButtonHeight;
-        cmdAccount.Left := (I mod NumberPerRow) * ButtonWidth;
-
-        Inc(I);
-        if ((I mod NumberPerRow) = 0) then begin
-          Inc(TheLine);
-        end;
-      end;
+    while (not EOF) do
+    begin
+      cmbOutlets.Items.Add(FieldByName('outletname').AsString);
+      FOutletList.Add(FieldByName('outletid').AsInteger);  //sinu
       Next;
     end;
   end;
+
+  if (cmbOutlets.Items.Count > 2) then begin
+    cmbOutlets.ItemIndex := 0;
+  end
+  else begin
+    cmbOutlets.ItemIndex := 1;
+  end;
+
+  if cmbOutlets.ItemIndex > 0 then
+  begin
+    dm.CurrentOutletID := FOutletList.Get(cmbOutlets.ItemIndex);
+  end
+  else
+  begin
+    dm.CurrentOutletID := -1;
+  end;
+
+  cmbRemoteLocations.Clear;
+  FRemLocsList.Clear; //sinu
+
+  cmbRemoteLocations.Items.Add(sAllLoc);//, TObject(-1));
+  FRemLocsList.Add(-1);
+  cmbRemoteLocations.Items.Add(sOnlyThisLoc);//, TObject(0));
+  FRemLocsList.Add(0);
+
+  with dm.qrRemoteLocations do begin
+    Open;
+    First;
+    while (not EOF) do begin
+      cmbRemoteLocations.Items.Add(FieldByName('remotelocationname').AsString); //, TObject(FieldByName('remotelocationid').AsInteger));
+      FRemLocsList.Add(FieldByName('remotelocationid').AsInteger);//sinu
+      Next;
+    end;
+    Close;
+  end;
+  with dm.qrSys do begin
+    Open;
+    First;
+    AppDetails.CurrencyType := FieldByName('currencytype').AsString;
+    AppDetails.DefaultStartHour := FieldByName('starthour').AsInteger;
+    LoggedInAlready := FieldAsBool(FieldByName('avoidpincheck'));
+    Close;
+  end;
+  if (cmbRemoteLocations.Items.Count >= 2) then begin
+    cmbRemoteLocations.ItemIndex := 0;
+  end
+  else begin
+    cmbRemoteLocations.ItemIndex := 1;
+  end;
+  cmbRemoteLocationsChange(nil);
+
+  cmbPeopleAccountTypes.Clear;
+  FPeopleAcctTypes.Clear;//sinu
+
+  cmbPeopleAccountTypes.Items.Add(sAllAcctTypes); //, TObject(-1));
+  FPeopleAcctTypes.Add(-1);//sinu
+
+  with dm.qrAccountTypes do begin
+//    Open;
+    First;
+    while (not EOF) do begin
+      cmbPeopleAccountTypes.Items.Add(FieldByName('accounttype').AsString); //, TObject(FieldByName('accounttypeid').AsInteger));
+      FPeopleAcctTypes.Add(FieldByName('accounttypeid').AsInteger); //sinu
+      Next;
+    end;
+//    Close;
+  end;
+  cmbPeopleAccountTypes.ItemIndex := 0;
+
+
+// GIH Remote Location filter
+  cmbPeopleRemoteSite.Clear;
+  FPeopleRemSiteList.Clear;
+  with dm.qrRemoteLocations do
+  begin
+    Open;   
+    First;
+    if (RecordCount > 1) then
+    begin
+      cmbPeopleRemoteSite.Items.Add(sAllPeople);
+      FPeopleRemSiteList.Add(-1);
+    end;
+    while (not EOF) do
+    begin
+      cmbPeopleRemoteSite.Items.Add(FieldByName('remotelocationname').AsString);
+      FPeopleRemSiteList.Add(FieldByName('remotelocationid').AsInteger);
+      Next;
+    end;  
+    Close;
+  end;
+  if (cmbPeopleRemoteSite.Items.Count > 0) then begin
+    cmbPeopleRemoteSite.ItemIndex := 0;
+  end
+  else begin
+    cmbPeopleRemoteSite.Visible := False;
+    lblRemoteSite.Visible := False;
+  end;
+
+
+  {sinu start}
+  SetComboCaptions;
+  {sinu end}
+
+  SetDefaultTime;
+
+  FFromDOB := 0;
+  FToDOB := 0;
+  FFromBirthDay := 0;
+  FFromBirthMonth := 0;
+  FToBirthDay := 0;
+  FToBirthMonth := 0;
+  FFromWeddingDate := 0;
+  FToWeddingDate := 0;
+  FFromAnniversaryDay := 0;
+  FFromAnniversaryMonth := 0;
+  FToAnniversaryDay := 0;
+  FToAnniversaryMonth := 0;
+  FLastWhenInvoicedAfter := 0;
+  FLastWhenInvoicedBefore := 0;
+
+  cmbReportType.ItemIndex := 17;     //Sales
+  chkSalesNettExcludeSalesTax.Checked := AppDetails.NettExcludesSalesTaxDefault;
+
+  cmbPeopleCustomer.ItemIndex := 0;
+  cmbPeopleVIP.ItemIndex := 0;
+  cmbPeopleGender.ItemIndex := 0;
+
+  PopulatingFields := False;
+  chkIncludeStaffOrdersKPI.Checked := AppDetails.IncludeStaffOrdersKPI;
+  sgStaffOrdersKPI.Cells[0,0] := sStaffOrderKPIs;
+  LoadStaffOrderKPI;
+
+  sgStaffOrdersKPIItemGroupsN.ColWidths[0] := 0;
+  sgStaffOrdersKPIItemGroupsN.ColWidths[1] := sgStaffOrdersKPIItemGroupsN.Width-30;
+  sgStaffOrdersKPIItemGroupsD.ColWidths[0] := 0;
+  sgStaffOrdersKPIItemGroupsD.ColWidths[1] := sgStaffOrdersKPIItemGroupsD.Width-30;
+
+  cmbReportTypeChange(Self);
+
+  UpDownSalesHistoryTimeSpanQuantity.Max := SALEHIST_MAXPD;
+  txtSalesHistoryTimeSpanQuantity.Hint := Format(sSalesHistRepNoOfPeriodHint, [SALEHIST_MAXPDPRINT, SALEHIST_MAXPD]);
+  UpDownSalesHistoryTimeSpanQuantity.Hint := txtSalesHistoryTimeSpanQuantity.Hint;
 end;
 {******************************************************************************}
-{ if user presses cancel we can now decide not to recalculate discounts}
-function TformPaymentTable.CheckLoyaltyReward(Prompt: Boolean): Boolean;
+procedure TformReports.MenuFileExitClick(Sender: TObject);
 begin
-  LogMessage(ltPaymentTrace, '448' + #9);
-  Result := True;
+  Close;
+end;
+{******************************************************************************}
+procedure TformReports.MenuSettingsClick(Sender: TObject);
+begin
+  if (ChangeSettings) then begin
+    AppDetails.SaveDetails;
 
-  if IsNormalLoyalty then
-  begin
-    if (Prompt) then
-    begin
-      LoyaltyReward.LoyaltyRewardID := 0;
-      LoyaltyReward.RewardOffer := roNone;
-    end;
+  //ResDllDictionary.Language := AppDetails.Language;
+    SetDefaultTime;
+    txtFrom.Text := FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime);
+    txtTo.Text := FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime);
 
-    if ((not Prompt) or
-        (((GlbAccount.AccountID > 0) and (GlbAccount.BestLoyaltyRewardID > 0)) and
-         (ShowConf(sReviewLoyaltyRewardOffers) = mrYes))) then
-    begin
-      if (SelectLoyaltyReward(LoyaltyReward, [roVoucher, roCredit, roDiscount, roItem, roVariableDiscount])) then
-      begin
-        if ((LoyaltyReward.LoyaltyRewardID > 0) and (LoyaltyReward.RewardOffer = roCredit)) then
-        begin
-          GlbAccount.CurrentBalance := GlbAccount.CurrentBalance - LoyaltyReward.Qty;
-          FCurrentBalance := GlbAccount.CurrentBalance;
-        end;
+    dm.GetItemGroups;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.SetDefaultTime;
+var
+  I: Integer;
+  TheDateTime : TDateTime;
+
+  TheTime : TTime;
+  WeekDayWanted : string;
+
+  TheDay : Word;
+  TheMonth : Word;
+  TheYear : Word;
+
+  FromDay : Word;
+  FromMonth : Word;
+  FromYear : Word;
+
+  ToDay : Word;
+  ToMonth : Word;
+  ToYear : Word;
+
+
+begin
+  TheDateTime := Now;
+  if (Developing) then begin
+    FFromTime := (36526-365);
+    FToTime := 36526;
+  end
+  else begin
+    if (AppDetails.DefaultTimePeriod = 1) then begin
+      FFromTime := TheDateTime - 1;
+      FToTime := TheDateTime;
+    end
+    else begin
+      DecodeDate(TheDateTime,TheYear,TheMonth,TheDay);
+      TheTime := EncodeTime(AppDetails.DefaultTimeHour, AppDetails.DefaultTimeMinute,0,0);
+      FToTime := EncodeDate(TheYear,TheMonth,TheDay) + TheTime;
+      I := 0;
+      while ((FToTime > TheDateTime ) and (I < 7)) do begin
+        FToTime := FToTime - 1;
+        Inc(I);
+      end;
+
+      if (AppDetails.DefaultTimePeriod = 2) then begin
+        FFromTime := FToTime - 1;
       end
-      else
-        Result := False;
+      else if (AppDetails.DefaultTimePeriod = 3) then begin
+        case AppDetails.DefaultTimeWeekStarts of
+          1: WeekDayWanted := 'Sun';
+          2: WeekDayWanted := 'Mon';
+          3: WeekDayWanted := 'Tue';
+          4: WeekDayWanted := 'Wed';
+          5: WeekDayWanted := 'Thu';
+          6: WeekDayWanted := 'Fri';
+          7: WeekDayWanted := 'Sat';
+        end;
+        I := 0;
+        while ((FormatDateTime('ddd',FToTime) <> WeekDayWanted) and (I < 10)) do begin
+          FToTime := FToTime - 1;
+          Inc(I);
+        end;
+        FFromTime := FToTime - 7;
+      end
+      else if (AppDetails.DefaultTimePeriod = 4) then begin
+        DecodeDate(FToTime,ToYear,ToMonth,ToDay);
+        FToTime := EncodeDate(ToYear,ToMonth,1) + TheTime;
+        FFromTime := FToTime - 15;  //To be in last month
+        DecodeDate(FFromTime,FromYear,FromMonth,FromDay);
+        FFromTime := EncodeDate(FromYear,FromMonth,1) + TheTime;
+      end;
     end;
   end;
 end;
 {******************************************************************************}
-procedure TformPaymentTable.cmdDeselectAccountClick(Sender: TObject);
+procedure TformReports.cmdFromClick(Sender: TObject);
+var
+  aBeforeFrom: TDateTime;
+
 begin
-  LogMessage(ltPaymentTrace, '596' + #9);
-  if (DoingTablePayment) then begin
-    Exit;
-  end;
-  if ((GlbEvent.EventID > 0) and (GlbEvent.AccountID > 0)) then
-  begin
-    ShowQuickMsg(sNoAccountChangeForEvents);
-    Exit;
-  end;
-  
-  //if in a Goody discounted sale, disallow loading a different account
-  if InGoodyDiscountedSale then
-  begin
-    ShowQuickMsg(sNoAcctSelectionForGoodyDiscSale);
-    Exit;
-  end;
+  aBeforeFrom := FFromTime;
+  if SelectDateTime(FFromTime) then begin
+    txtFrom.Text := FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM', FFromTime);
+    if (cmdDatesLock.Down) then
+    begin
+      FToTime := FToTime - aBeforeFrom + FFromTime;
+      txtTo.Text := FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM', FToTime);
+    end;
 
-  if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode))) then
-    if TLList.Count > 0 then
-      Exit;
-
-  DeselectAccount(False, mrYes);
+    if (ReportType in [rptypPeriodEndTransactions, rptypPeriodEndStatement]) then begin
+      dm.GetPeriodEnds(FFromTime - 60, FToTime + 60);
+    end;
+  end;
 end;
 {******************************************************************************}
-procedure TformPaymentTable.cmdUpAccountsClick(Sender: TObject);
+procedure TformReports.cmdToClick(Sender: TObject);
 begin
-  if (DoingTablePayment) then begin   //Jon 25-02-2002
-    Exit;
+  if SelectDateTime(FToTime) then begin
+    txtTo.Text := FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime);
+
+    if (ReportType in [rptypPeriodEndTransactions, rptypPeriodEndStatement]) then begin
+      dm.GetPeriodEnds(FFromTime - 60, FToTime + 60);
+    end;
   end;
+end;
+{******************************************************************************}
+procedure TformReports.radGCurrentClick(Sender: TObject);
+begin
+  dm.ItemGroupsCurrent := (TRadioButton(Sender).Tag = 0);
+end;
+{******************************************************************************}
+procedure TformReports.radACurrentClick(Sender: TObject);
+begin
+  dm.AccountsCurrent := (TRadioButton(Sender).Tag = 0);
+end;
+{******************************************************************************}
+procedure TformReports.radSCurrentClick(Sender: TObject);
+begin
+  dm.StaffCurrent := (TRadioButton(Sender).Tag = 0);
+end;
+{******************************************************************************}
+procedure TformReports.SaveDialogClose(Sender: TObject);
+begin
+  case SaveDialog.FilterIndex of
+    1: SaveDialog.DefaultExt := 'txt';
+  else
+    SaveDialog.DefaultExt := '';
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.DBGridItemGroupsEnter(Sender: TObject);
+begin
+  radItemGroup.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.navItemGroupsClick(Sender: TObject;
+  Button: TNavigateBtn);
+begin
+  radItemGroup.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.DBGridAccountsCellClick(Column: TColumn);
+begin
+  if (radAccountAll.Checked) then begin
+    radAccountSelected.Checked := True;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.navAccountsBeforeAction(Sender: TObject;
+  Button: TNavigateBtn);
+begin
+  if (radAccountAll.Checked) then begin
+    radAccountSelected.Checked := True;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.DBGridCoursesCellClick(Column: TColumn);
+begin
+  radCourseSelected.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.DBGridDiscountSchemesCellClick(Column: TColumn);
+begin
+  radDiscountSchemeSelected.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.navCoursesClick(Sender: TObject;
+  Button: TNavigateBtn);
+begin
+  radCourseSelected.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.navDiscountSchemesClick(Sender: TObject;
+  Button: TNavigateBtn);
+begin
+  radDiscountSchemeSelected.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.DBGridTerminalsCellClick(Column: TColumn);
+begin
+  radTerminalSelected.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.DBGridTillsCellClick(Column: TColumn);
+begin
+  radTillSelected.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.navTerminalsClick(Sender: TObject;
+  Button: TNavigateBtn);
+begin
+  radTerminalSelected.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.navTillsClick(Sender: TObject;
+  Button: TNavigateBtn);
+begin
+  radTillSelected.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.DBGridSaleCategoriesCellClick(Column: TColumn);
+begin
+  radSaleCategorySelected.Checked := True;
+  radComboSelected.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.navSaleCategoriesClick(Sender: TObject; Button: TNavigateBtn);
+begin
+  radSalePeriodSelected.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.DBGridStaffMembersCellClick(Column: TColumn);
+begin
+  radStaffSelected.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.navStaffClick(Sender: TObject;
+  Button: TNavigateBtn);
+begin
+  radStaffSelected.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.cmdDoReportClick(Sender: TObject);
+begin
+  cmdDoReport.Cursor := crHourGlass;
+  Application.ProcessMessages;
 
   try
-    if ((scrAccounts.VertScrollBar.Position - scrAccounts.Height) > 0) then begin
-      scrAccounts.VertScrollBar.Position := scrAccounts.VertScrollBar.Position - scrAccounts.Height;
-    end
-    else begin
-      scrAccounts.VertScrollBar.Position := 0;
+    case ReportType of
+      rptypSales: ShowSalesReport;
+      rptypOrders: ShowOrdersReport;
+      rptypComboSales : ShowComboSalesReport;
+      rptypVoids: ShowVoidsReport;
+      rptypStaffOrders: ShowAllStaffOrders;
+      rptypStaffOpenPriceItems : ShowAllSTaffOpenPriceOrders;
+      rptypAccountSales: ShowAccountSalesReport;
+      rptypCourseSales: ShowCourseSalesReport;
+      rptypTerminalSales: ShowTerminalSalesReport;
+      rptypMenuItems: ShowMenuItemsReport;
+      rptypPeople: ShowPeopleReport;
+      rptypModifiers: ShowModifiersReport;
+      rptypSalesHistory: ShowSalesHistoryReport;
+      rptypStaffSales: ShowStaffSalesReport;
+      rptypSaleCategorySales: ShowSaleCategorySalesReport;
+      rptypSectionSales: ShowSectionSalesReport;     
+      rptypSalePeriodSales : ShowSalePeriodSalesReport;
+      rptypCashTotals: ShowCashTotalsReport;
+      rptypSalesByDate: ShowSalesByDateReport;
+      rptypPeriodEndTransactions: ShowAccountPETransReport;
+      rptypPeriodEndStatement: ShowAccountPEStatementReport;
+      rptypClockIns: ShowClockInsReport;
+      rptypAccountSummaries: ShowAccountSummariesReport;
+      rptypStaffTips: ShowStaffTipsReport;
+      rptypNoSales: ShowNoSalesReport;
+      rptypTillSales: ShowTillSalesReport;
+      rptypDiscountSchemeSales: ShowDiscountSchemeSalesReport;
+      rptypItemModSales: ShowItemModSalesReport;
+      rptypModItems: ShowModItemsReport;
+      rptypOrderByBumped: ShowOrderByBumpedReport;
+      rptypItemByBumped : ShowItemByBumpedReport;
+      rptypItemCountByBumped : ShowItemCountByBumpedReport;
+      rptypAccountTransactions : ShowAccountTransactionReport;
+      rptypOrdersSalesVoids : ShowOrdersSalesVoidsReport;
+      rptypAccountTabSales : ShowAccountTabSalesReport;
+      rptypOpenTables : ShowOpenTablesReport;
+      rptypTableSummary : ShowTableSummaryReport;
+      rptypEventSales : ShowEventSalesReport;
+      rptypTransList : ShowTransListReport;
+      rptypAccTypeMovements : ShowAccTypeMovementsReport;
     end;
-  except; end;
+  finally
+    cmdDoReport.Cursor := crDefault;
+    Application.ProcessMessages;
+  end;
 end;
 {******************************************************************************}
-procedure TformPaymentTable.cmdDownAccountsClick(Sender: TObject);
+procedure TformReports.cmbReportTypeChange(Sender: TObject);
 begin
-  if (DoingTablePayment) then begin   //Jon 25-02-2002
-    Exit;
+  case (cmbReportType.ItemIndex) of
+    0: ReportType := rptypAccountSummaries;
+    1: ReportType := rptypAccountTabSales;
+    2: ReportType := rptypAccountTransactions;
+    3: ReportType := rptypAccTypeMovements;
+    4: ReportType := rptypCashTotals;
+    5: ReportType := rptypClockIns;
+    6: ReportType := rptypMenuItems;
+    7: ReportType := rptypModifiers;
+    8: ReportType := rptypModItems;
+    9: ReportType := rptypNoSales;
+    10: ReportType := rptypOrders;
+    11: ReportType := rptypStaffOrders;
+    12: ReportType := rptypStaffOpenPriceItems;
+    13: ReportType := rptypOrdersSalesVoids;
+    14: ReportType := rptypPeople;
+    15: ReportType := rptypPeriodEndStatement;
+    16: ReportType := rptypPeriodEndTransactions;
+    17: ReportType := rptypSales;
+    18: ReportType := rptypAccountSales;
+    19: ReportType := rptypComboSales;
+    20: ReportType := rptypCourseSales;
+    21: ReportType := rptypDiscountSchemeSales;
+    22: ReportType := rptypEventSales;
+    23: ReportType := rptypItemModSales;
+    24: ReportType := rptypSaleCategorySales;
+    25: ReportType := rptypSectionSales;    
+    26: ReportType := rptypSalePeriodSales;
+    27: ReportType := rptypStaffSales;
+    28: ReportType := rptypTerminalSales;
+    29: ReportType := rptypTillSales;
+    30: ReportType := rptypSalesByDate;
+    31: ReportType := rptypSalesHistory;
+    32: ReportType := rptypStaffTips;
+    33: ReportType := rptypOpenTables;
+    34: ReportType := rptypTableSummary;
+    35: ReportType := rptypTransList;
+    36: ReportType := rptypVoids;
+
+//    35: ReportType := rptypOrderByBumped;
+//    36: ReportType := rptypItemByBumped;
+//    37: ReportType := rptypItemCountByBumped;
   end;
 
-  try
-    if ((scrAccounts.VertScrollBar.Position + scrAccounts.Height) < scrAccounts.VertScrollBar.Range) then begin
-      scrAccounts.VertScrollBar.Position := scrAccounts.VertScrollBar.Position + scrAccounts.Height;
-    end
-    else begin
-      scrAccounts.VertScrollBar.Position := scrAccounts.VertScrollBar.Range;
-    end;
-  except; end;
+  ChangeReportType;
 end;
 {******************************************************************************}
-function TformPaymentTable.CanSelectAccount: Boolean;
+procedure TformReports.ChangeReportType;
+var
+  SubTotalsCheckBoxPos: Integer;
+
+  procedure PositionGroupBox(var GroupBox: TGroupBox; Left, Top: Integer);
+  begin
+    GroupBox.Visible := GroupBox.Enabled;
+    GroupBox.Left := ((Left * Screen.PixelsPerInch) div 96);
+    GroupBox.Top := ((Top * Screen.PixelsPerInch) div 96);
+  end;
+
+  procedure PositionRadioGroup(var RadioGroup: TRadioGroup; Left, Top: Integer);
+  begin
+    RadioGroup.Visible := RadioGroup.Enabled;
+    RadioGroup.Left := ((Left * Screen.PixelsPerInch) div 96);
+    RadioGroup.Top := ((Top * Screen.PixelsPerInch) div 96);
+  end;
+
+  procedure PositionCheckBox(var CheckBox: TCheckBox; Left, Top: Integer);
+  begin
+    CheckBox.Visible := CheckBox.Enabled;
+    CheckBox.Left := ((Left * Screen.PixelsPerInch) div 96);
+    CheckBox.Top := ((Top * Screen.PixelsPerInch) div 96);
+  end;
+
+  procedure PositionOrderByGroupBox(var GroupBox: TGroupBox);
+  begin
+    PositionGroupBox(GroupBox, 588, 8);
+  end;
+
+  procedure ShowGroupSubTotalsItems(CheckBox: TCheckBox);
+  begin
+    Inc(SubTotalsCheckBoxPos);
+    CheckBox.Visible := True;
+    CheckBox.Left := 8;
+    CheckBox.Top := ((SubTotalsCheckBoxPos * 16 * Screen.PixelsPerInch) div 96);
+    CheckBox.TabOrder := SubTotalsCheckBoxPos - 1;
+  end;
+
+begin
+  frmRange.Enabled := (ReportType in [rptypSales, rptypAccountSales,rptypEventSales, rptypCourseSales, rptypTerminalSales,
+      rptypOrders, rptypStaffOrders, rptypVoids, rptypModifiers, rptypSalesHistory,
+      rptypStaffSales, rptypSaleCategorySales, rptypSectionSales, rptypSalePeriodSales, rptypCashTotals, rptypSalesByDate,rptypOrderByBumped,
+      rptypItemByBumped, rptypItemCountByBumped, rptypComboSales,
+      rptypPeriodEndTransactions, rptypPeriodEndStatement, rptypClockIns, rptypAccountSummaries,
+      rptypStaffTips, rptypNoSales, rptypTillSales, rptypDiscountSchemeSales, rptypItemModSales, rptypModItems,
+      rptypAccountTransactions, rptypOrdersSalesVoids, rptypAccountTabSales, rptypTableSummary, rptypStaffOpenPriceItems,
+      rptypTransList, rptypAccTypeMovements]);
+  frmRange.Visible := frmRange.Enabled;
+
+  txtTo.Enabled := ((ReportType <> rptypSalesHistory) and (not cmdDatesLock.Down));
+  cmdTo.Enabled := ((ReportType <> rptypSalesHistory) and (not cmdDatesLock.Down));
+
+  frmForB.Enabled := (ReportType in [rptypSales, rptypAccountSales, rptypEventSales, rptypCourseSales, rptypTerminalSales,
+      rptypOrders, rptypStaffOrders, rptypVoids, rptypMenuItems, rptypModifiers, rptypSalesHistory,
+      rptypStaffSales, rptypSaleCategorySales, rptypSectionSales, rptypSalePeriodSales, rptypSalesByDate, rptypTerminalSales, rptypDiscountSchemeSales,
+      rptypItemModSales, rptypModItems, rptypOrderByBumped, rptypItemByBumped, rptypItemCountByBumped,
+      rptypComboSales, rptypOrdersSalesVoids,rptypStaffOpenPriceItems]);
+
+  frmForB.Visible := frmForB.Enabled;
+
+  pnlOutlets.Visible := False;
+  pnlRemoteLocations.Visible := False;
+
+  pnlRemoteLocations.Enabled := ((ReportType in [rptypSales, rptypAccountSales, rptypCourseSales, rptypTerminalSales,
+      rptypOrders, rptypStaffOrders, rptypVoids, rptypModifiers,
+      rptypSalesHistory, rptypStaffSales, rptypSaleCategorySales, rptypSectionSales, rptypSalePeriodSales,rptypCashTotals, rptypClockIns,
+      rptypOrderByBumped,rptypItemByBumped,rptypItemCountByBumped,
+      rptypSalesByDate, rptypStaffTips, rptypNoSales, rptypTillSales, rptypDiscountSchemeSales,
+      rptypItemModSales, rptypModItems, rptypAccountTransactions,
+      rptypOrdersSalesVoids, rptypAccountTabSales, rptypOpenTables, rptypComboSales, rptypTableSummary, rptypStaffOpenPriceItems,
+      rptypTransList, rptypAccTypeMovements])
+      and (cmbRemoteLocations.Items.Count > 2));
+  pnlRemoteLocations.Visible := pnlRemoteLocations.Enabled;
+
+  dm.qrStaffREMOTEOVERRIDEGROUPNAME.Visible := (pnlRemoteLocations.Visible);
+  dm.qrAccountsREMOTEOVERRIDEGROUPNAME.Visible := (pnlRemoteLocations.Visible);
+  dm.qrAccountTypesREMOTEOVERRIDEGROUPNAME.Visible := (pnlRemoteLocations.Visible);
+
+  chkRemoteLocationBreakdown.Visible := ((ReportType in [rptypSales, rptypAccountSales, rptypTerminalSales,
+      rptypTillSales, rptypDiscountSchemeSales, rptypCourseSales, rptypSaleCategorySales, rptypSectionSales, rptypStaffSales,
+      rptypSalesByDate, rptypSalesHistory, rptypCashTotals, rptypClockins, rptypItemModSales, rptypModItems,
+      rptypModifiers, rptypNoSales, rptypStaffTips, rptypVoids, rptypOrders, rptypStaffOrders, rptypAccountTransactions,
+      rptypOrdersSalesVoids, rptypAccountTabSales, rptypOpenTables, rptypComboSales, rptypTableSummary, rptypAccTypeMovements])
+    and (cmbRemoteLocations.ItemIndex = 0));
+  chkRemoteLocationBreakdown.Checked := True;
+
+  pnlOutlets.Enabled := ((ReportType in [rptypSales, rptypAccountSales, rptypEventSales, rptypCourseSales, rptypTerminalSales,
+      rptypOrders, rptypStaffOrders, rptypVoids, rptypMenuItems, rptypModifiers,rptypOrderByBumped,
+      rptypSalesHistory, rptypStaffSales, rptypSaleCategorySales, rptypSectionSales, rptypSalePeriodSales, rptypCashTotals,
+      rptypItemByBumped,rptypItemByBumped,rptypItemCountByBumped, rptypSalesByDate, rptypStaffTips,
+      rptypNoSales, rptypTillSales, rptypDiscountSchemeSales, rptypItemModSales, rptypModItems, rptypAccountTransactions,
+      rptypOrdersSalesVoids, rptypAccountTabSales, rptypOpenTables, rptypComboSales, rptypTableSummary, rptypStaffOpenPriceItems,
+      rptypTransList, rptypAccTypeMovements])
+    and (cmbOutlets.Items.Count > 2));
+  pnlOutlets.Visible := pnlOutlets.Enabled;
+
+  chkOutletBreakdown.Visible := ((ReportType in [rptypSales, rptypAccountSales, rptypEventSales, rptypTerminalSales,
+      rptypTillSales, rptypDiscountSchemeSales, rptypCourseSales, rptypSaleCategorySales, rptypSectionSales, rptypStaffSales,
+      rptypSalesByDate, rptypSalesHistory, rptypCashTotals, rptypItemModSales, rptypModItems,
+      rptypModifiers, rptypNoSales, rptypStaffTips, rptypVoids, rptypOrders, rptypStaffOrders, rptypAccountTransactions,
+      rptypOrdersSalesVoids, rptypAccountTabSales, rptypOpenTables, rptypComboSales, rptypTableSummary,rptypAccTypeMovements])
+     and (cmbOutlets.ItemIndex = 0));
+  chkOutletBreakdown.Checked := True;
+
+  frmItemGroups.Enabled := (ReportType in [rptypSales, rptypAccountSales, rptypEventSales, rptypCourseSales, rptypTerminalSales,
+      rptypOrders, rptypStaffOrders, rptypVoids, rptypMenuItems, rptypSalesHistory, rptypStaffSales,
+      rptypSaleCategorySales, rptypSectionSales, rptypSalePeriodSales, rptypSalesByDate, rptypTillSales, rptypDiscountSchemeSales, rptypItemModSales, rptypModItems,
+      rptypOrderByBumped, rptypItemByBumped, rptypItemCountByBumped, rptypOrdersSalesVoids]);
+
+  frmItemGroups.Visible := frmItemGroups.Enabled;
+
+  frmOrderOrdersBy.Visible := False;
+  frmOrderVoidsBy.Visible := False;
+  frmOrderSalesBy.Visible := False;
+  frmOrderMenuBy.Visible := False;
+  frmOrderPeopleBy.Visible := False;
+  frmOrderModifiersBy.Visible := False;
+  frmOrderCashTotalsBy.Visible := False;
+  frmOrderClockInsBy.Visible := False;
+  frmOrderOpenPriceBy.Visible := False;
+  frmOrderTransListBy.Visible := False;
+
+  if (ReportType in [rptypSales, rptypAccountSales,rptypEventSales, rptypCourseSales, rptypTerminalSales, rptypSalesHistory,
+      rptypStaffSales, rptypSaleCategorySales, rptypSectionSales, rptypSalePeriodSales, rptypTillSales,
+      rptypDiscountSchemeSales, rptypItemModSales]) then begin
+    PositionOrderByGroupBox(frmOrderSalesBy);
+    EnableGroupSubTotalCheckBoxes(radGroup.Checked);
+  end
+  else if (ReportType in [rptypOrders, rptypStaffOrders, rptypOrdersSalesVoids]) then begin
+    PositionOrderByGroupBox(frmOrderOrdersBy);
+    EnableGroupSubTotalCheckBoxes(radOGroup.Checked);
+    if (ReportType = rptypOrdersSalesVoids) then
+    begin
+      //Remove order by unit price option.
+      radOPrice.Enabled := False;
+      radOValue.Top := 48;
+      frmOrderOrdersBy.Height := 72;
+    end
+    else
+    begin
+      radOPrice.Enabled := True;
+      radOValue.Top := 64;
+      frmOrderOrdersBy.Height := 88;
+    end;
+  end
+  else if (ReportType = rptypVoids) then begin
+    PositionOrderByGroupBox(frmOrderVoidsBy);
+    EnableGroupSubTotalCheckBoxes(radVStaff.Checked);
+  end
+  else if (ReportType = rptypMenuItems) then begin
+    PositionOrderByGroupBox(frmOrderMenuBy);
+    EnableGroupSubTotalCheckBoxes(radMenuOrderGroup.Checked);
+  end
+  else if (ReportType = rptypPeople) then begin
+    PositionOrderByGroupBox(frmOrderPeopleBy);
+    EnableGroupSubTotalCheckBoxes(False);
+  end
+  else if (ReportType in [rptypModifiers, rptypModItems]) then begin
+    PositionOrderByGroupBox(frmOrderModifiersBy);
+    EnableGroupSubTotalCheckBoxes(True);
+    CkbGroupForB.Enabled := (radModifiersOrderDefault.Checked or radModifiersOrderModifier.Checked);
+  end
+  else if (ReportType = rptypCashTotals) then begin
+    PositionOrderByGroupBox(frmOrderCashTotalsBy);
+    EnableGroupSubTotalCheckBoxes(True);
+    ckbGroupTill.Enabled := radCashTotalsOrderTill.Checked;
+  end
+  else if (ReportType = rptypClockIns) then begin
+    PositionOrderByGroupBox(frmOrderClockInsBy);
+    EnableGroupSubTotalCheckBoxes(True);
+    ckbGroupStaff.Enabled := radClockInsOrderStaffName.Checked;
+  end
+  else if (ReportType = rptypStaffOpenPriceItems) then
+  begin
+    PositionOrderByGroupBox(frmOrderOpenPriceBy);
+    ckbGroupStaff.Enabled := radClockInsOrderStaffName.Checked;
+  end
+  else if (ReportType = rptypTransList) then
+  begin
+    PositionOrderByGroupBox(frmOrderTransListBy);
+    EnableGroupSubTotalCheckBoxes(True);
+    ckbGroupStaff.Checked := False;
+    ckbGroupTill.Checked := False;
+    radTransListSortByTenderClick(self);
+  end;
+
+  if (ReportType in [rptypSales, rptypModifiers, rptypSalesHistory, rptypModItems]) then begin
+    if (ReportType = rptypSales) then
+    begin
+      PositionGroupBox(frmZeros, 400, 148);
+    end
+    else if (ReportType = rptypModItems) then
+    begin
+      PositionGroupBox(frmZeros, 588, 116);
+    end
+    else begin
+      PositionGroupBox(frmZeros, 400, 72);
+    end;
+  end
+  else begin
+    frmZeros.Visible := False;
+  end;
+
+  if (ReportType = rptypAccountTransactions) then
+  begin
+    frmSBOptionsClick(self);
+    PositionRadioGroup(frmSBOptions, 400, 72);
+    PositionRadioGroup(frmSBDetails, 515, 72);
+    frmSBDetails.Visible := True;
+    PositionCheckBox(chkSBTransType, 645, 72);
+    PositionCheckBox(chkSBExtendedDetail, 645, 92);
+    PositionCheckBox(chkRemNumbers, 645, 112);
+    chkRemNumbers.Visible := pnlRemoteLocations.Visible;
+  end
+  else
+  begin
+    frmSBOptions.Visible := False;
+    frmSBDetails.Visible := False;
+    chkSBTransType.Visible := False;
+    chkSBExtendedDetail.Visible := False;
+    chkRemNumbers.Visible := False;
+  end;
+
+  if (ReportType in [rptypSales, rptypStaffOrders, rptypTerminalSales, rptypStaffSales, rptypComboSales,
+      rptypSaleCategorySales, rptypSectionSales, rptypSalePeriodSales, rptypAccountSales, rptypEventSales, rptypCourseSales, rptypStaffTips,
+      rptypNoSales, rptypTillSales, rptypDiscountSchemeSales, rptypOrderByBumped, rptypAccountTabSales]) then
+  begin
+    PositionGroupBox(frmDetailsGroupsTotals, 400, 72);
+  end
+  else begin
+    frmDetailsGroupsTotals.Visible := False;
+  end;
+
+  if (ReportType in [rptypItemModSales, rptypModItems]) then
+  begin
+    PositionGroupBox(frmShowModGroups, 400, 72);
+  end
+  else begin
+    frmShowModGroups.Visible := False;
+  end;
+
+  if (ReportType = rptypVoids) then begin
+    PositionGroupBox(frmVoidsOrderStyle, 400, 72);
+    PositionGroupBox(frmVoidsOrderTypes, 400, 164);
+  end
+  else begin
+    frmVoidsOrderStyle.Visible := False;
+    frmVoidsOrderTypes.Visible := False;
+  end;
+
+  if (ReportType in [rptypCashTotals, rptypTransList]) then begin
+    if (ReportType = rptypCashTotals) then begin
+      PositionGroupBox(frmCashupDetailsDisplay, 588, 72);
+      chkCashupReference.Enabled := True;
+      chkCashupNotes.Enabled := True;
+    end
+    else begin
+      PositionGroupBox(frmCashupDetailsDisplay, 588, 82);
+    end;
+  end
+  else begin
+    frmCashupDetailsDisplay.Visible := False;
+  end;
+
+  if (ReportType = rptypCashTotals) then begin
+    PositionGroupBox(frmCashTotalsOrderStyle, 400, 72);
+  end
+  else begin
+    frmCashTotalsOrderStyle.Visible := False;
+  end;
+
+  if (ReportType = rptypModifiers) then begin
+    PositionGroupBox(frmModifiersOrderedState, 400, 148);
+  end
+  else begin
+    frmModifiersOrderedState.Visible := False;
+  end;
+
+  if (ReportType = rptypTableSummary) then
+  begin
+    PositionGroupBox(frmTableOptions, 400, 72);
+  end
+  else
+  begin
+    frmTableOptions.Visible := False;
+  end;
+
+  if (ReportType = rptypTransList) then
+  begin
+    PositionGroupBox(frmTransListOptions, 400, 72);
+  end
+  else
+  begin
+    frmTransListOptions.Visible := False;
+  end;
+
+  if (ReportType in [rptypAccountSales, rptypAccountSummaries, rptypAccountTransactions]) then begin
+    if (ReportType in [rptypAccountSales, rptypAccountTransactions]) then begin
+      PositionControl(TControl(frmAccounts), 400, 164, -1, 356);
+      PositionControl(TControl(DBGridAccounts), -1, -1, -1, 260);
+    end
+    else begin
+      PositionControl(TControl(frmAccounts), 400, 148, -1, 372);
+      PositionControl(TControl(DBGridAccounts), -1, -1, -1, 276);
+//      PositionGroupBox(frmAccounts, 400, 148);
+    end;
+    frmAccounts.Visible := True;
+  end
+  else begin
+    frmAccounts.Visible := False;
+  end;
+
+  if (ReportType in [rptypAccTypeMovements]) then
+  begin
+    PositionControl(TControl(frmAccountTypes), 400, 148, -1, 372);
+    PositionControl(TControl(DBGridAccountTypes), -1, -1, -1, 292);
+    frmAccountTypes.Visible := True;
+  end
+  else begin
+    frmAccountTypes.Visible := False;
+  end;
+
+  if ReportType = rptypEventSales then
+  begin
+    PositionControl(TControl(frmEvents), 400, 148, -1, 372);
+    PositionControl(TControl(DBGridEvents), -1, -1, -1, 276);
+  end;
+  frmEvents.Visible := (ReportType = rptypEventSales);
+
+  if (ReportType in [rptypStaffOrders, rptypVoids, rptypStaffSales, rptypClockIns, rptypStaffTips, rptypNoSales, rptypStaffOpenPriceItems, rptypTransList]) then begin
+    if (ReportType = rptypStaffSales) or (ReportType = rptypTransList) then
+    begin
+      PositionControl(TControl(frmStaff), 400, 164, -1, 356);
+      PositionControl(TControl(DBGridStaffMembers), -1, -1, -1, 276);
+    end
+    else if (ReportType = rptypStaffOrders)  then begin
+      PositionControl(TControl(frmStaff), 400, 148, -1, 182);
+      PositionControl(TControl(DBGridStaffMembers), -1, -1, -1, 102);
+    end
+    else if (ReportType = rptypVoids) then begin
+      PositionControl(TControl(frmStaff), 400, 272, -1, 248);
+      PositionControl(TControl(DBGridStaffMembers), -1, -1, -1, 168);
+    end
+    else begin
+      PositionControl(TControl(frmStaff), 400, 148, -1, 372);
+      PositionControl(TControl(DBGridStaffMembers), -1, -1, -1, 292);
+    end;
+    frmStaff.Visible := True;
+  end
+  else begin
+    frmStaff.Visible := False;
+  end;
+
+  if (ReportType = rptypTerminalSales) then begin
+    PositionGroupBox(frmTerminals, 400, 164);
+  end
+  else begin
+    frmTerminals.Visible := False;
+  end;
+
+  if (ReportType in [rptypTillSales, rptypTransList]) then begin
+    if (ReportType = rptypTransList) then
+    begin
+      PositionControl(TControl(frmTills), 4, 210, -1, 310);
+      PositionControl(TControl(DBGridTills), -1, -1, -1, 230);
+    end
+    else
+    begin
+      PositionControl(TControl(frmTills), 400, 164, -1, 356);
+      PositionControl(TControl(DBGridTills), -1, -1, -1, 276);
+    end;
+    frmTills.Visible := True;
+  end
+  else begin
+    frmTills.Visible := False;
+  end;
+
+  if (ReportType = rptypDiscountSchemeSales) then begin
+    PositionGroupBox(frmDiscountSchemes, 400, 164);
+  end
+  else begin
+    frmDiscountSchemes.Visible := False;
+  end;
+
+  if (ReportType in [rptypItemModSales, rptypModItems]) then begin
+    radShowModGroupsAllClick(self);
+    if (ReportType = rptypItemModSales) then begin
+      PositionGroupBox(frmItemGroups, 4, 210);
+      frmModGroups.Height := 356;
+      DBGridModGroups.Height := 276;
+      frmItemGroups.Height := 310;
+      DBGridItemGroups.Height := 233;
+    end
+    else if (ReportType = rptypModItems) then begin
+      PositionGroupBox(frmItemGroups, 400, 194);
+      frmModGroups.Height := 310;
+      DBGridModGroups.Height := 233;
+      frmItemGroups.Height := 326;
+      DBGridItemGroups.Height := 246;
+    end;
+  end
+  else begin
+    PositionGroupBox(frmItemGroups, 4, 210);
+    frmItemGroups.Height := 310;
+    DBGridItemGroups.Height := 233;
+    frmModGroups.Visible := False;
+  end;
+
+  if (ReportType = rptypPeople) then begin
+    PositionGroupBox(frmPeopleSelection, 400, 100);
+  end
+  else begin
+    frmPeopleSelection.Visible := False;
+  end;
+
+  if (ReportType in [rptypSaleCategorySales, rptypStaffOrders]) then begin
+    if (ReportType = rptypStaffOrders) then begin
+      PositionControl(TControl(frmSaleCategories), 400, 338, -1, 182);
+      PositionControl(TControl(DBGridSaleCategories), -1, -1, -1, 102);
+    end
+    else begin
+      PositionControl(TControl(frmSaleCategories), 400, 164, -1, 356);
+      PositionControl(TControl(DBGridSaleCategories), -1, -1, -1, 276);
+      //PositionGroupBox(frmSaleCategories, 400, 148);
+    end;
+    frmSaleCategories.Visible := True;
+  end
+  else begin
+    frmSaleCategories.Visible := False;
+  end;
+
+  if (ReportType = rptypSectionSales) then begin
+    PositionControl(TControl(frmSections), 400, 164, -1, 356);
+    PositionControl(TControl(DBGridSections), -1, -1, -1, 276);
+
+    frmSections.Visible := True;
+  end
+  else begin
+    frmSections.Visible := False;
+  end;
+
+  frmOrderCombos.Visible := False;
+  frmCombos.Visible := False;
+  if ReportType in [rptypComboSales] then
+  begin
+    frmOrderCombos.Visible := True;
+    frmCombos.Visible := True;
+    PositionControl(TControl(frmCombos), 400, 72, -1, 448);
+    PositionControl(TControl(DBGridCombos), -1, -1, -1, 368);
+    PositionOrderByGroupBox(frmOrderCombos);
+  end;
+
+  frmSalePeriods.Visible := False;
+  if (ReportType in [rptypSalePeriodSales]) then
+  begin
+    PositionControl(TControl(frmSalePeriods),  400, 164, -1, 356);
+    PositionControl(TControl(DBGridSalePeriods), -1, -1, -1, 276);
+    frmSalePeriods.Visible := True;
+  end;
+
+  if (ReportType in [rptypPeriodEndTransactions, rptypPeriodEndStatement]) then begin
+    PositionGroupBox(frmPeriodEnds, 400, 148);
+    dm.GetPeriodEnds(FFromTime - 60, FToTime + 60);
+  end
+  else begin
+    frmPeriodEnds.Visible := False;
+  end;
+
+  if (ReportType = rptypSalesHistory) then begin
+    PositionGroupBox(frmSalesHistory, 400, 148);
+    chkSalesHistoryUsePeriodLengthClick(nil);
+    chkSalesHistoryBetweenTimesClick(nil);
+    cmboSalesHistoryShownData.ItemIndex := 0;
+  end
+  else begin
+    frmSalesHistory.Visible := False;
+  end;
+
+  if (ReportType = rptypCourseSales) then begin
+    PositionGroupBox(frmCourses, 400, 164);
+  end
+  else begin
+    frmCourses.Visible := False;
+  end;
+
+  if (ReportType in [rptypSales, rptypSalesByDate]) then begin
+    chkSalesIncludePriceLevels.Visible := True;
+    chkSalesNettExcludeSalesTax.Visible := True;
+    if (ReportType = rptypSales) then begin
+      PositionControl(TControl(chkSalesIncludePriceLevels), 400, 224, -1, -1);
+      PositionControl(TControl(chkSalesNettExcludeSalesTax), 400, 240, -1, -1);
+    end
+    else if (ReportType = rptypSalesByDate) then begin
+      PositionControl(TControl(chkSalesIncludePriceLevels), 400, 72, -1, -1);
+      PositionControl(TControl(chkSalesNettExcludeSalesTax), 400, 88, -1, -1);
+    end;
+  end
+  else if (ReportType in [rptypAccountSales, rptypCourseSales, rptypTerminalSales, rptypStaffSales,
+  rptypSaleCategorySales, rptypTillSales, rptypDiscountSchemeSales, rptypItemModSales]) then
+  begin
+    chkSalesIncludePriceLevels.Visible := False;
+    chkSalesNettExcludeSalesTax.Visible := True;
+    if (ReportType = rptypItemModSales) then
+      PositionControl(TControl(chkSalesNettExcludeSalesTax), 588, 132, -1, -1)
+    else
+      PositionControl(TControl(chkSalesNettExcludeSalesTax), 400, 148, -1, -1);
+  end
+  else begin
+    chkSalesIncludePriceLevels.Visible := False;
+    chkSalesNettExcludeSalesTax.Visible := False;
+  end;
+
+  if (ReportType in [rptypPeriodEndTransactions]) then begin
+    chkViewTransactions.Visible := True;
+    PositionControl(TControl(chkViewTransactions), 400, 72, -1, -1);
+  end
+  else begin
+    chkViewTransactions.Visible := False;
+  end;
+
+  if (ReportType in [rptypPeriodEndTransactions, rptypPeriodEndStatement]) then begin
+    chkIncludeZeroBalances.Visible := True;
+    PositionControl(TControl(chkIncludeZeroBalances), 400, 88, -1, -1);
+  end
+  else begin
+    chkIncludeZeroBalances.Visible := False;
+  end;
+
+  if (ReportType in [rptypClockIns]) then begin
+    PositionControl(TControl(chkShowAllStaff), 400, 72, -1, -1);
+    chkShowAllStaff.Visible := True;
+  end
+  else begin
+    chkShowAllStaff.Visible := False;
+  end;
+
+  if (ReportType in [rptypMenuItems, rptypModifiers]) then begin
+    if (ReportType = rptypMenuItems) then begin
+      PositionControl(TControl(chkShowLinkCodes), 400, 72, -1, -1);
+    end
+    else begin
+      PositionControl(TControl(chkShowLinkCodes), 400, 224, -1, -1);
+    end;
+    chkShowLinkCodes.Visible := True;
+  end
+  else begin
+    chkShowLinkCodes.Visible := False;
+  end;
+
+  if (ReportType in [rptypCashTotals]) then begin
+    PositionControl(TControl(chkShowExtendedCashup), 400, 164, -1, -1);
+    chkShowExtendedCashup.Visible := True;
+  end
+  else begin
+    chkShowExtendedCashup.Visible := False;
+  end;
+
+  if (ReportType in [rptypAccTypeMovements]) then
+  begin
+    chkShowLoyaltyReward.Visible := True;
+    chkShowNoSale.Visible := True;
+    PositionControl(TControl(chkShowLoyaltyReward), 400, 72, -1, -1);
+    PositionControl(TControl(chkShowNoSale), 400, 88, -1, -1);
+  end
+  else begin
+    chkShowLoyaltyReward.Visible := False;
+    chkShowNoSale.Visible := False;
+  end;
+
+  frmGroupSubTotals.Visible := True;
+  ckbGroupGroup.Visible := False;
+  ckbGroupForB.Visible := False;
+  ckbGroupStaff.Visible := False;
+  ckbGroupRole.Visible := False;
+  ckbGroupAccount.Visible := False;
+  ckbGroupSaleCategory.Visible := False;
+  ckbGroupSection.Visible := False;
+  ckbGroupOutlet.Visible := False;
+  ckbGroupRemoteLocation.Visible := False;
+  ckbGroupTerminal.Visible := False;
+  ckbGroupTill.Visible := False;
+  ckbGroupAccountType.Visible := False;
+
+  SubTotalsCheckBoxPos := 0;
+  if (ReportType in [rptypSales, rptypSalesHistory, rptypComboSales]) then begin
+    ShowGroupSubTotalsItems(ckbGroupGroup);
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType in [rptypOrders, rptypOrdersSalesVoids]) then begin
+    ShowGroupSubTotalsItems(ckbGroupGroup);
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypVoids) then begin
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    ShowGroupSubTotalsItems(ckbGroupStaff);
+  end
+  else if (ReportType in [rptypAccountSales, rptypEventSales]) then begin
+    ShowGroupSubTotalsItems(ckbGroupGroup);
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypCourseSales) then begin
+    ShowGroupSubTotalsItems(ckbGroupGroup);
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypDiscountSchemeSales) then begin
+    ShowGroupSubTotalsItems(ckbGroupGroup);
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypItemModSales) then begin
+    ShowGroupSubTotalsItems(ckbGroupGroup);
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+    else if (ReportType = rptypModItems) then begin
+    ShowGroupSubTotalsItems(ckbGroupGroup);
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypStaffOrders) then begin
+    ShowGroupSubTotalsItems(ckbGroupGroup);
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypTerminalSales) then begin
+    ShowGroupSubTotalsItems(ckbGroupGroup);
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypTillSales) then begin
+    ShowGroupSubTotalsItems(ckbGroupGroup);
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypMenuItems) then begin
+    ShowGroupSubTotalsItems(ckbGroupGroup);
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+  end
+  else if (ReportType = rptypModifiers) then begin
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypStaffSales) then begin
+    ShowGroupSubTotalsItems(ckbGroupGroup);
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType in [rptypSaleCategorySales, rptypSectionSales]) then begin
+    ShowGroupSubTotalsItems(ckbGroupGroup);
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypSalePeriodSales) then begin
+    ShowGroupSubTotalsItems(ckbGroupGroup);
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypCashTotals) then begin
+    ShowGroupSubTotalsItems(ckbGroupTill);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypSalesByDate) then begin
+    ShowGroupSubTotalsItems(ckbGroupForB);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypClockIns) then begin
+    ShowGroupSubTotalsItems(ckbGroupStaff);
+    ShowGroupSubTotalsItems(ckbGroupRole);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType in [rptypStaffTips, rptypNoSales]) then begin
+    ShowGroupSubTotalsItems(ckbGroupStaff);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypAccountTransactions) then begin
+    ShowGroupSubTotalsItems(ckbGroupAccount);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypOpenTables) then begin
+    ShowGroupSubTotalsItems(ckbGroupSection);
+    ShowGroupSubTotalsItems(ckbGroupSaleCategory);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypTableSummary) then
+  begin
+    ShowGroupSubTotalsItems(ckbGroupSection);
+    ShowGroupSubTotalsItems(ckbGroupSaleCategory);
+    if (pnlOutlets.Visible) then
+    begin
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    end;
+    if (pnlRemoteLocations.Visible) then
+    begin
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+    end;
+  end
+  else if (ReportType = rptypTransList) then
+  begin
+    ShowGroupSubTotalsItems(ckbGroupTill);
+    ShowGroupSubTotalsItems(ckbGroupStaff);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else if (ReportType = rptypAccTypeMovements) then
+  begin
+    ShowGroupSubTotalsItems(ckbGroupAccountType);
+    if (pnlOutlets.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupOutlet);
+    if (pnlRemoteLocations.Visible) then
+      ShowGroupSubTotalsItems(ckbGroupRemoteLocation);
+  end
+  else begin
+    frmGroupSubTotals.Visible := False;
+  end;
+
+  if (frmOrderSalesBy.Visible) then begin
+    radGroupClick(nil);
+  end;
+
+  PositionCheckBox(chkIncludeStaffOrdersKPI, frmOrderOrdersBy.Left, frmOrderOrdersBy.Top + frmOrderOrdersBy.Height + 4);
+  cmdStaffOrdersKPI.Left := frmOrderOrdersBy.Left;
+  cmdStaffOrdersKPI.Top := chkIncludeStaffOrdersKPI.Top + chkIncludeStaffOrdersKPI.Height + 4;
+  cmdStaffOrdersKPI.Visible := (ReportType = rptypStaffOrders);
+  chkIncludeStaffOrdersKPI.Visible := (ReportType = rptypStaffOrders);
+
+  chkExportFile.Visible := (not(ReportType in [rptypPeriodEndStatement, rptypAccountSummaries]));   //Jon 12-12-2003
+end;
+{******************************************************************************}
+function TformReports.CheckDate: Boolean;
 begin
   Result := False;
-
-  if not sExternalAccountIntegration.AllowOnetapAccounts then
-    Exit;
-
-  if (AppDetails.EFTPOSIntegrated and EFTPOSTransExists) then
-  begin
-    ShowMsg(sRefundTenderBeforeAcctChange);
-    Exit;
+  if (txtFrom.Text = '') then begin
+    ShowMessage(sEnterFromDate);
+  end
+  else if (txtTo.Text = '') then begin
+    ShowMessage(sEnterToDate);
+  end
+  else if (FToTime <= FFromTime) then begin
+    ShowMessage(sEnterProperDate);
+  end
+  else begin
+    Result := True;
   end;
-
-  //if login pin not already entered for account priviledges
-  if ((not ManagerAuthorise.Authorise) or (ManagerAuthorise.AuthoriseAccountRank = 0)) then begin
-    //check if have privilege
-    if (GlbLogin.RankAccount = 0) then begin
-      ShowMsg(sGetHelpToPayThruCustAccts);
-      Exit;
-    end;
-  end;
-
-  {if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode))) then
-  if TLList.Count > 0 then
-    Exit;}
-
-  //if AppDetails.wiGroupEnabled then
-  //  wiGroupPOSSrv.CheckWarnAccDiscNotAllowed;
-
-  if AppDetails.wiGroupEnabled and wiGroupPOSSrv.CheckInformOTAcctNotAllowed(True, True) then
-    Exit;
-
-  Result := True;
 end;
 {******************************************************************************}
-procedure TformPaymentTable.cmdSelectAccountClick(Sender: TObject);
-var
-  prevAccountID: Integer;
+procedure TformReports.ShowSalesReport;
 begin
-  LogMessage(ltPaymentTrace, '409' + #9);
-  if not sExternalAccountIntegration.AllowOnetapAccounts then
-    Exit;
+  try
+    formQRSales := TformQRSales.Create(Application);
 
-  if (DoingTablePayment) then begin   //Jon 25-02-2002
-    Exit;
-  end;
+    formQRSales.OutletID := FOutletList.Get(cmbOutlets.ItemIndex);
+    formQRSales.RemLocID := FRemLocsList.Get(cmbRemoteLocations.ItemIndex);
+    Title1 := sTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
 
-  if ((GlbEvent.EventID > 0) and (GlbEvent.AccountID > 0)) then
-  begin
-    ShowQuickMsg(sNoAccountChangeForEvents);
-    Exit;
-  end;
+    if (not CheckDate) then begin
+      Exit;
+    end;
 
-  //if in a Goody discounted sale, disallow loading a different account
-  if InGoodyDiscountedSale then
-  begin
-    ShowQuickMsg(sNoAcctSelectionForGoodyDiscSale);
-    Exit;
-  end;
+    with dm.qrSales do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select p.*, r.lastrosstransactionsync ');
+      SQL.Add('from getsales (:poutletid, :premotelocationid, :pforb, :pitemgroupid, :fromtime, :totime, :returnpricelevels, 0, ''0:00:00'', ''0:00:00'') p');
+      SQL.Add('left join remotelocation r on r.remotelocationid = p.remotelocationid and r.whendeleted is null ');
 
-  if (CanSelectAccount) then
-  begin //Select Account checks if can access account
-    prevAccountID := GlbAccount.AccountID;
-    if (SelectAccount(True, True)) then
-    begin
-      if (GlbAccount.AccountID > 0) then
-      begin
-        If (GlbAccount.AccountInactive = accInactive) then
+      if (radExcludeZeros.Checked) then begin
+        SQL.Add('where ((grosssold <> 0.00) or (amountsold <> 0))');
+        Title2 := ', ' + sZeroExcluded;
+      end
+      else if (radIncludeZeros.Checked) then begin
+        //placing a test condition
+        SQL.Add('where ((p.whendeleted is null ) or ((p.whendeleted is not null ) and ((Select Distinct itemid from invline where itemid = p.itemid)is not null)) ) ');
+        Title2 := ', ' + sZeroIncluded;
+      end
+      else if (radOnlyZeros.Checked) then begin
+        SQL.Add('where ((grosssold >= -0.01) and (grosssold <= 0.01) and (amountsold = 0))');
+        Title2 := ', ' + sZeroOnly;
+      end;
+
+      if (radGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := Title2 + ', ' + sGroupItemOrder;
+      end
+      else if (radUnits.Checked) then begin
+        SQL.Add('order by amountsold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := Title2 + ', ' + sUnitSold;
+      end
+      else if (radPrice.Checked) then begin
+        SQL.Add('order by averageunitprice desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := Title2 + ', ' + sAvgUPrice;
+      end
+      else if (radGross.Checked) then begin
+        SQL.Add('order by grosssold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := Title2 + ', ' + sGrossSold;
+      end
+      else if (radDiscount.Checked) then begin
+        SQL.Add('order by discount desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := Title2 + ', ' + sDiscount;
+      end
+      else if (radNett.Checked) then begin
+        SQL.Add('order by nettsold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := Title2 + ', ' + sNetSold;
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pforb').AsString := '';
+        if (DBGridItemGroups.SelectedRows.Count > 1) then
         begin
-          ShowMsg(sAccountInactive);
-          if (prevAccountID = 0) then
-            DeselectAccount
-          else
-            GlbAccount.LoadAccount(prevAccountID, GlbTable.SaleCategoryID, CurrentTime, CurrentDay);
-          Exit;
+          ParamByName('pitemgroupid').AsString := GetSelectedIDString(DBGridItemGroups, 'itemgroupid');
+          Title2 := ', ' + sSelectedItemGroups + Title2;
+        end
+        else
+        begin
+          ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+          Title2 := ', ' + Glbs.ItemGroup + Title2;
         end;
-
-        if not GetSelectedAccount(GlbAccount.AccountID, False, True, prevAccountID, True) then
-          Exit;
-        BroadcastCDAMessage;
       end
       else begin
-        if (prevAccountID = 0) then
-          DeselectAccount
-        else
-          GlbAccount.LoadAccount(prevAccountID, GlbTable.SaleCategoryID, CurrentTime, CurrentDay);
-      end;
-    end;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.AccountClick(Sender: TObject);
-var
-  prevAccountID: Integer;
-begin
-  LogMessage(ltPaymentTrace, '410' + #9);
-  if (DoingTablePayment) then begin
-    Exit;
-  end;
-
-  if ((GlbEvent.EventID > 0) and (GlbEvent.AccountID > 0)) then
-  begin
-    ShowQuickMsg(sNoAccountChangeForEvents);
-    Exit;
-  end;
-
-  try
-
-    //if in a Goody discounted sale, disallow loading a different account
-    if InGoodyDiscountedSale then
-    begin
-      ShowQuickMsg(sNoAcctSelectionForGoodyDiscSale);
-      Exit;
-    end;
-
-    if (CanSelectAccount) then
-    begin
-      with dm.qrAccountButtons do
-      begin
-        KeyFieldByName('accountid').AsInteger := TfcCustomImageBtn(Sender).Tag;
-        if (not LookupKeyForFields) then
-        begin
-          ShowQuickMsg(sCannotFindCustAcct);
-          //DeselectAccount;  //lets leave current selected account as is
-          Exit;
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if (radFAndB.Checked) then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
         end
-        else
-        begin
-          GlbAccount.LookupAccountID := FieldByName('accountid').AsInteger;
-          prevAccountID := GlbAccount.AccountID;
-
-          ResetLoyaltyReward;
-
-          if not GetSelectedAccount(GlbAccount.LookupAccountID, False, True, prevAccountID, True) then
-            Exit;    
-        end;
-      end;
-    end;
-  finally
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdDiscountPercentClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '597' + #9);
-  if (DoingTablePayment) then begin
-    Exit;
-  end;
-
-  //if in a Goody discounted sale, don't allow discount to be changed
-  if InGoodyDiscountedSale then
-  begin
-    ShowQuickMsg(sCannotChangeGoodyDiscAmt);
-    Exit;
-  end;
-
-  if (GlbAccount.AccountID = 0) then begin
-    ShowQuickMsg(sSelectCustAcct);
-    Exit;
-  end;
-
-  if (AppDetails.OneBill and (TLList.Count > 0)) then
-  begin
-    Exit;  //for now, don't allow discount to be manually changed after the first tender is made
-  end;
-
-  if ((GlbPrivs[13].AvoidPINCheck) or (GlbLogin.LoginPIN <> 0) or (VerifyPinNo)) then
-  begin
-    if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode) )) then
-    if TLList.Count > 0 then
-      Exit;
-
-    if (GetDiscountPercent(FDiscountPercent)) then
-    begin
-      FOrigDiscountPercent := FDiscountPercent;
-      FUseItemDiscounts := False;
-      FUseDiscountAmount := False;
-      RecalculateDiscount := True;
-      LogMessage(ltPaymentTrace, '598' + #9);
-      CalculateAccTypeItemDiscount(UnInvoicedOlsToPay);
-
-      LogMessage(ltPaymentTrace, '599' + #9);
-      UpdateScreenAfterCalculateDiscount;
-
-      LogMessage(ltPaymentTrace, '593' + #9);
-      lblAllowItemLevelDiscount.Caption := sEditedDiscountApplied;
-
-      LogMessage(ltPaymentTrace, '428' + #9);
-      CalculateToPay;
-      LogMessage(ltPaymentTrace, '519' + #9);
-      AccountChange := True;// this is just to show the max limit mesage
-      RecalculateDiscount := False;
-    end;
-  end
-  else begin
-    exit;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdDiscountAmountClick(Sender: TObject);
-var
-  i, j: Integer;
-  SOL, OL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '600' + #9);
-  if (DoingTablePayment) then begin
-    Exit;
-  end;
-
-  //if in a Goody discounted sale, don't allow discount to be changed
-  if InGoodyDiscountedSale then
-  begin
-    ShowQuickMsg(sCannotChangeGoodyDiscAmt);
-    Exit;
-  end;
-
-  if (GlbAccount.AccountID = 0) then begin
-    ShowQuickMsg(sSelectCustAcct);
-    Exit;
-  end;
-
-  if (AppDetails.OneBill and (TLList.Count > 0)) then
-  begin
-    Exit;  //for now, don't allow discount to be manually changed after the first tender is made
-  end;
-
-  if ((GlbPrivs[13].AvoidPINCheck) or (GlbLogin.LoginPIN <> 0) or (VerifyPinNo)) then
-  begin
-    if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode))) then
-    if TLList.Count > 0 then
-      Exit;
-
-    if GetDiscountAmount(FToPay, FDiscountAmount) then
-    begin
-      if (FLimitMaximum) then
-      begin
-        if (FDiscountAmount > FMaxDiscount) then
-        begin
-          ShowQuickMsg(Format(sAcctLimit, [FormatCurrencySign(FMaxDiscount)]));
-          FDiscountAmount := FMaxDiscount;
-          FUseDiscountAmount := True;
-          LogMessage(ltPaymentTrace, '601' + #9 + 'FMaxDiscount=' + FloatToStr(FMaxDiscount));
-        end;
-      end;
-      FOrigDiscountAmount := FDiscountAmount;
-      FUseDiscountAmount := True;
-      FUseItemDiscounts := False;
-      RecalculateDiscount := True;
-      LogMessage(ltPaymentTrace, '594' + #9);
-      lblAllowItemLevelDiscount.Caption := sEditedDiscountApplied;
-      ClearItemLevelDiscounts(UnInvoicedOlsToPay);
-      if OLToPayList.Count = 0 then
-      begin
-        LogMessage(ltPaymentTrace, '602' + #9);
-        CalculateAccTypeItemDiscount(UnInvoicedOlsToPay);
-
-        LogMessage(ltPaymentTrace, '603' + #9);
-        UpdateScreenAfterCalculateDiscount;
-      end;
-
-      FDiscCalculator.OneBillDiscountAmount := FDiscountAmount;
-      if (AppDetails.OneBill) then
-      begin
-        LogMessage(ltPaymentTrace, '604' + #9);
-        ApplyItemLevelOneBillDiscountAmount;
-      end;
-
-      LogMessage(ltPaymentTrace, '429' + #9);
-      CalculateToPay;
-      LogMessage(ltPaymentTrace, '520' + #9);
-      RecalculateDiscount := False;
-
-      if (not AppDetails.OneBill) then
-      begin
-        for i:= 0 to OLToPayList.Count-1 do
-        begin
-          SOL := TOrderLine(OLToPayList.Items[i]);
-          for j:= 0 to UnInvoicedOlsToPay.Count-1 do
-          begin
-            OL := TOrderLine(UnInvoicedOlsToPay.Items[j]);
-            if (SOL.OrderLineID = OL.OrderLineID) then
-            begin
-              OL.AllowedDiscount := SOL.AllowedDiscount;
-              LogMessage(ltPaymentTrace, '605' + #9 + 'OL.OrderLineID=' + IntToStr(OL.OrderLineID) + ', OL.AllowedDiscount=' + FloatToStr(OL.AllowedDiscount));
-              break;
-            end;
-          end;
+        else if (radFOnly.Checked) then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
+        end
+        else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
         end;
       end;
 
-    end;
-  end
-  else begin
-    exit;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.ApplyItemLevelOneBillDiscountAmount;
-var
-  fAllowedDiscount: Currency;
-  OL, selectedOL: TOrderLine;
-  i, j: Integer;
-  DiscountPerOrderline: Currency;
-  RemainingDiscountAmount: Currency;
-begin
-  LogMessage(ltPaymentTrace, '472' + #9);
-  //FUseDiscountAmount should always be True, thus no need to work out Discount Scheme or Loyalty schemes.
-  
-  if ((GlbAccount.LimitMaximum) and (FDiscountAmount > GlbAccount.MaxDiscount)) then
-    RemainingDiscountAmount := GlbAccount.MaxDiscount
-  else
-    RemainingDiscountAmount := FDiscountAmount;
-
-  FDiscountAmount := 0;
-
-    for i := 0 to (UnInvoicedOlsToPay.Count - 1) do
-    begin
-      DiscountPerOrderline := GetRoundedUpDown(RemainingDiscountAmount / (UnInvoicedOlsToPay.Count-i), AppDetails.DecimalPlaces);
-      OL := UnInvoicedOlsToPay.Items[i];
-      if ((OL.ComboID > 0) and (OL.ComboGroupID > 0) and (OL.ComboIndex > 0)) then
-      begin
-        Continue;
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutletsTitle2 + Title2;
       end
-      else
-      begin
-        if (DiscountPerOrderline > OL.ToPay) then
-        begin
-          fAllowedDiscount := OL.ToPay;
-          if AppDetails.EnableFiscalPrinting then
-            fAllowedDiscount := OL.ToPay - 0.01; // in order to avoid 100 % discount on fiscal items
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
         end
-        else
-          fAllowedDiscount := DiscountPerOrderline;
-
-        RemainingDiscountAmount := RemainingDiscountAmount - fAllowedDiscount;
-
-        OL.AllowedDiscount := fAllowedDiscount;
-        for j:=0 to OLToPayList.Count-1 do
-        begin
-          selectedOL := TOrderLine(OLToPayList.Items[j]);
-          if ((Assigned(OL) and Assigned(selectedOL)) and
-            (OL.OrderLineID = selectedOL.OrderLineID)) then
-          begin
-            selectedOL.AllowedDiscount := fAllowedDiscount;
-            FDiscountAmount := FDiscountAmount + fAllowedDiscount;
-            break;
-          end;
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
         end;
-      end;
-    end;
-end;
-
-{******************************************************************************}
-procedure TformPaymentTable.cmdAmountToPayClick(Sender: TObject);
-var
-  OldQty, AmountPaid, AmountToPay, Allocated: Currency;
-  i: Integer;
-  aOL: TOrderLine;
-  ToPayChanged: Boolean;
-  AList: TList;
-
-  function CalculateAmountToPay: Currency;
-  var
-    j: Integer;
-  begin
-    LogMessage(ltPaymentTrace, '477' + #9);
-    Result := 0;
-    if (Assigned(AList)) then
-    begin
-      for j := 0 to (AList.Count - 1) do
-      begin
-        aOL := AList.Items[j];
-        LogMessage(ltPaymentTrace, '478' + #9 + 'aOL.ToPay=' + FloatToStr(aOL.ToPay));
-        Result := Result + aOL.ToPay;
-      end;
-    end;
-  end;
-begin
-  LogMessage(ltPaymentTrace, '475' + #9);
-  if (DoingTablePayment) then begin
-    LogMessage(ltPaymentTrace, '476' + #9);
-    Exit;
-  end;
-
-  if FSelectedItemsNotPaidFull then
-  begin
-    ShowMsg(sPayOffCurrentItemSelection);
-    Exit;
-  end;
-
-  if ((AppDetails.PaymentDisableSplitOnTender) and (TLList.Count > 0)) then
-    Exit;
-
-  if GlbEvent.EventID > 0 then
-  begin
-    ShowMsg(sNoAmountSplitForEventTransaction);
-    Exit;
-  end;
-
-  if (not sExternalAccountIntegration.CheckLoadedRedemptions) then Exit;
-
-  if not (PaymentOnSelectedItems or AmountSplitingStarted) then
-  begin
-    LogMessage(ltPaymentTrace, '479' + #9);
-    ClearTempItemList;
-  end;
-
-  if PaymentOnSelectedItems then
-  begin
-    LogMessage(ltPaymentTrace, '480' + #9);
-    ClearTempItemList;
-
-    LogMessage(ltPaymentTrace, '481' + #9);
-    CopyItemSToTempList;
-    AList := TempItemList;
-  end
-  else
-  begin
-    LogMessage(ltPaymentTrace, '482' + #9);
-    AList := UnInvoicedOlsToPay;
-  end;
-
-  //here you have to get total amount - already paid amount to split the amount again for the second time. For first split, FTOPAY is correct.
-  AmountToPay := CalculateAmountToPay;
-  LogMessage(ltPaymentTrace, '483' + #9 + 'AmountToPay=' + FloatToStr(AmountToPay));
-
-  if (GetAmountToPay (AmountToPay, AmountToPay, TLList.Count > 0)) then
-  begin
-    LogMessage(ltPaymentTrace, '484' + #9 + 'AmountToPay=' + FloatToStr(AmountToPay));
-    ItemsSelectedManually := True;
-
-    if AmountToPay = -999 then // clear out the due amount
-    begin
-      FRecordType := rtTenderedItems;
-      LogMessage(ltPaymentTrace, '430' + #9);
-      CalculateToPay;
-      LogMessage(ltPaymentTrace, '521' + #9);
-      FRecordType := rtBoth;
-      Exit;
-    end;
-
-    AmountSplitingStarted := True;
-    LogMessage(ltPaymentTrace, '485' + #9);
-    ClearAllOrderLines;
-    FPayment := 0;
-
-    i := 0;
-    Allocated := 0.00;
-
-    LogMessage(ltPaymentTrace, '486' + #9 + 'AList.Count=' + IntToStr(AList.Count));
-    while (i <= AList.Count - 1) and (Allocated < AmountToPay) do
-    begin
-      aOL := AList.Items[i];
-      LogMessage(ltPaymentTrace, '487' + #9 + 'i=' + IntToStr(i) + ', Allocated=' + FloatToStr(Allocated) + ', aOL.Qty=' + FloatToStr(aOL.Qty));
-
-      if aOL.Qty > 0 then
-      begin
-        if AddOrderLine(AList, i) then
-        begin
-          aOL := OLToPayList.Items[grdToPay.Row - 1];
-          LogMessage(ltPaymentTrace, '488' + #9 + 'aOL.Qty=' + FloatToStr(aOL.Qty) + ', aOL.QtyChanged=' + BoolToStr(aOL.QtyChanged, True) + ', aOL.UnitPrice=' + FloatToStr(aOL.UnitPrice) +
-            ', aOL.ToPay='+ FloatToStr(aOL.ToPay) + ', aOL.SalesTaxPercent='+ FloatToStr(aOL.SalesTaxPercent) + ', aOL.AllowedDiscount=' + FloatToStr(aOL.AllowedDiscount) +
-            ', aOL.LoyaltyFreeQty='+ FloatToStr(aOL.LoyaltyFreeQty) + ', aOL.LoyaltyFreeDiscount=' + FloatToStr(aOL.LoyaltyFreeDiscount));
-
-          ToPayChanged := False;
-          begin
-            if (AppDetails.TaxExclusivePrices) then
-            begin
-              LogMessage(ltPaymentTrace, '489' + #9);
-              if ((Allocated + ((aOL.ToPay * (100 + aOL.SalesTaxPercent)) / 100)) > AmountToPay) then
-              begin
-                LoyaltyReward.AvailableQty := LoyaltyReward.AvailableQty + aOL.LoyaltyFreeQty;
-                aOL.ToPay := ((AmountToPay - Allocated) * 100) / (100 + aOL.SalesTaxPercent);
-                ToPayChanged := True;
-                LogMessage(ltPaymentTrace, '490' + #9 + 'LoyaltyReward.AvailableQty=' + FloatToStr(LoyaltyReward.AvailableQty) + ', aOL.ToPay=' + FloatToStr(aOL.ToPay));
-              end;
-              Allocated := Allocated + ((aOL.ToPay * (100 + aOL.SalesTaxPercent)) / 100);
-              LogMessage(ltPaymentTrace, '491' + #9 + 'Allocated=' + FloatToStr(Allocated));
-            end
-            else
-            begin
-              AmountPaid := (Allocated + aOL.ToPay);
-              LogMessage(ltPaymentTrace, '492' + #9 + 'AmountPaid=' + FloatToStr(AmountPaid));
-              if (AmountPaid > AmountToPay) then begin
-                LoyaltyReward.AvailableQty := LoyaltyReward.AvailableQty + aOL.LoyaltyFreeQty;
-                aOL.ToPay := (AmountToPay - Allocated);
-                ToPayChanged := True;
-                LogMessage(ltPaymentTrace, '493' + #9 + 'LoyaltyReward.AvailableQty=' + FloatToStr(LoyaltyReward.AvailableQty) + ', aOL.ToPay=' + FloatToStr(aOL.ToPay));
-              end;
-              Allocated := Allocated + aOL.ToPay;
-              LogMessage(ltPaymentTrace, '494' + #9 + 'Allocated=' + FloatToStr(Allocated));
-            end;
-          end;
-
-          if (ToPayChanged) then
-          begin
-            aOL.QtyChanged := True;
-            OldQty := aOL.Qty;
-            if (AppDetails.EnableFiscalPrinting) then
-              aOL.ToPay := TruncateTo(aOL.ToPay, 2)
-            else
-              aOL.ToPay := CRoundTo(aOL.ToPay, 2);
-
-            if (aOL.UnitPrice > 0) then begin
-              aOL.Qty := CRoundTo(aOL.ToPay / aOL.UnitPrice, 4);
-            end
-            else begin
-              aOL.Qty := 0;
-            end;
-
-            aOL.AllowedDiscount := GetRoundedUpDown(aOL.AllowedDiscount * (aOL.Qty/OldQty), AppDetails.DecimalPlaces) ;
-            LogMessage(ltPaymentTrace, '495' + #9 + 'aOL.Qty=' + FloatToStr(aOL.Qty) + ', aOL.QtyChanged=' + BoolToStr(aOL.QtyChanged, True) + ', aOL.ToPay=' + FloatToStr(aOL.ToPay) +
-              ', aOL.AllowedDiscount=' + FloatToStr(aOL.AllowedDiscount));
-
-            if (LoyaltyReward.RewardOffer = roDiscount) and (LoyaltyReward.Processed) then
-            begin
-              aOL.LoyaltyFreeDiscount := GetRoundedUpDown(aOL.LoyaltyFreeDiscount * (aOL.Qty/OldQty), AppDetails.DecimalPlaces) ;
-              LogMessage(ltPaymentTrace, '496' + #9 + 'aOL.LoyaltyFreeDiscount=' + FloatToStr(aOL.LoyaltyFreeDiscount));
-            end;
-
-            AllocateItemLoyalty(aOL);
-            LogMessage(ltPaymentTrace, '497' + #9);
-            UpdateGrdToPayCells(grdToPay.Row);
-            LogMessage(ltPaymentTrace, '565' + #9);
-          end;
-        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
       end;
 
-      inc(i);
-    end;
+      BoolAsParam(ParamByName('returnpricelevels'), chkSalesIncludePriceLevels.Checked);
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
 
-    FRecordType := rtUnTenderedItems;
-    FPayment := 0;
-    txtPayment.Text := FormatCurrencyNoSign(FPayment);
-
-    LogMessage(ltPaymentTrace, '431' + #9);
-    CalculateToPay;
-    LogMessage(ltPaymentTrace, '498' + #9);
-    FRecordType := rtBoth;
-    RecalculateDiscount := False;
-  end;
-  BroadcastCDAMessage;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdAddPosClick(Sender: TObject);
-var
-  i, j: Integer;
-  IncludePos: Boolean;
-  ThePos: TSelectedPos;
-  aOL: TOrderLine;
-begin
-  if (DoingTablePayment) then begin   //Jon 25-02-2002
-    Exit;
-  end;
-
-  if (not sExternalAccountIntegration.CheckLoadedRedemptions) then Exit;
-  
-  if (OLToPayList.Count > 0) then begin // JEH 15/5/1
-    if (ShowConf(sClearAllFirst) = mrYes) then begin
-      ClearAllOrderLines;
-    end;
-  end;
-
-  if (GetSelectPos(IncludePos, ThePos) = mrOk) then begin
-    Update;
-
-    for i := 0 to UnInvoicedOlsToPay.Count - 1 do
-    begin
-      aOL := UnInvoicedOlsToPay.Items[i];
-      for j := 0 to 19 do
-      begin
-        if (ThePos[j] <> '') and (aOL.Positions = ThePos[j]) then
-        begin
-          AddOrderLine(UnInvoicedOlsToPay, i);
-          Break;
-        end;
-      end;
-    end;
-    grdItemAutoClick := True;
-    grdToPay.Row := 1;
-    LogMessage(ltPaymentTrace, '432' + #9);
-    CalculateToPay;
-    LogMessage(ltPaymentTrace, '522' + #9);
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdAccountNoLookupClick(Sender: TObject);
-var
-  tmpList: TList;
-  prevAccountID: Integer;
-begin
-  LogMessage(ltPaymentTrace, '411' + #9);
-
-  if not sExternalAccountIntegration.AllowOnetapAccounts then
-    Exit;
-
-  if ((GlbEvent.EventID > 0) and (GlbEvent.AccountID > 0)) then
-  begin
-    ShowQuickMsg(sNoAccountChangeForEvents);
-    Exit;
-  end;
-
-  //if in a Goody discounted sale, disallow loading a different account
-  if InGoodyDiscountedSale then
-  begin
-    ShowQuickMsg(sNoAcctSelectionForGoodyDiscSale);
-    Exit;
-  end;
-
-  tmpList := TList.Create;
-  ResetLoyaltyReward;
-  FDiscountPercent := 0;
-  FDiscountAmount := 0;
-  txtDiscountPercent.Text := '';
-  txtDiscountAmount.Text := '';
-
-  try
-    if (DoingTablePayment) then begin   //Jon 25-02-2002
-      Exit;
-    end;
-
-    if (CanSelectAccount) then
-    begin
-      if (AccountNoLookup) then
-      begin
-        prevAccountID := GlbAccount.AccountID;
-
-        if not GetSelectedAccount(GlbAccount.LookupAccountID, False, True, prevAccountID, True) then
-          Exit;
-      end;
-    end;
-  finally
-    tmpList.Clear;
-    tmpList.Free;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.TryLookupPaymentTableAccount(AccountID: Integer; AShowAcctScanned: Boolean = True; PromptLoyalty: Boolean = True; VerifyNO: Boolean = True);
-var
-  tmpList: TList;
-  prevAccountID: Integer;
-
-begin
-  LogMessage(ltPaymentTrace, '412' + #9);
-  tmpList := TList.Create;
-  ResetLoyaltyReward;
-  FDiscountPercent := 0;
-  FDiscountAmount := 0;
-  txtDiscountPercent.Text := '';
-  txtDiscountAmount.Text := '';
-
-  try
-    if (CanSelectAccount) then
-    begin //make sure accounts query set up
-      prevAccountID := GlbAccount.AccountID;
-      if not GetSelectedAccount(AccountID, AShowAcctScanned, PromptLoyalty, prevAccountID, VerifyNO) then
-      begin
-        if (AShowAcctScanned and (Trim(GlbScan.ScannedCode) <> '')) then
-          ShowQuickMsg(Format(sCustScctLookup, [GlbScan.ScannedCode]));
-
-        GlbAccount.AccountID := GlbTable.AccountID;
-      end;
-      BroadcastCDAMessage;
-    end;
-  finally
-    tmpList.Clear;
-    tmpList.Free;
-  end;
-end;
-
-{******************************************************************************}
-function TformPaymentTable.GetDue(IncludeExternalTenders: Boolean = True): Currency;
-var
-  i: Integer;
-  AlreadyPaying: Currency;
-  TL: TTL;
-  bAddTender, ItemsSelected: Boolean;
-begin
-  LogMessage(ltPaymentTrace, '265' + #9 + 'FToPay=' + FloatToStr(FToPay) + ', FSurcharge=' + FloatToStr(FSurcharge) + ', FDiscountAmount=' + FloatToStr(FDiscountAmount) +
-    ', FComboDiscount=' + FloatToStr(FComboDiscount) + ', FLoyaltyFreeItemDiscount=' + FloatToStr(FLoyaltyFreeItemDiscount) + ', FSalesTax=' + FloatToStr(FSalesTax) +
-    ', FTotalSubsidyAllowed=' + FloatToStr(FTotalSubsidyAllowed) + ', FHostSubsidy=' + FloatToStr(FHostSubsidy) +
-    ', GlbEvent.EventID=' + IntToStr(GlbEvent.EventID) + ', SubsidyCalc.IsHostTransaction=' + BoolToStr(SubsidyCalc.IsHostTransaction, True));
-
-  //calculate amount towards invoice(s) already paying
-  AlreadyPaying := 0;
-
-  ItemsSelected := PaymentOnSelectedItems or FSelectedItemsNotPaidFull or AmountSplitingStarted;
-
-  if (((FRecordType in [rtBoth, rtTenderedItems]) or (ItemsSelected)) and (TLList.Count > 0)) then
-  begin
-    LogMessage(ltPaymentTrace, '266' + #9);
-    for I := 0 to (TLList.Count - 1) do
-    begin
-      TL := TLList.Items[I];
-      if ((TL.TLType = TLTExternalProviders) and (not IncludeExternalTenders)) then
-        Continue;
-      bAddTender := (((not ItemsSelected ) or (ItemsSelected and (FTenderGrpID = TL.TenderGroupID))));
-      if bAddTender then
-        AlreadyPaying := AlreadyPaying + TL.TLPayment;
-    end;
-  end;
-  FGroupPayment := AlreadyPaying;
-  LogMessage(ltPaymentTrace, '267' + #9 + 'AlreadyPaying=' + FloatToStr(AlreadyPaying));
-
-  if ((not AppDetails.TaxExclusivePrices) and ((FToPay + FSurcharge - FDiscountAmount - FComboDiscount - FLoyaltyFreeItemDiscount - AlreadyPaying + FTotalSubsidyAllowed) > 0)) then
-  begin
-    if ((GlbEvent.EventID <= 0) or ( SubsidyCalc.IsHostTransaction)) then
-      Result := FToPay + FSurcharge - FDiscountAmount - FComboDiscount - FLoyaltyFreeItemDiscount - AlreadyPaying - FTotalSubsidyAllowed
-    else
-      Result := FToPay + FSurcharge  - FComboDiscount - FLoyaltyFreeItemDiscount - AlreadyPaying-FHostSubsidy
-  end
-  else if ((AppDetails.TaxExclusivePrices) and ((FToPay + FSurcharge - FDiscountAmount -  FComboDiscount - FLoyaltyFreeItemDiscount + FTotalSubsidyAllowed + FSalesTax - AlreadyPaying) > 0)) then
-  begin
-    if ((GlbEvent.EventID <= 0) or ( SubsidyCalc.IsHostTransaction)) then
-      Result := FToPay + FSurcharge - FDiscountAmount - FComboDiscount - FLoyaltyFreeItemDiscount + FSalesTax - AlreadyPaying - FTotalSubsidyAllowed
-    else
-      Result := FToPay + FSurcharge  - FComboDiscount - FLoyaltyFreeItemDiscount + FSalesTax - AlreadyPaying - FHostSubsidy
-  end
-  else
-  begin
-    Result := 0.00;
-  end;
-
-  Result := GetRoundedUpDown(Result, AppDetails.DecimalPlaces);
-  LogMessage(ltPaymentTrace, '268' + #9 + 'Result=' + FloatToStr(Result));
-end;
-
-{******************************************************************************}
-procedure TformPaymentTable.cmdEditClick(Sender: TObject);
-var
-  TL: TTL;
-begin
-  if ((DoingTablePayment) or (TLList.Count = 0)) then begin   //Jon 25-02-2002
-    Exit;
-  end;
-
-  if AmountSplitingStarted then
-  begin
-    ShowMsg(sEdtTenderNotAllowedForAMoutSplit);
-    Exit;
-  end;
-
-  if PaymentOnSelectedItems then
-  begin
-    ShowMsg(sEdtTenderNotAllowedForItemSelection);
-    Exit;
-  end;
-
-  //if EFTPOST integrated check that not an EFTPOS line, if is showmsg, then exit
-  if AppDetails.EftposIntegrated then
-  begin
-    TL := TLList.Items[grdTLs.Row-1];
-    if (TL.TLType in [TLTEFTPOS, TLTVisaEFTPOS, TLTAmexEFTPOS, TLTDinersEFTPOS, TLTMasterCardEFTPOS, TLTBarterCard]) then begin
-      ShowMsg(sCannotEditEftPosTenderLine);
-      Exit;
-    end;
-  end;
-
-  //cannot edit a wiGroup tender line
-  if AppDetails.wiGroupEnabled then
-  begin
-    TL := TLList.Items[grdTLs.Row-1];
-    if TL.TLType = TLTwiGroup then
-    begin
-      ShowMsg(Format(sCannotEditwiGroupTenderLine, [swiGroupTL]));
-      Exit;
-    end;
-  end;
-
-  if (TTL(TLList.Items[grdTLs.Row-1]).TLType = TLTExternalProviders) then
-    ShowExternalAccounts(TTL(TLList.Items[grdTLs.Row-1]))
-  else
-    EditTenderLine;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.LoadTLs(LAction: TLA);
-var
-  I: Integer;
-  TL: TTL;
-begin
-  LogMessage(ltPaymentTrace, '258' + #9 + 'LAction=' + IntToStr(Ord(LAction)));
-  with grdTLs do
-  begin
-    if (TLList.Count = 0) then
-    begin
-      LogMessage(ltPaymentTrace, '259' + #9);
-      RowCount := 2;
-      Cells[0, 1] := '';
-      Cells[1, 1] := '';
-      Cells[2, 1] := '';
-      Cells[3, 1] := '';
-      Cells[4, 1] := '';
-      Cells[5, 1] := '';
-      Row := 1;
-    end
-    else
-    begin
-      LogMessage(ltPaymentTrace, '260' + #9);
-      RowCount := (TLList.Count + 1);
-      for I := 0 to (TLList.Count - 1) do begin
-        TL := TLList.Items[I];
-        TL.PaymentType := ptNormal;
-        if AmountSplitingStarted then
-        begin
-          TL.PaymentType := ptAmountSplit;
-        end
-        else if PaymentOnSelectedItems then
-        begin
-          TL.PaymentType := ptItemsSelected;
-        end;
-
-        LogMessage(ltPaymentTrace, '261' + #9 + 'TL.PaymentType=' + IntToStr(Ord(TL.PaymentType)) + ', TL.TLType=' + IntToStr(Ord(TL.TLType)) +
-          ', TL.TLPayment=' + FloatToStr(TL.TLPayment) + ', TL.TLTip=' + FloatToStr(TL.TLTip) + ', TL.TLTender=' + FloatToStr(TL.TLTender) +
-          ', TL.TLChange=' + FloatToStr(TL.TLChange) + ', TL.TLProvider=' + TL.TLProvider + ', TL.TLNotes=' + TL.TLNotes);
-
-        if (TL.TLType = TLTExternalProviders) and (TL.TLProvider <> '') then
-          Cells[0, I+1] := TL.TLProvider
-        else
-          Cells[0, I+1] := GetTLTType(TL.TLType);
-        Cells[1, i+1] := TL.TLNotes;
-        Cells[2, i+1] := FormatCurrencyNoSign(TL.TLPayment);
-        Cells[3, i+1] := FormatCurrencyNoSign(TL.TLTip);
-        Cells[4, i+1] := FormatCurrencyNoSign(TL.TLTender);
-        Cells[5, i+1] := FormatCurrencyNoSign(TL.TLChange);
-      end;
-    end;
-    if LAction = LAAdd then Row := RowCount-1;
-  end;
-
-  LogMessage(ltPaymentTrace, '262' + #9);
-  BuildTenderSurchargeList;
-
-  LogMessage(ltPaymentTrace, '263' + #9);
-  RecalculateTotals;
-  LogMessage(ltPaymentTrace, '264' + #9);
-end;
-{******************************************************************************}
-function TformPaymentTable.EFTPOSTransExists: Boolean;
-var
-  i, iCount, iErr: Integer;
-  TL: TTL;
-begin
-  LogMessage(ltPaymentTrace, '613' + #9);
-  Result := False;
-
-  //if EFTPOS integrated check that there are NO EFTPOS lines, if is showmsg, then exit
-  if (AppDetails.EftposIntegrated) then begin
-    Result := TLList.EFTPOSTransExists;
-  end;
-
-  if Result and AppDetails.EnableFiscalPrinting then
-  if (TLList.Count > 0) then
-  begin
-    SWBEncryption.AuxiliaryData.TEFReferences := '';
-    for I := 0 to (TLList.Count - 1) do
-    begin
-      TL := TLList.Items[I];
-      if (TL.IsEFTPOSTrans) then
-      begin
-        Val(SWBEncryption.AuxiliaryData.TEFCount, iCount, iErr);
-        Inc(iCount);
-        SWBEncryption.AuxiliaryData.TEFCount := IntToStr(iCount);
-        if Trim(SWBEncryption.AuxiliaryData.TEFReferences) = '' then
-          SWBEncryption.AuxiliaryData.TEFReferences := Trim(TL.EFTPOSTxnRef) //+ ':' + Trim(TL.NSUNumber)
-        else
-          SWBEncryption.AuxiliaryData.TEFReferences := SWBEncryption.AuxiliaryData.TEFReferences + ',' +  Trim(TL.EFTPOSTxnRef);   // + ':' + Trim(TL.NSUNumber);
-      end;
-    end;
-  end;
-end;
-{******************************************************************************}
-function TformPaymentTable.TenderTypeExists(TLType: TTLT): Boolean;
-begin
-  Result := TLList.TenderTypeExists(TLType);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.ClearAllTenderLines;
-var
-  i: Integer;
-  TL: TTL;
-begin
-  LogMessage(ltPaymentTrace, '455' + #9);
-  for i := TLList.Count - 1 downto 0 do
-  begin
-    TL := TLList.Items[i];
-    TL.PaymentType := ptNormal;  //since external account tenders are protected
-    DeleteOLsOfTender(TL, TL.TenderSeqNo);
-  end;
-  if TLList.Count = 0 then
-    AmountSplitingStarted := False;
-  TLList.Clear;
-  LoadTLs(LAClearAll);
-  FTenderSeqID := 0;
-  FTenderGrpID := 1;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.SetTLCols;
-begin
-  LogMessage(ltPaymentTrace, '452' + #9);
-  with grdTLs do begin
-    ColCount := 6;
-
-    ColWidths[0] := 86;
-    ColWidths[1] := 59;
-    ColWidths[2] := 57;
-    ColWidths[3] := 57;
-    ColWidths[4] := 57;
-    ColWidths[5] := 57;
-
-    Cells[0, 0] := sType;
-    Cells[1, 0] := sDetails;
-    Cells[2, 0] := sPayment;
-    Cells[3, 0] := sTip;
-    Cells[4, 0] := sTender;
-    Cells[5, 0] := sChange;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.grdTLsDblClick(Sender: TObject);
-begin
-  cmdEditClick(nil);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.PaymentTableCashCam;
-var
-  I: Integer;
-  Line: string;
-  TL: TTL;
-
-begin
-  WipeCashCamTransRecord;
-  with CashCamTransRecord do begin
-    TransType := 'Payment tab ' + IntToStr(GlbTable.TableNo);
-    if WBTerminalLogins.QueryType <> qtLoginsTerminal then begin
-      FilterQuery(dm.qrTerminalLogins, qtLoginsTerminal);
-    end;
-    Staff := dm.qrTerminalLogins.FieldByName('staffname').AsString;
-    if (txtAccountName.Text <> '') then begin
-      Items.Add(ConcatItemTender('Purchase', FToPay));
-      Items.Add(ConcatItemTender('Discount', -(FDiscountAmount+FComboDiscount)));
-      Items.Add('  ' + txtAccountName.Text);
-    end;
-    Items.Add(ConcatItemTender('Total', FToPay - FComboDiscount -FDiscountAmount));
-
-    for I := 0 to (TLList.Count - 1) do begin
-      TL := TLList.Items[I];
-      Line := ConcatItemTender(GetTLTType(TL.TLType), TL.TLTender);
-      TenderLines.Add(Line);
-    end;
-    if (OnAccount) then begin
-      TenderLines.Add(ConcatItemTender(txtAccountName.Text, FStillDue));
-    end;
-    Change := FChange;
-    DoCashCamTrans;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdAuthoriseClick(Sender: TObject);
-var
-  TheCurrentLoginID: Integer;
-  CurrentLoginID: Integer;
-  CurrentLoginPIN: Integer;
-  CurrentTillID: Integer;
-  CurrentTillDriverName: string;
-  CurrentTillDrawkickString: string;
-  CurrentStaffID: Integer;
-  CurrentStaffNo: Integer;
-  CurrentStaffName: string;
-  DidChangeAuthorisation: Boolean;
-
-begin
-  LogMessage(ltPaymentTrace, '534' + #9);
-  if (DoingTablePayment) then begin   //Jon 25-02-2002
-    Exit;
-  end;
-
-  inherited;
-  TheCurrentLoginID := dm.qrTerminalLogins.FieldByName('loginid').AsInteger;
-
-  CurrentLoginID := GlbLogin.LoginID;
-  CurrentLoginPIN := GlbLogin.LoginPIN;
-  CurrentStaffID := GlbLogin.StaffID;
-  CurrentStaffNo := GlbLogin.StaffNo;
-  CurrentStaffName := GlbLogin.StaffName;
-  CurrentTillID := GlbLogin.TillID;
-  CurrentTillDriverName := GlbLogin.TillDriverName;
-  CurrentTillDrawkickString := GlbLogin.TillDrawKickString;
-
-  DidChangeAuthorisation := False;
-
-  CancelLoginSession;
-  if (SelectName(True, False, True)) then begin
-    ManagerAuthorise.Authorise := True;
-    ManagerAuthorise.AuthoriseLoginID := GlbLogin.LoginID;
-    ManagerAuthorise.AuthorisePriv6 := VerifyPriv(6);
-    ManagerAuthorise.AuthoriseAccountRank := GlbLogin.RankAccount;
-    ManagerAuthorise.AuthoriseAccChargeRank := GlbLogin.RankAccount;
-    ManagerAuthorise.AuthoriseAccPaymentRank := GlbLogin.RankAccount;
-    ManagerAuthorise.AuthorisePriv13 := VerifyPriv(13);
-    DidChangeAuthorisation := True;
-  end;
-
-  if ((dm.qrTerminalLogins.FieldByName('loginid').AsInteger <> CurrentLoginID) or (DidChangeAuthorisation)) then begin
-    //Set everything the way it was before;
-
-    dm.qrTerminalLogins.First;
-    while ((not dm.qrTerminalLogins.Eof) and (dm.qrTerminalLogins.FieldByName('loginid').AsInteger <> TheCurrentLoginID)) do begin
-      dm.qrTerminalLogins.Next;
-    end;
-    GlbLogin.LoginID := CurrentLoginID;
-    GlbLogin.LoginPIN := CurrentLoginPIN;
-    GlbLogin.StaffID := CurrentStaffID;
-    GlbLogin.StaffNo := CurrentStaffNo;
-    GlbLogin.StaffName := CurrentStaffName;
-    GlbLogin.TillID := CurrentTillID;
-    GlbLogin.TillDriverName := CurrentTillDriverName;
-    GlbLogin.TillDrawKickString := CurrentTillDrawkickString;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.ShowPaymentTable;
-begin
-  LogMessage(ltPaymentTrace, '334' + #9);
-  FForceUnSelectAccount := False;
-  FOneBill := AppDetails.OneBill;
-  FoundFirstLoyaltyFreeItem := false;
-  if Assigned(FDiscCalculator) then
-  begin
-    LogMessage(ltPaymentTrace, '335' + #9);
-    FDiscCalculator.ClearItemLevelDiscounts;
-  end;
-  PaymentOnSelectedItems := False;
-  AmountSplitingStarted := False;
-  sExternalAccountIntegration.ClearPresentedCards;   //do now, so Tenderline are unprotected so can be cleared
-
-  if AppDetails.wiGroupEnabled then
-    wiGroupPOSSrv.ClearPayment;
-
-  LogMessage(ltPaymentTrace, '336' + #9);
-  ClearAllOrderLines;
-
-  LogMessage(ltPaymentTrace, '337' + #9);
-  ClearAllTenderLines;
-
-  LogMessage(ltPaymentTrace, '338' + #9);
-  ClearAllSurcharges;
-
-  IniGoodyTrans;
-
-  FRecordType := rtBoth;
-  if AppDetails.EnableFiscalPrinting then
-  begin
-    FCPFNumber := GlbTable.CPFNumber;
-    if ((Trim(GlbTable.CPFNumber) = '') and (GlbTable.AccountID <= 0 )and AppDetails.FiscalIsCFPRequired) then
-    begin
-      if CheckPrinterFunctions then
-      begin
-        if AppDetails.FiscalIsCFPRequired then
-          GetCPFNumber(False);
-      end;
-    end
-    else
-      CheckPrinterFunctions;
-  end;
-
-  Screen.Cursor := crHourGlass;
-  try
-    LogMessage(ltPaymentTrace, '339' + #9);
-    InitialiseAccountInfo(True, False);
-    SetCurrentTime;
-    with dm.qrOLsToPay do
-    begin
-      Close;
-      ParamByName('thegroupid').AsInteger := GlbTable.GroupID;
-      ParamByName('IsFiscal').AsInteger := Integer(AppDetails.EnableFiscalPrinting);
       Open;
     end;
 
-    LogMessage(ltPaymentTrace, '340' + #9);
-    LoadAllOlsToPay;
-
-    LogMessage(ltPaymentTrace, '341' + #9);
-    SetComboColourIndex(UnInvoicedOlsToPay);
-
-    LogMessage(ltPaymentTrace, '342' + #9);
-    AddAllOrderLines;
-
-    if GlbEvent.EventID > 0 then
-    begin
-      LogMessage(ltPaymentTrace, '343' + #9);
-      ApplySubsidyOnItems
-    end
-    else if GlbAccount.AccountID > 0 then
-    begin
-      LogMessage(ltPaymentTrace, '344' + #9);
-      InitialiseAccountInfo(False, True, False);
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sSalesRepDlgTitle;
+      SaveDialog.FileName := 'Sales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRSales.WBCSV.FileName := SaveDialog.FileName;
+        formQRSales.WBCSV.OpenToWrite;
+      end;
     end;
 
-    VisibleWindow := vwTender;
-    ManagerAuthorise.Authorise := False;
+    formQRSales.QRSales.ReportTitle := sSalesRepTitle;
+    if chkSalesIncludePriceLevels.Checked then
+    formQRSales.QRSales.Page.Orientation := TPrinterOrientation(1)    //poLandscape
+    else
+    formQRSales.QRSales.Page.Orientation := TPrinterOrientation(0);   //poPortrait
+    formQRSales.QRSales.Preview;
   finally
-    Screen.Cursor := crDefault;
+    formQRSales.Free;
   end;
-  LastPayment := 0;
-  LastThroughAccount := False;
-  LastOnAccount := False;
-  IsNormalLoyalty := True; //This is set to false when zapa is overriding discounts!
-  LogMessage(ltPaymentTrace, '345' + #9);
 end;
 {******************************************************************************}
-procedure TformPaymentTable.txtToPayEnter(Sender: TObject);
+procedure TformReports.ShowOrdersReport;
 begin
-  //jeh 12.5.1
-  //DoCalcQty := True;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.txtToPayClick(Sender: TObject);
-begin
-//  txtToPay.SelectAll;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.txtToPayChange(Sender: TObject);
-var
-  TheTotal: Currency;
-  OldQty, ToPayQty: Currency;
-  aOL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '552' + #9);
-  ToPayString := txtToPay.Text;
-  if (not JustSelected) then begin
-    if (txtToPay.Text = '') or (ConvertToCurr(txtToPay.Text) = 0.00) then begin
-      if (txtToPay.Text = '') then txtToPay.Text := '0.00';
-      exit;
-    end
-    else begin
-      try
-        aOL := OLToPayList.Items[grdToPay.Row - 1];
-        if ((ConvertToCurr(txtToPay.Text) > (aOL.Due + 0.005)) or
-            (ConvertToCurr(txtToPay.Text) > 99999999.99)) then begin
-          if DoCalcToPay then begin
-            ShowQuickMsg(sEnterValidQuantity);
-            txtQty.Text := '';
-            txtToPay.Text := '0.00';
-          end
-          else begin
-            ShowQuickMsg(sEnterValidAmtToPay);
-          end;
-          Exit;
-        end;
+  try
+    formQROrders := TformQROrders.Create(Application);
+    Title1 := sOrdersRepTitle;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
 
-        if ((LoyaltyReward.LoyaltyRewardID > 0) and (LoyaltyReward.RewardOffer = roItem) and (aOL.LoyaltyItemID > 0) and (aOL.ComboID <= 0)) then begin
-          LoyaltyReward.AvailableQty := LoyaltyReward.AvailableQty + aOL.LoyaltyFreeQty;
-        end;
-
-        if (GetRoundedUpDown(aOL.Due, AppDetails.DecimalPlaces) = GetRoundedUpDown(ConvertToCurr(txtToPay.Text), AppDetails.DecimalPlaces)) then begin
-          aOL.ToPay := GetRoundedUpDown(aOL.Due, AppDetails.DecimalPlaces);
-        end
-        else begin
-          aOL.ToPay := GetRoundedUpDown(ConvertToCurr(txtToPay.Text), AppDetails.DecimalPlaces);   
-        end;
-
-        aOL.QtyChanged := True;
-
-        OldQty := aOL.Qty;
-        if (aOL.UnitPrice > 0) then
-        begin
-          aOL.Qty := CRoundTo(aOL.ToPay / aOL.UnitPrice, 4);
-        end
-        else begin
-          aOL.Qty := 0;
-        end;
-
-        aOL.AllowedDiscount := GetRoundedUpDown(aOL.AllowedDiscount, AppDetails.DecimalPlaces);
-        aOL.SubsidyAllowed := GetRoundedUpDown(aOL.SubsidyAllowed, AppDetails.DecimalPlaces);
-        if OldQty <> aOL.Qty then
-        begin
-          aOL.AllowedDiscount := GetRoundedUpDown(aOL.AllowedDiscount * (aOL.Qty/OldQty), AppDetails.DecimalPlaces);
-          aOL.SubsidyAllowed := GetRoundedUpDown(aOL.SubsidyAllowed * (aOL.Qty/OldQty), AppDetails.DecimalPlaces);
-        end;
-
-        LogMessage(ltPaymentTrace, '553' + #9);
-        AllocateItemLoyalty(aOL);
-        LogMessage(ltPaymentTrace, '554' + #9);
-        UpdateGrdToPayCells(grdToPay.Row);
-        LogMessage(ltPaymentTrace, '567' + #9);
-        DoCalcQty := not DoCalcToPay;
-
-      except on e: exception do begin
-        if DoCalcToPay then begin
-          ShowQuickMsg(sEnterValidQuantity);
-          txtQty.Text := '';
-        end
-        else
-          ShowQuickMsg(sEnterValidAmtToPay);
-      end; end;
+    if (not CheckDate) then begin
+      Exit;
     end;
-  end;
-  if not ReloadItems then
-  begin
-    LogMessage(ltPaymentTrace, '433' + #9);
-    CalculateToPay;
-    LogMessage(ltPaymentTrace, '523' + #9);
-  end;
 
-  //if not in txtQty, then calc qty as to pay changes
-  if (DoCalcQty) and (not QtyChangedManully) then begin
-    if (OLToPayList.Count > 0) then begin
-      aOL := OLToPayList.Items[grdToPay.Row - 1];
-      if (txtToPay.Text <> ToString) and (ToPayString <> '') then
-        txtToPay.Text := ToPayString;
+    with dm.qrOrders do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select gio.outletid, gio.outletname, gio.remotelocationid, gio.remotelocationname,');
+      SQL.Add('  gio.forb, gio.itemgroupid, gio.itemgroupabbrev,');
+      SQL.Add('  gio.itemid, gio.itemabbrev, gio.itemgrouporder, gio.itemorder, i.linkcode,');
+      SQL.Add('  gio.qtystock, gio.qtywasted, gio.nettqty, gio.avprice, gio.nett,');
+      SQL.Add('  gio.superitemgroupid, gio.superitemgroup, gio.superitemgroupabbrev, gio.superitemgrouporder, gio.hideforb');
+      SQL.Add('  from getitemorders (:poutletid, :premotelocationid, :pforb, :pitemgroupid, :fromtime, :totime) gio');
+      SQL.Add('  inner join item i on (gio.itemid = i.itemid)');
 
-      TheTotal := (aOL.OLQty * aOL.UnitPrice);
-      if (TheTotal <> 0) then begin
-        ToPayQty := CRoundTo((GetRoundedUpDown(ConvertToCurr(txtToPay.Text), 2) / TheTotal) * aOL.OLQty, 3);
+      if (radOGroup.Checked) then begin
+        SQL.Add('order by gio.outletname, gio.remotelocationname, gio.superitemgrouporder, gio.forb desc, gio.itemgrouporder, gio.itemorder');
+        OrdersHeader := 'Orders (By Group / Item Order)';
+      end
+      else if (radOUnits.Checked) then begin
+        SQL.Add('order by gio.nettqty desc, gio.outletname, gio.remotelocationname, gio.superitemgrouporder, gio.forb desc, gio.itemgrouporder, gio.itemorder');
+        OrdersHeader := 'Orders (By Units)';
+      end
+      else if (radOPrice.Checked) then begin
+        SQL.Add('order by gio.avprice desc, gio.outletname, gio.remotelocationname, gio.superitemgrouporder, gio.forb desc, gio.itemgrouporder, gio.itemorder');
+        OrdersHeader := 'Orders (By Average Price)';
+      end
+      else if (radOValue.Checked) then begin
+        SQL.Add('order by gio.nett desc, gio.outletname, gio.remotelocationname, gio.superitemgrouporder, gio.forb desc, gio.itemgrouporder, gio.itemorder');
+        OrdersHeader := 'Orders (By Value)';
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutletsTitle2;
       end
       else begin
-        ToPayQty := 0;
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
       end;
-      txtQty.Text := FormatFloat(QTYFORMAT, ToPayQty);
-    end
-    else begin
-      txtQty.Text := '';
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pforb').AsString := '';
+        if (DBGridItemGroups.SelectedRows.Count > 1) then
+        begin
+          ParamByName('pitemgroupid').AsString := GetSelectedIDString(DBGridItemGroups, 'itemgroupid');
+          Title2 := Title2 + ', ' + sSelectedItemGroups;
+          formQROrders.MultipleItemGroups := True;
+        end
+        else
+        begin
+          ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+          Title2 := Title2 + ', ' + Glbs.ItemGroup;
+        end;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if (radFAndB.Checked) then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := Title2 + ', ' + sFoodBev;
+        end
+        else if (radFOnly.Checked) then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := Title2 + ', ' + sFood;
+        end
+        else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := Title2 + ', ' + sBev;
+        end;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
     end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sOrdRepDlgTitle;
+      SaveDialog.FileName := 'Orders' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQROrders.WBCSV.FileName := SaveDialog.FileName;
+        formQROrders.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQROrders.QROrders.ReportTitle := sOrdRepTitle;
+    formQROrders.QROrders.Preview;
+  finally
+    formQROrders.Free;
   end;
-  RecalculateDiscount := False;
 end;
 {******************************************************************************}
-procedure TformPaymentTable.txtToPayExit(Sender: TObject);
+procedure TformReports.ShowVoidsReport;
 begin
-  LogMessage(ltPaymentTrace, '606' + #9);
-//
-end;
-{******************************************************************************}
-procedure TformPaymentTable.txtQtyEnter(Sender: TObject);
-begin
-  //jeh 12.5.1
-  DoCalcToPay := True;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.txtQtyClick(Sender: TObject);
-begin
-  //jeh 13/5/1
-//  txtQty.SelectAll;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.txtQtyChange(Sender: TObject);
-var
-  //akm 12.5.1
-  Err: Integer;
-  TheQty: Extended;
-  TheUnitPrice: Currency;
-  ToPay: Currency;
-begin
-  LogMessage(ltPaymentTrace, '612' + #9);
-  QtyChangedManully := True;
-//  akm 12.5.1 - if not in txtToPay, then set change value as qty changes
-  if (DoCalcToPay) then
-  begin
-    if (OLToPayList.Count > 0) then
-    begin
-      if (txtQty.Text = '') then
-      begin
-        TheQty := 0.00;
+  try
+    formQRVoids := TformQRVoids.Create(Application);
+    Title1 := sVoidsTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrVoidLines do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getitemvoids (:poutletid, :premotelocationid, :pforb, :pstaffid, :pitemgroupid, :reporttype, :fromtime, :totime)');
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutletsTitle2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radVoidsRefunds.Checked) then begin
+        SQL.Add('where fixedvoidreasonid = 1 or cashsalerefund = 1');
+        Title2 := ', Refunds Only';
+      end
+      else if (radDriveThrough.Checked) then begin
+        SQL.Add('where fixedvoidreasonid = 2 ');
+        Title2 := ', Drive Through';
+      end
+      else if (radVoidClearitem.Checked) then begin
+        SQL.Add('where fixedvoidreasonid = 3 ');
+        Title2 := ', Cleared Items';
+      end
+      else if (radVoidCancelledTrans.Checked) then begin
+        SQL.Add('where fixedvoidreasonid = 4 ');
+        Title2 := ', Cancelled Transactions';
+      end;
+
+      if (radStaffAll.Checked) then begin
+        ParamByName('pstaffid').AsInteger := -1;
       end
       else
       begin
-        Val(txtQty.Text, TheQty, Err);
-        if (Err<>0) then
+        if (DBGridStaffMembers.SelectedRows.Count > 1) then
         begin
-          TheQty := 0.00;
-          txtToPay.Text := '0.00';
+          ParamByName('pstaffid').AsString := GetSelectedIDString(DBGridStaffMembers, 'staffid');
+        end
+        else
+        begin
+          ParamByName('pstaffid').AsInteger := Glbs.StaffID;
         end;
       end;
-      if (TheQty <> 0.00) then
-      begin
-        TheUnitPrice := TOrderLine(OLToPayList[grdToPay.Row-1]).UnitPrice;
-        ToPay := (TheQty * TheUnitPrice);
-        //txtToPay.Text := FormatFloat('###,###,##0.00', ToPay);
-        txtToPay.Text := FormatCurrencyNoSign(ToPay);
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pforb').AsString := '';
+        if (DBGridItemGroups.SelectedRows.Count > 1) then
+        begin
+          ParamByName('pitemgroupid').AsString := GetSelectedIDString(DBGridItemGroups, 'itemgroupid');
+          Title2 := Title2 + ', ' + sSelectedItemGroups;
+        end
+        else
+        begin
+          ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+          Title2 := Title2 + ', ' + Glbs.ItemGroup;
+        end;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if (radFAndB.Checked) then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := Title2 + ', ' + sFoodBev;
+        end
+        else if (radFOnly.Checked) then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := Title2 + ', ' + sFood;
+        end
+        else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := Title2 + ', ' + sBev;
+        end;
       end;
+
+      if (radVStaff.Checked) then begin
+        SQL.Add('order by whovoid, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder, whenvoid, outletname, remotelocationname');
+        Title2 := Title2 + ', ' + sByStaff;
+      end
+      else if (radVWhen.Checked) then begin
+        SQL.Add('order by whenvoid, whovoid, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := Title2 + ', ' + sByDateTime;
+      end
+      else if (radVGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder, whovoid, whenvoid');
+        Title2 := Title2 + ', ' + sByGroupOrder;
+      end
+      else if (radVVoided.Checked) then begin
+        SQL.Add('order by qtyvoided desc, whovoid, whenvoid, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := Title2 + ', '+ sByUnitsVoided;
+      end
+      else if (radVWasted.Checked) then begin
+        SQL.Add('order by qtywasted desc, whovoid, whenvoid, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := Title2 + ', ' + sByUnitsWasted;
+      end
+      else if (radVPrice.Checked) then begin
+        SQL.Add('order by unitprice desc, whovoid, whenvoid, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := Title2 + ', ' + sByUnitsPrice;
+      end
+      else if (radVValue.Checked) then begin
+        SQL.Add('order by nett desc, whovoid, whenvoid, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := Title2 + ', ' + sByVoidValue;
+      end;
+
+      if (radVoidsVoidsOnly.Checked) then begin
+        ParamByName('reporttype').AsInteger := 1;
+      end
+      else if (radVoidsWastageOnly.Checked) then begin
+        ParamByName('reporttype').AsInteger := 2;
+      end
+      else begin
+        ParamByName('reporttype').AsInteger := 0;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sVoidDlgTitle;
+      SaveDialog.FileName := 'Voids' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRVoids.WBCSV.FileName := SaveDialog.FileName;
+        formQRVoids.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRVoids.QRVoids.ReportTitle := sVoidRepTitle;
+    formQRVoids.QRVoids.Preview;
+  finally
+    formQRVoids.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowAllStaffOrders;
+begin
+  try
+    formQRAllStaffOrders := TformQRAllStaffOrders.Create(Application);
+
+    if (radStaffAll.Checked) then begin
+      Title1 := sAllStaffOrdTitle1;
+    end
+    else if (DBGridStaffMembers.SelectedRows.Count > 1) then
+    begin
+      Title1 := sSelectedStaff + sOrdRepTitle1;
+    end
+    else
+    begin
+      Title1 := Glbs.FirstName + ' ' + Glbs.Surname + sOrdRepTitle1;
+    end;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrAllStaffOrders do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getitemorderswithstaff (:poutletid, :premotelocationid, :pforb, :pstaffid, :psalecategoryid, :pitemgroupid, :fromtime, :totime)');
+
+      if (radOGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, staffid, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        OrdersHeader := 'Orders (By Group / Item Order)';
+      end
+      else if (radOUnits.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, staffid, nettqty desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        OrdersHeader := 'Orders (By Units)';
+      end
+      else if (radOPrice.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, staffid, avprice desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        OrdersHeader := 'Orders (By Average Price)';
+      end
+      else if (radOValue.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, staffid, nett desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        OrdersHeader := 'Orders (By Value)';
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutlets;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radStaffAll.Checked) then begin
+        ParamByName('pstaffid').AsInteger := -1;
+      end
+      else begin
+        if (DBGridStaffMembers.SelectedRows.Count > 1) then
+        begin
+          ParamByName('pstaffid').AsString := GetSelectedIDString(DBGridStaffMembers, 'staffid');
+          formQRAllStaffOrders.MultipleStaff := True;
+        end
+        else
+        begin
+          ParamByName('pstaffid').AsInteger := Glbs.StaffID;
+        end;
+      end;
+
+      if (radSaleCategoryAll.Checked) then begin
+        ParamByName('psalecategoryid').AsInteger := -1;
+      end
+      else begin
+        if (DBGridSaleCategories.SelectedRows.Count > 1) then
+        begin
+          ParamByName('psalecategoryid').AsString := GetSelectedIDString(DBGridSaleCategories, 'salecategoryid');
+          Title2 := Title2 + ', ' + sSelectedSaleCat;
+        end
+        else
+        begin
+          ParamByName('psalecategoryid').AsInteger := Glbs.SaleCategoriesSaleCategoryID;
+          Title2 := Title2 + ', ' + Glbs.SaleCategoriesSaleCategory;
+        end;
+      end;
+
+      if radItemGroup.Checked then begin
+        ParamByName('pforb').AsString := '';
+        if (DBGridItemGroups.SelectedRows.Count > 1) then
+        begin
+          ParamByName('pitemgroupid').AsString := GetSelectedIDString(DBGridItemGroups, 'itemgroupid');
+          Title2 := Title2 + ', ' + sSelectedItemGroups;
+        end
+        else
+        begin
+          ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+          Title2 := Title2 + ', ' + Glbs.ItemGroup;
+        end;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if radFAndB.Checked then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := Title2 + ', ' + sFoodBev;
+        end else if radFOnly.Checked then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := Title2 + ', ' + sFood;
+        end else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := Title2 + ', ' + sBev;
+        end;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sStaffOrdDlgTitle;
+      SaveDialog.FileName := 'StaffOrders' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRAllStaffOrders.WBCSV.FileName := SaveDialog.FileName;
+        formQRAllStaffOrders.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRAllStaffOrders.QRAllStaffOrders.ReportTitle := sStaffOrdRepTitle;
+    formQRAllStaffOrders.QRAllStaffOrders.Preview;
+  finally
+    formQRAllStaffOrders.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowAccountSalesReport;
+begin
+  try
+    formQRAccountSales := TformQRAccountSales.Create(Application);
+    Title1 := sAcctSalesRepTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrAccountSales do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getaccountsales (:poutletid, :premotelocationid, :pforb, :paccountid, :paccounttypeid, :pitemgroupid, :fromtime, :totime)');
+
+      if (radGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, accountname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sByGroupOrder;
+      end
+      else if (radUnits.Checked) then begin
+        SQL.Add('order by accountname, amountsold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sUnitSold;
+      end
+      else if (radPrice.Checked) then begin
+        SQL.Add('order by accountname, averageunitprice desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sAvgUPrice;
+      end
+      else if (radGross.Checked) then begin
+        SQL.Add('order by accountname, grosssold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sGrossSold;
+      end
+      else if (radDiscount.Checked) then begin
+        SQL.Add('order by accountname, discount desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sDiscount;
+      end
+      else if (radNett.Checked) then begin
+        SQL.Add('order by accountname, nettsold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sNetSold;
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+        ParamByName('pforb').AsString := '';
+        Title2 := Title2 + ', ' + Glbs.ItemGroup;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if radFAndB.Checked then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
+        end else if radFOnly.Checked then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
+        end else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
+        end;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutlets + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radAccountAll.Checked) then begin
+        ParamByName('paccountid').AsInteger := -1;
+        ParamByName('paccounttypeid').AsInteger := -1;
+        Title1 := Title1 + ', ' + sAllAccts;
+      end
+      else if (radAccountSelected.Checked) then begin
+        ParamByName('paccountid').AsInteger := Glbs.AccountID;
+        ParamByName('paccounttypeid').AsInteger := -1;
+        Title1 := Title1 + ', ' + Glbs.AccountName;
+      end
+      else begin
+        ParamByName('paccountid').AsInteger := -1;
+        ParamByName('paccounttypeid').AsInteger := Glbs.AccountTypeID;
+        Title1 := Title1 + ', ' + Glbs.AccountType;
+      end;
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sAcctRepDlgTitle;
+      SaveDialog.FileName := 'Account Sales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRAccountSales.WBCSV.FileName := SaveDialog.FileName;
+        formQRAccountSales.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRAccountSales.QRAccountSales.ReportTitle := sAcctSalesRepTitle;
+    formQRAccountSales.QRAccountSales.Preview;
+  finally
+    formQRAccountSales.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowCourseSalesReport;
+begin
+  try
+    formQRCourseSales := TformQRCourseSales.Create(Application);
+    Title1 := sCourseSalesRepTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrCourseSales do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getcoursesales (:poutletid, :premotelocationid, :pforb, :pcourseid, :pitemgroupid, :fromtime, :totime)');
+
+      if (radGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, course, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sGroupItemOrder;
+      end
+      else if (radUnits.Checked) then begin
+        SQL.Add('order by course, amountsold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' +  sUnitSold;
+      end
+      else if (radPrice.Checked) then begin
+        SQL.Add('order by course, averageunitprice desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sAvgUPrice;
+      end
+      else if (radGross.Checked) then begin
+        SQL.Add('order by course, grosssold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sGrossSold;
+      end
+      else if (radDiscount.Checked) then begin
+        SQL.Add('order by course, discount desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sDiscount;
+      end
+      else if (radNett.Checked) then begin
+        SQL.Add('order by course, nettsold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sNetSold;
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+        ParamByName('pforb').AsString := '';
+        Title2 := Title2 + ', ' + Glbs.ItemGroup;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if radFAndB.Checked then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
+        end else if radFOnly.Checked then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
+        end else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
+        end;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutlets + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radCourseAll.Checked) then begin
+        ParamByName('pcourseid').AsInteger := -1;
+        Title1 := Title1 + ', ' + sAllCourses;
+      end
+      else begin
+        ParamByName('pcourseid').AsInteger := Glbs.CourseID;
+        Title1 := Title1 + ', ' + Glbs.Course;
+      end;
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sCourseSalesDlgTitle;
+      SaveDialog.FileName := 'CourseSales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRCourseSales.WBCSV.FileName := SaveDialog.FileName;
+        formQRCourseSales.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRCourseSales.QRCourseSales.ReportTitle := sCourseSalesRepTitle;
+    formQRCourseSales.QRCourseSales.Preview;
+  finally
+    formQRCourseSales.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowDiscountSchemeSalesReport;
+begin
+  try
+    formQRDiscountSchemeSales := TformQRDiscountSchemeSales.Create(Application);
+    Title1 := 'Discount Scheme Sales Report';
+    Title2 := '';
+    Title3 := 'From ' + FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime) +
+     ' To ' + FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrDiscountSchemeSales do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getdiscountschemesales (:poutletid, :premotelocationid, :pforb, :pdiscountschemeid, :pitemgroupid, :fromtime, :totime)');
+
+      if (radGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, discountschemename, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', By Group / Item Order';
+      end
+      else if (radUnits.Checked) then begin
+        SQL.Add('order by amountsold desc, outletname, remotelocationname, discountschemename, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', By Units Sold';
+      end
+      else if (radPrice.Checked) then begin
+        SQL.Add('order by averageunitprice desc, outletname, remotelocationname, discountschemename, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', By Average Unit Price';
+      end
+      else if (radGross.Checked) then begin
+        SQL.Add('order by grosssold desc, outletname, remotelocationname, discountschemename, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', By Gross Value Sold';
+      end
+      else if (radDiscount.Checked) then begin
+        SQL.Add('order by discount desc, outletname, remotelocationname, discountschemename, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', By Discount Given';
+      end
+      else if (radNett.Checked) then begin
+        SQL.Add('order by nettsold desc, outletname, remotelocationname, discountschemename, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', By Nett Value Sold';
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+        ParamByName('pforb').AsString := '';
+        Title2 := Title2 + ', ' + Glbs.ItemGroup;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if radFAndB.Checked then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', Food & Beverage' + Title2;
+        end else if radFOnly.Checked then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', Food' + Title2;
+        end else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', Beverage' + Title2;
+        end;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := 'All Outlets' + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radDiscountSchemeAll.Checked) then begin
+        ParamByName('pdiscountschemeid').AsInteger := -1;
+        Title1 := Title1 + ', All Discount Schemes';
+      end
+      else begin
+        ParamByName('pdiscountschemeid').AsInteger := Glbs.DiscountSchemeID;
+        Title1 := Title1 + ', ' + Glbs.DiscountSchemeName;
+      end;
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := 'Discount Scheme Sales Report file export';
+      SaveDialog.FileName := 'DiscountSchemeSales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRDiscountSchemeSales.WBCSV.FileName := SaveDialog.FileName;
+        formQRDiscountSchemeSales.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRDiscountSchemeSales.QRDiscountSchemeSales.ReportTitle := 'WizBang Waiter Discount Scheme Sales Report';
+    formQRDiscountSchemeSales.QRDiscountSchemeSales.Preview;
+  finally
+    formQRDiscountSchemeSales.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowTerminalSalesReport;
+begin
+  try
+    formQRTerminalSales := TformQRTerminalSales.Create(Application);
+
+    Title1 := sTerminalSalesTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrTerminalSales do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getterminalsales (:poutletid, :premotelocationid, :pforb, :pterminalid, :pitemgroupid, :fromtime, :totime)');
+
+      if (radGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationid, terminalid, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sGroupItemOrder;
+      end
+      else if (radUnits.Checked) then begin
+        SQL.Add('order by outletname, remotelocationid, terminalid, amountsold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sUnitSold;
+      end
+      else if (radPrice.Checked) then begin
+        SQL.Add('order by outletname, remotelocationid, terminalid, averageunitprice desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sAvgUPrice;
+      end
+      else if (radGross.Checked) then begin
+        SQL.Add('order by outletname, remotelocationid, terminalid, grosssold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sGrossSold;
+      end
+      else if (radDiscount.Checked) then begin
+        SQL.Add('order by outletname, remotelocationid, terminalid, discount desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sDiscount;
+      end
+      else if (radNett.Checked) then begin
+        SQL.Add('order by outletname, remotelocationid, terminalid, nettsold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sNetSold;
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pforb').AsString := '';
+        if (DBGridItemGroups.SelectedRows.Count > 1) then
+        begin
+          ParamByName('pitemgroupid').AsString := GetSelectedIDString(DBGridItemGroups, 'itemgroupid');
+          Title2 := Title2 + ', ' + sSelectedItemGroups;
+        end
+        else
+        begin
+          ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+          Title2 := Title2 + ', ' + Glbs.ItemGroup;
+        end;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if radFAndB.Checked then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
+        end else if radFOnly.Checked then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
+        end else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
+        end;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutlets + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radTerminalAll.Checked) then begin
+        ParamByName('pterminalid').AsInteger := -1;
+        Title1 := Title1 + ', ' +  sAllTerminals;
+      end
+      else begin
+        if (DBGridTerminals.SelectedRows.Count > 1) then
+        begin
+          ParamByName('pterminalid').AsString := GetSelectedIDString(DBGridTerminals, 'terminalid');
+          Title1 := Title1 + ', ' + sSelectedTerminals;
+          formQRTerminalSales.MultipleTerminals := True;
+        end
+        else
+        begin
+          ParamByName('pterminalid').AsInteger := Glbs.TerminalID;
+          Title1 := Title1 + ', ' + Glbs.TerminalName;
+        end;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sTerminalSalesDlgTitle;
+      SaveDialog.FileName := 'TerminalSales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRTerminalSales.WBCSV.FileName := SaveDialog.FileName;
+        formQRTerminalSales.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRTerminalSales.QRTerminalSales.ReportTitle := sTerminalSalesRepTitle;
+    formQRTerminalSales.QRTerminalSales.Preview;
+  finally
+    formQRTerminalSales.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowTillSalesReport;
+begin
+  try
+    formQRTillSales := TformQRTillSales.Create(Application);
+
+    Title1 := 'Till Sales Report';
+    Title2 := '';
+    Title3 := 'From ' + FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime) +
+     ' To ' + FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrTillSales do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from gettillsales (:poutletid, :premotelocationid, :pforb, :ptillid, :pitemgroupid, :fromtime, :totime)');
+
+      if (radGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationid, tillid, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', By Group / Item Order';
+      end
+      else if (radUnits.Checked) then begin
+        SQL.Add('order by outletname, remotelocationid, tillid, amountsold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', By Units Sold';
+      end
+      else if (radPrice.Checked) then begin
+        SQL.Add('order by outletname, remotelocationid, tillid, averageunitprice desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', By Average Unit Price';
+      end
+      else if (radGross.Checked) then begin
+        SQL.Add('order by outletname, remotelocationid, tillid, grosssold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', By Gross Value Sold';
+      end
+      else if (radDiscount.Checked) then begin
+        SQL.Add('order by outletname, remotelocationid, tillid, discount desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', By Discount Given';
+      end
+      else if (radNett.Checked) then begin
+        SQL.Add('order by outletname, remotelocationid, tillid, nettsold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', By Nett Value Sold';
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+        ParamByName('pforb').AsString := '';
+        Title2 := Title2 + ', ' + Glbs.ItemGroup;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if radFAndB.Checked then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', Food & Beverage' + Title2;
+        end else if radFOnly.Checked then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', Food' + Title2;
+        end else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', Beverage' + Title2;
+        end;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := 'All Outlets' + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radTillAll.Checked) then begin
+        ParamByName('ptillid').AsInteger := -1;
+        Title1 := Title1 + ', All Tills';
+      end
+      else begin
+        ParamByName('ptillid').AsInteger := Glbs.TillID;
+        Title1 := Title1 + ', ' + Glbs.TillName;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := 'Till Sales Report file export';
+      SaveDialog.FileName := 'TillSales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRTillSales.WBCSV.FileName := SaveDialog.FileName;
+        formQRTillSales.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRTillSales.QRTillSales.ReportTitle := 'WizBang Waiter Till Sales Report';
+    formQRTillSales.QRTillSales.Preview;
+  finally
+    formQRTillSales.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowMenuItemsReport;
+begin
+  try
+    formQRMenuItems := TformQRMenuItems.Create(Application);
+
+    Title1 := sMenuItemsTitle1;
+    Title2 := '';
+    Title3 := '';
+
+    if (not CheckDate) then Exit;
+
+    with dm.qrMenuItems do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getmenuitems(:outletidin, :aforbin, :itemgroupidin, :showsharing)');
+
+      if (radMenuOrderGroup.Checked) then begin
+        SQL.Add('order by outletname, superitemgrouporder, forb desc, itemgroupabbrev, itemabbrev');
+        Title2 := ', ' + sGroupItemOrder;
+      end
+      else if (radMenuOrderItem.Checked) then begin
+        SQL.Add('order by outletname, itemabbrev');
+        Title2 := ', ' + sByItem;
+      end
+      else if (radMenuOrderPrice.Checked) then begin
+        SQL.Add('order by outletname, itemprice');
+        Title2 := ', ' + sByUnitsPrice;
+      end
+      else if (radMenuOrderWhenUpd.Checked) then
+      begin
+        SQL.Add('order by outletname, whenupd desc, itemabbrev');
+        Title2 := ', ' + sByWhenUpd;
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('itemgroupidin').AsInteger := Glbs.ItemGroupID;
+        ParamByName('aforbin').AsString := '';
+        Title2 := Title2 + ', ' + Glbs.ItemGroup;
+      end
+      else begin
+        ParamByName('itemgroupidin').AsInteger := -1;
+        if (radFAndB.Checked) then begin
+          ParamByName('aforbin').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
+        end
+        else if (radFOnly.Checked) then begin
+          ParamByName('aforbin').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
+        end
+        else begin
+          ParamByName('aforbin').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
+        end;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        ParamByName('outletidin').AsInteger := -1;
+        Title2 := sAllOutlets + Title2;
+      end
+      else begin
+        ParamByName('outletidin').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      BoolAsParam(ParamByName('showsharing'), AppDetails.ShowSharing);
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sMenuItemsDlgTitle;
+      SaveDialog.FileName := 'Menu' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRMenuItems.WBCSV.FileName := SaveDialog.FileName;
+        formQRMenuItems.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRMenuItems.QRMenuItems.ReportTitle := sMenuItemsRepTitle;
+    formQRMenuItems.QRMenuItems.Preview;
+  finally
+    formQRMenuItems.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowPeopleReport;
+begin
+  try
+    formQRPeople := TformQRPeople.Create(Application);
+    Title1 := sPeopleRepTitle1;
+    Title2 := '';
+    Title3 := '';
+    Title3ArrayCount := 0;
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrPeople do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getpeopleforexport(');
+      SQL.Add('  :fromdob, :todob, :frombirthday, :frombirthmonth, :tobirthday, :tobirthmonth,');
+      SQL.Add('  :fromanniversarydate, :toanniversarydate, :fromanniversaryday, :fromanniversarymonth, :toanniversaryday, :toanniversarymonth,');
+      SQL.Add('  :pcustomer, :pvip,');
+      SQL.Add('  :paddress1, :paddress2, :paddress3, :ppostcode, :pcountry,');
+      SQL.Add('  :pgender, :pfavoriteitem,');
+      SQL.Add('  :plastwheninvoicedafter, :plastwheninvoicedbefore, :poptout, :pvalidemail, :paccounttypeid,');
+      SQL.Add('  :orderingby, :pperorginactive, :premotelocationid)');
+
+      if (radPeopleOrderSurname.Checked) then begin
+        ParamByName('orderingby').AsInteger := 1;
+   //     SQL.Add('order by surname, firstname, middlename, title');
+        Title2 := sBySurname;
+      end
+      else if (radPeopleOrderFirstname.Checked) then begin
+        ParamByName('orderingby').AsInteger := 2;
+   //     SQL.Add('order by firstname, surname, middlename, title');
+        Title2 := sByFirstName;
+      end;
+
+      case cmbPeopleCustomer.ItemIndex of
+        0: ParamByName('pcustomer').AsInteger := -1;    //All People
+        1: begin
+          ParamByName('pcustomer').AsInteger := 1;      //Customers Only
+          Title2 := sCustomers + ', ' + Title2;
+        end;
+        2: begin
+          ParamByName('pcustomer').AsInteger := 0;      //Non Customers
+          Title2 := sNonCustomers + ', ' + Title2;
+        end;
+      else
+        ParamByName('pcustomer').AsInteger := -1;
+      end;
+      case cmbPeopleVIP.ItemIndex of
+        0: ParamByName('pvip').AsInteger := -1;         //All People
+        1: begin
+          ParamByName('pvip').AsInteger := 1;           //VIPs only
+          Title2 := sVips + ', ' + Title2;
+        end;
+        2: begin
+          ParamByName('pvip').AsInteger := 0;           //Non VIPs
+          Title2 := sNonVips + ', ' + Title2;
+        end;
+      else
+        ParamByName('pvip').AsInteger := -1;
+      end;
+
+      if (cmbPeopleRemoteSite.Items.Count > 1) then
+      Title2 := cmbPeopleRemoteSite.Text + ', ' + Title2;
+
+
+      if ((FFromDOB <> 0) and (FToDOB <> 0)) then begin
+        ParamByName('fromdob').AsDateTime := FFromDOB;
+        ParamByName('todob').AsDateTime := FToDOB;
+        Title3Array[Title3ArrayCount] := Format(sDOBFromTo , [txtFromDOB.Text,txtToDOB.Text]);
+        Inc(Title3ArrayCount);
+      end
+      else begin
+        ParamByName('fromdob').AsDateTime := 0;
+        ParamByName('todob').AsDateTime := 0;
+      end;
+      if ((FFromBirthDay <> 0) and (FFromBirthMonth <> 0) and (FToBirthDay <> 0) and (FToBirthMonth <> 0)) then begin
+        ParamByName('frombirthday').AsInteger := FFromBirthDay;
+        ParamByName('frombirthmonth').AsInteger := FFromBirthMonth;
+        ParamByName('tobirthday').AsInteger := FToBirthDay;
+        ParamByName('tobirthmonth').AsInteger := FToBirthMonth;
+        Title3Array[Title3ArrayCount] := Format(sBirthFromTo , [txtFromBirthday.Text,txtToBirthday.Text]); 
+        Inc(Title3ArrayCount);
+      end
+      else begin
+        ParamByName('frombirthday').AsInteger := 0;
+        ParamByName('frombirthmonth').AsInteger := 0;
+        ParamByName('tobirthday').AsInteger := 0;
+        ParamByName('tobirthmonth').AsInteger := 0;
+      end;
+
+      if ((FFromWeddingDate <> 0) and (FToWeddingDate <> 0)) then begin
+        ParamByName('fromanniversarydate').AsDateTime := FFromWeddingDate;
+        ParamByName('toanniversarydate').AsDateTime := FToWeddingDate;
+        Title3Array[Title3ArrayCount] := Format(sWeddFromTo , [txtFromWeddingDate.Text,txtToWeddingDate.Text]); 
+        Inc(Title3ArrayCount);
+      end
+      else begin
+        ParamByName('fromanniversarydate').AsDateTime := 0;
+        ParamByName('toanniversarydate').AsDateTime := 0;
+      end;
+      if ((FFromAnniversaryDay <> 0) and (FFromAnniversaryMonth <> 0) and (FToAnniversaryDay <> 0) and (FToAnniversaryMonth <> 0)) then begin
+        ParamByName('fromanniversaryday').AsInteger := FFromAnniversaryDay;
+        ParamByName('fromanniversarymonth').AsInteger := FFromAnniversaryMonth;
+        ParamByName('toanniversaryday').AsInteger := FToAnniversaryDay;
+        ParamByName('toanniversarymonth').AsInteger := FToAnniversaryMonth;
+        Title3Array[Title3ArrayCount] := Format(sAnnivFromTo , [txtFromAnniversary.Text,txtToAnniversary.Text]);  
+        Inc(Title3ArrayCount);
+      end
+      else begin
+        ParamByName('fromanniversaryday').AsInteger := 0;
+        ParamByName('fromanniversarymonth').AsInteger := 0;
+        ParamByName('toanniversaryday').AsInteger := 0;
+        ParamByName('toanniversarymonth').AsInteger := 0;
+      end;
+
+      ParamByName('paddress1').AsString := txtStreetName.Text;
+      ParamByName('paddress2').AsString := txtSuburb.Text;
+      ParamByName('paddress3').AsString := txtCity.Text;
+      ParamByName('ppostcode').AsString := txtPeoplePostCode.Text;
+      ParamByName('pcountry').AsString := txtPeopleCountry.Text;
+
+      case cmbPeopleGender.ItemIndex of
+        0: ParamByName('pgender').AsString := '';
+        1: ParamByName('pgender').AsString := 'M';
+        2: ParamByName('pgender').AsString := 'F';
+      end;
+      ParamByName('pfavoriteitem').AsString := txtPeopleFavoriteItem.Text;
+      BoolAsParam(ParamByName('poptout'), chkPeopleRemoveOptOut.Checked);
+      BoolAsParam(ParamByName('pvalidemail'), chkPeopleValidEmail.Checked);
+      ParamByName('plastwheninvoicedafter').AsDateTime := FLastWhenInvoicedAfter;
+      ParamByName('plastwheninvoicedbefore').AsDateTime := FLastWhenInvoicedBefore;
+      if cmbPeopleAccountTypes.ItemIndex > 0 then//sinu
+        ParamByName('paccounttypeid').AsInteger := FPeopleAcctTypes.Get(cmbPeopleAccountTypes.ItemIndex) //Integer(cmbPeopleAccountTypes.Items.Objects[cmbPeopleAccountTypes.ItemIndex])
+      else//sinu
+        ParamByName('paccounttypeid').AsInteger := -1;//sinu
+
+      if cmbPeopleRemoteSite.ItemIndex >= 0 then
+        ParamByName('premotelocationid').AsInteger := FPeopleRemSiteList.Get(cmbPeopleRemoteSite.ItemIndex)
+      else//sinu
+        ParamByName('premotelocationid').AsInteger := -1;
+        
+      if (chkPeopleRemoveInactive.Checked) then
+        ParamByName('pperorginactive').AsInteger := 0
+      else
+        ParamByName('pperorginactive').AsInteger := -1;
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sPeopleRepDlgTitle;
+      SaveDialog.FileName := 'People' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRPeople.WBCSV.FileName := SaveDialog.FileName;
+        formQRPeople.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRPeople.QRPeople.ReportTitle := sPeopleRepTitle;
+    formQRPeople.QRPeople.Preview;
+  finally
+    formQRPeople.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowModifiersReport;
+begin
+  try
+    formQRModifiers := TformQRModifiers.Create(Application);
+
+    Title1 := sModifiersRepTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrModifiers do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getmodifiers(:poutletid, :premotelocationid, :pforb, :pricetype, :orderedstate, :fromtime, :totime, :showsharing)');
+
+      if (radModifiersOrderDefault.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, forb desc, modifierorder, modifier');
+        Title2 := ', ' + sByDefOrder;
+      end
+      else if (radModifiersOrderModifier.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, forb desc, modifier');
+        Title2 := ', ' + sByItem;
+      end
+      else if (radModifiersOrderUnits.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, nettqty desc, forb desc, modifier');
+        Title2 := ', ' +  sByUnits;
+      end
+      else if (radModifiersOrderPrice.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, modprice desc, forb desc, modifier');
+        Title2 := ', ' + sAvgPrice;
+      end
+      else if (radModifiersOrderValue.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, nett desc, forb desc, modifier');
+        Title2 := ', ' + sByValue;
+      end;
+
+      if (radFAndB.Checked) then begin
+        ParamByName('pforb').AsString := '';
+        Title2 := ', ' + sFoodBev + Title2;
+      end
+      else if (radFOnly.Checked) then begin
+        ParamByName('pforb').AsString := 'F';
+        Title2 := ', ' + sFood + Title2;
+      end
+      else begin
+        ParamByName('pforb').AsString := 'B';
+        Title2 := ', ' + sBev + Title2;
+      end;
+
+      if (radModifiersOrderedOnly.Checked) then begin
+        ParamByName('orderedstate').AsInteger := 1;
+        Title2 := ', ' +  sModOrdered;
+      end
+      else if (radModifiersNonOrderedOnly.Checked) then begin
+        ParamByName('orderedstate').AsInteger := 0;
+        Title2 := ', ' +  sModNotOrdered;
+      end
+      else if (radModifiersOrderedBoth.Checked) then begin
+        ParamByName('orderedstate').AsInteger := -1;
+        Title2 := ', ' + sAllModifiers;
+      end;
+
+      if (radExcludeZeros.Checked) then begin
+        ParamByName('pricetype').AsInteger := 1;
+        Title2 := Title2 + ', ' + sZeroExcluded;
+      end
+      else if (radIncludeZeros.Checked) then begin
+        ParamByName('pricetype').AsInteger := -1;
+        Title2 := Title2 + ', ' + sZeroIncluded;
+      end
+      else if (radOnlyZeros.Checked) then begin
+        ParamByName('pricetype').AsInteger := 0;
+        Title2 := Title2 + ', ' + sZeroOnly;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutlets + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+      BoolAsParam(ParamByName('showsharing'), AppDetails.ShowSharing);
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sModifierDlgTitle;
+      SaveDialog.FileName := 'Modifiers' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRModifiers.WBCSV.FileName := SaveDialog.FileName;
+        formQRModifiers.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRModifiers.QRModifiers.ReportTitle := sModifiersRepTitle;
+    formQRModifiers.QRModifiers.Preview;
+  finally
+    formQRModifiers.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowSalesHistoryReport;
+var
+  NoOfSubSelects: Integer; //Number of sub-select statements required for number of periods selected
+  NoOfSQLPeriods: Integer; //Number of periods in SQL
+
+  function GetPeriodLengthStr: string;
+  begin
+    Result := EmptyStr;
+    if not chkSalesHistoryUsePeriodLength.Checked then
+      Exit;
+
+    if radSalesHistoryLength15Min.Checked then
+      Result := s15MinPeriod
+    else if radSalesHistoryLength30Min.Checked then
+      Result := s30MinPeriod
+    else if radSalesHistoryLengthHour.Checked then
+      Result := sHourPeriod
+    else if radSalesHistoryLength2Hour.Checked then
+      Result := s2HourPeriod
+    else if radSalesHistoryLength3Hour.Checked then
+      Result := s3HourPeriod
+    else if radSalesHistoryLength4Hour.Checked then
+      Result := s4HourPeriod
+    else if radSalesHistoryLengthDay.Checked then
+      Result := sDayPeriod
+    else if radSalesHistoryLengthWeek.Checked then
+      Result := sWeekPeriod
+    else if radSalesHistoryLengthFortnight.Checked then
+      Result := sFortPeriod
+    else if radSalesHistoryLengthMonth.Checked then
+      Result := sMonthPeriod
+    else if radSalesHistoryLengthQuarter.Checked then
+      Result := sQuatPeriod
+    else if radSalesHistoryLengthYear.Checked then
+      Result := sYearPeriod;
+
+    Result := Result + ' ';
+    if chkSalesHistoryBetweenTimes.Checked then
+      Result := Result + sPeriodAbbrev
+    else
+      Result := Result + sPeriod;
+    Result := Result + ', ';
+  end;
+
+  function GetSalesHistorySelectSQL: string;
+  var
+    S: string; //SQL length limit is 144 periods, else get 'unexpected end of command' error.
+    i, j, k: Integer;
+  begin
+    //group select clause
+    S := 'select itemid, itemabbrev, whendeleted, itemorder, forb, itemgroupid' +
+      ', itemgroupabbrev, itemgrouporder, outletid, outletname, superitemgroupid, superitemgroup' +
+      ', superitemgroupabbrev, superitemgrouporder, hideforb, remotelocationid, remotelocationname' +
+      ', sum(amountsold) amountsold, sum(grosssold) grosssold, sum(salestax) salestax, sum(discount) discount, sum(nettsold) nettsold' +
+      ', case coalesce(sum(amountsold), 0) when 0 then 0 else coalesce(sum(grosssold), 0) / coalesce(sum(amountsold), 0) end averageunitprice';
+
+    for i := 1 to NoOfSQLPeriods do
+    begin
+      S := S + ', sum(as' + IntToStr(i) + ') amountsold' + IntToStr(i);
+      S := S + ', sum(ns' + IntToStr(i) + ') nettsold' + IntToStr(i);
+      S := S + ', sum(st' + IntToStr(i) + ') salestax' + IntToStr(i);
+    end;
+
+    S := S +' from (';
+
+    //sub-select clauses
+    for i := 1 to NoOfSubSelects do
+    begin
+      j := (i - 1) * SALEHIST_PDPERSELECT;
+
+      if i > 1 then
+      S := S + ' union all ';
+
+      S := S + 'select itemid, itemabbrev, whendeleted, itemorder, forb, itemgroupid' +
+        ', itemgroupabbrev, itemgrouporder, outletid, outletname, superitemgroupid, superitemgroup' +
+        ', superitemgroupabbrev, superitemgrouporder, hideforb, remotelocationid, remotelocationname' +
+        ', amountsold, grosssold, salestax, discount, nettsold';
+
+      for k := 1 to NoOfSQLPeriods do
+      begin
+        if (k >= (j + 1)) and (k <= (j + SALEHIST_PDPERSELECT)) then
+        begin
+          S := S + ', amountsold' + IntToStr(k - j) + ' as' + IntToStr(k);
+          S := S + ', nettsold' + IntToStr(k - j) + ' ns' + IntToStr(k);
+          S := S + ', salestax' + IntToStr(k - j) + ' st' + IntToStr(k);
+        end
+        else
+        begin
+          S := S + ', 0' + ' as' + IntToStr(k); //amountsold
+          S := S + ', 0' + ' ns' + IntToStr(k); //nettsold
+          S := S + ', 0' + ' st' + IntToStr(k); //salestax
+        end;
+      end;
+
+      S := S + ' from getsaleshistory (' +
+        ':poutletid'  + IntToStr(i) + ', :premotelocationid'  + IntToStr(i) +
+        ', :pforb'  + IntToStr(i) + ', :pitemgroupid'  + IntToStr(i);
+
+      for k := 1 to SALEHIST_PDPERSELECT do
+      begin
+        S := S + ', :fromtime' + IntToStr(j + k) + ', :totime' + IntToStr(j + k);
+      end;
+
+      S := S + ', :dailybetweentimes'  + IntToStr(i) + ', :dailystart'  + IntToStr(i) +
+        ', :dailyend'  + IntToStr(i) + ', :includezerodate'  + IntToStr(i) + ')';
+    end;
+
+    S := S + ')';
+    Result := S;
+  end;
+
+var
+  I: Integer;
+  AYear, AMonth, ADay, AHour, AMinute, ASecond, AMilliSecond: Word;
+begin
+  //Todo: set Preview boolean based on No of Periods and only do preview code if true (maybe then don't need GlbSalesHistory.NoOfPeriodsToPrint?)
+  //If No of Periods exceeds max periods to print, confirm will only be exported (not previewed)
+  if UpDownSalesHistoryTimeSpanQuantity.Position > SALEHIST_MAXPDPRINT then
+  begin
+    if MessageDlg(Format(sSalesHistRepOnlyExportExceedPeriodPrint, [SALEHIST_MAXPDPRINT]), mtConfirmation, [mbOK, mbCancel], 0) <> mrOk then
+      Exit;
+
+    //Ensure the export option is selected
+    if not chkExportFile.Checked then
+      chkExportFile.Checked := True;
+  end;
+
+  try
+    formQRSalesHistory := TformQRSalesHistory.Create(Application);
+
+    CreateHistoryTimes;
+
+    NoOfSubSelects := Ceil(GlbSalesHistory.NumberOfTimes / SALEHIST_PDPERSELECT); //get next whole number
+    NoOfSQLPeriods := NoOfSubSelects * SALEHIST_PDPERSELECT;
+
+    Title1 := sSalesHistoryTitle1;
+    Title2 := '';
+
+    if (chkSalesHistoryBetweenTimes.Checked) then begin
+      Title3 := 'Daily ' + FormatDateTime('hh:mm AM/PM', GlbSalesHistory.FromTime[1]) + ' - ' + FormatDateTime('hh:mm AM/PM', GlbSalesHistory.LastTime) +
+               ', ' + FormatDateTime('ddd dd mmm yyyy',GlbSalesHistory.FromTime[1]) +
+               ' To ' + FormatDateTime('ddd dd mmm yyyy',GlbSalesHistory.LastTime);
+    end
+    else if ((radSalesHistory15Min.Checked) or (radSalesHistory30Min.Checked) or
+      (radSalesHistoryHour.Checked) or (radSalesHistory2Hour.Checked) or
+      (radSalesHistory3Hour.Checked) or (radSalesHistory4Hour.Checked)) then begin
+      Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',GlbSalesHistory.FromTime[1]),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',GlbSalesHistory.LastTime)]);
+    end
+    else begin
+      Title3 := Format(sDateRange,[FormatDateTime('hh:mm AM/PM ddd dd mmm yyyy',GlbSalesHistory.FromTime[1]),FormatDateTime('ddd dd mmm yyyy',GlbSalesHistory.LastTime)]);
+    end;
+
+    Title3 := GetPeriodLengthStr + Title3;
+
+    with dm.qrSalesHistory do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+
+      //select clause
+      SQL.Text := GetSalesHistorySelectSQL;
+
+      //where clause
+      if (radExcludeZeros.Checked) then begin
+        SQL.Add('where ((grosssold <> 0.00) or (amountsold <> 0))');
+        Title2 := ', ' + sZeroExcluded;
+      end
+      else if (radIncludeZeros.Checked) then begin
+        Title2 := ', ' + sZeroIncluded;
+      end
+      else if (radOnlyZeros.Checked) then begin
+        SQL.Add('where ((grosssold >= -0.01) and (grosssold <= 0.01) and (amountsold = 0))');
+        Title2 := ', ' + sZeroOnly;
+      end;
+
+      //group by clause
+      SQL.Add('group by itemid, itemabbrev, whendeleted, itemorder, forb, itemgroupid' +
+        ', itemgroupabbrev, itemgrouporder, outletid, outletname, superitemgroupid, superitemgroup' +
+        ', superitemgroupabbrev, superitemgrouporder, hideforb, remotelocationid, remotelocationname');
+
+      //order by clause
+      if (radGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder, itemabbrev');
+        Title2 := Title2 + ', ' + sGroupItemOrder;
+      end
+      else if (radUnits.Checked) then begin
+        SQL.Add('order by amountsold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder, itemabbrev');
+        Title2 := Title2 + ', ' + sUnitSold;
+      end
+      else if (radPrice.Checked) then begin
+        SQL.Add('order by averageunitprice desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder, itemabbrev');
+        Title2 := Title2 + ', ' + sAvgUPrice;
+      end
+      else if (radGross.Checked) then begin
+        SQL.Add('order by grosssold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder, itemabbrev');
+        Title2 := Title2 + ', ' + sGrossSold;
+      end
+      else if (radDiscount.Checked) then begin
+        SQL.Add('order by discount desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder, itemabbrev');
+        Title2 := Title2 + ', ' + sDiscount;
+      end
+      else if (radNett.Checked) then begin
+        SQL.Add('order by nettsold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder, itemabbrev');
+        Title2 := Title2 + ', ' + sNetSold;
+      end;
+
+      //set sub-select param values (NB: from/totime param values set afterwards)
+      for i := 1 to NoOfSubSelects do
+      begin
+        if (radItemGroup.Checked) then begin
+          ParamByName('pitemgroupid' + IntToStr(i)).AsInteger := Glbs.ItemGroupID;
+          ParamByName('pforb' + IntToStr(i)).AsString := '';
+          if i = 1 then
+            Title2 := ', ' + Glbs.ItemGroup + Title2;
+        end
+        else begin
+          ParamByName('pitemgroupid' + IntToStr(i)).AsInteger := -1;
+          if (radFAndB.Checked) then begin
+            ParamByName('pforb' + IntToStr(i)).AsString := '';
+            if i = 1 then
+              Title2 := ', ' + sFoodBev + Title2;
+          end
+          else if (radFOnly.Checked) then begin
+            ParamByName('pforb' + IntToStr(i)).AsString := 'F';
+            if i = 1 then
+              Title2 := ', ' + sFood + Title2;
+          end
+          else begin
+            ParamByName('pforb' + IntToStr(i)).AsString := 'B';
+            if i = 1 then
+              Title2 := ', ' + sBev + Title2;
+          end;
+        end;
+
+        if (cmbOutlets.ItemIndex = 0) then begin
+          if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+            ParamByName('poutletid' + IntToStr(i)).AsInteger := -1;
+          end
+          else begin
+            ParamByName('poutletid' + IntToStr(i)).AsInteger := -2;
+          end;
+          if i = 1 then
+            Title2 := sAllOutlets + Title2;
+        end
+        else begin
+          ParamByName('poutletid' + IntToStr(i)).AsInteger := Glbs.OutletID;
+          if i = 1 then
+            Title2 := Glbs.OutletName + Title2;
+        end;
+
+        if (cmbRemoteLocations.ItemIndex = 0) then begin
+          if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+            ParamByName('premotelocationid' + IntToStr(i)).AsInteger := -1;
+          end
+          else begin
+            ParamByName('premotelocationid' + IntToStr(i)).AsInteger := -2;
+          end;
+        end
+        else begin
+          ParamByName('premotelocationid' + IntToStr(i)).AsInteger := Glbs.RemoteLocationID;
+        end;
+
+        BoolAsParam(ParamByName('dailybetweentimes' + IntToStr(i)), chkSalesHistoryBetweenTimes.Checked);
+        ParamByName('dailystart' + IntToStr(i)).AsDateTime := GlbSalesHistory.DailyStart;
+        ParamByName('dailyend' + IntToStr(i)).AsDateTime := GlbSalesHistory.DailyEnd;
+        BoolAsParam(ParamByName('includezerodate' + IntToStr(i)), GlbSalesHistory.IncludeZeroDate);
+      end;
+
+      //set from/totime param values
+      for I := 1 to NoOfSQLPeriods do begin
+        //NB: The from/totimes are being decoded/encoded to get around a strange bug,
+        //where midnight values (i.e. with no time value) that have been set via time slice
+        //calculation don't work as expected (even though values appear correct on inspection)
+        DecodeDateTime(GlbSalesHistory.FromTime[I], AYear, AMonth, ADay, AHour, AMinute, ASecond, AMilliSecond);
+        ParamByName('fromtime' + IntToStr(I)).AsDateTime := EncodeDateTime(AYear, AMonth, ADay, AHour, AMinute, ASecond, AMilliSecond);
+
+        DecodeDateTime(GlbSalesHistory.ToTime[I], AYear, AMonth, ADay, AHour, AMinute, ASecond, AMilliSecond);
+        ParamByName('totime' + IntToStr(I)).AsDateTime := EncodeDateTime(AYear, AMonth, ADay, AHour, AMinute, ASecond, AMilliSecond);
+      end;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sHisRepDlgTitle;
+      SaveDialog.FileName := 'SalesHistory' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRSalesHistory.WBCSV.FileName := SaveDialog.FileName;
+        formQRSalesHistory.WBCSV.OpenToWrite;
+      end
+      else
+      begin
+        //If No of Periods exceeds max periods to print, will only be exported (not previewed)
+        if GlbSalesHistory.NumberOfTimes > SALEHIST_MAXPDPRINT then
+          Exit; //don't run report if won't be exported
+      end;
+    end;
+
+    formQRSalesHistory.QRSalesHistory.ReportTitle := sHisRepTitle;
+
+    //If No of Periods exceeds max periods to print, will only be exported (not previewed)
+    if GlbSalesHistory.NumberOfTimes > SALEHIST_MAXPDPRINT then
+      formQRSalesHistory.QRSalesHistory.Prepare //run report but don't show preview screen
+    else
+      formQRSalesHistory.QRSalesHistory.Preview;
+  finally
+    formQRSalesHistory.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowStaffSalesReport;
+begin
+  try
+    formQRStaffSales := TformQRStaffSales.Create(Application);
+
+    Title1 := sStaffTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrStaffSales do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getstaffsales (:poutletid, :premotelocationid, :pforb, :pstaffid, :pitemgroupid, :fromtime, :totime)');
+
+      if (radGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, staffid, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sGroupItemOrder;
+      end
+      else if (radUnits.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, staffid, amountsold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sUnitSold;
+      end
+      else if (radPrice.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, staffid, averageunitprice desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sAvgUPrice;
+      end
+      else if (radGross.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, staffid, grosssold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sGrossSold;
+      end
+      else if (radDiscount.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, staffid, discount desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sDiscount;
+      end
+      else if (radNett.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, staffid, nettsold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sNetSold;
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pforb').AsString := '';
+        if (DBGridItemGroups.SelectedRows.Count > 1) then
+        begin
+          ParamByName('pitemgroupid').AsString := GetSelectedIDString(DBGridItemGroups, 'itemgroupid');
+          Title2 := Title2 + ', ' + sSelectedItemGroups;
+        end
+        else
+        begin
+          ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+          Title2 := Title2 + ', ' + Glbs.ItemGroup;
+        end;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if (radFAndB.Checked) then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
+        end
+        else if (radFOnly.Checked) then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
+        end
+        else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
+        end;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutlets + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radStaffAll.Checked) then begin
+        ParamByName('pstaffid').AsInteger := -1;
+        Title1 := Title1 + ', ' + sAllStaffTitle2;
+      end
+      else begin
+        if (DBGridStaffMembers.SelectedRows.Count > 1) then
+        begin
+          ParamByName('pstaffid').AsString := GetSelectedIDString(DBGridStaffMembers, 'staffid');
+          Title2 := Title1 + ', ' + sSelectedStaff;
+          formQRStaffSales.MultipleStaff := True;
+        end
+        else
+        begin
+          ParamByName('pstaffid').AsInteger := Glbs.StaffID;
+          Title1 := Title1 + ', ' + Glbs.StaffName;
+        end;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sStaffDlgTitle;
+      SaveDialog.FileName := 'StaffSales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRStaffSales.WBCSV.FileName := SaveDialog.FileName;
+        formQRStaffSales.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRStaffSales.QRStaffSales.ReportTitle := sStaffRepTitle;
+    formQRStaffSales.QRStaffSales.Preview;
+  finally
+    formQRStaffSales.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowSaleCategorySalesReport;
+begin
+  try
+    formQRSaleCategorySales := TformQRSaleCategorySales.Create(Application);
+
+    Title1 := sSalesCatTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrSaleCategorySales do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getsalecategorysales (:poutletid, :premotelocationid, :pforb, :psalecategoryid, :pitemgroupid, :fromtime, :totime)');
+
+      if (radGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, salecategoryid, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sGroupItemOrder;
+      end
+      else if (radUnits.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, salecategoryid, amountsold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sUnitSold;
+      end
+      else if (radPrice.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, salecategoryid, averageunitprice desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sAvgUPrice;
+      end
+      else if (radGross.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, salecategoryid, grosssold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sGrossSold;
+      end
+      else if (radDiscount.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, salecategoryid, discount desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sDiscount;
+      end
+      else if (radNett.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, salecategoryid, nettsold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sNetSold;
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+        ParamByName('pforb').AsString := '';
+        Title2 := Title2 + ', ' + Glbs.ItemGroup;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if (radFAndB.Checked) then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
+        end
+        else if (radFOnly.Checked) then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
+        end
+        else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
+        end;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutlets + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radSaleCategoryAll.Checked) then begin
+        ParamByName('psalecategoryid').AsInteger := -1;
+        Title1 := Title1 + ', ' +  sAllSaleCat;
+      end
+      else begin
+        ParamByName('psalecategoryid').AsInteger := Glbs.SaleCategoriesSaleCategoryID;
+        Title1 := Title1 + ', ' + Glbs.SaleCategoriesSaleCategory;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sSalesCatDlgTitle;
+      SaveDialog.FileName := 'SaleCategorySales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRSaleCategorySales.WBCSV.FileName := SaveDialog.FileName;
+        formQRSaleCategorySales.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRSaleCategorySales.QRSaleCategorySales.ReportTitle := sSalesCatRepTitle;
+    formQRSaleCategorySales.QRSaleCategorySales.Preview;
+  finally
+    formQRSaleCategorySales.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowCashTotalsReport;
+begin
+  try
+    formQRCashTotals := TformQRCashTotals.Create(Application);
+
+    Title1 := sCashRepTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrCashTotals do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getcashuptotals (:poutletid, :premotelocationid, :fromtime, :totime, :showemptytenders)');
+
+      if (radCashTotalsCashOnly.Checked) then begin
+        SQL.Add('  where (tenderlinetypeid = 4)');
+      end;
+
+      if (radCashTotalsOrderCashupID.Checked) then begin
+        SQL.Add('order by cashupid, tenderlinetypeorder');
+        Title2 := ', ' +  sByCashup;
+      end
+      else if (radCashTotalsOrderTill.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, tillname, cashupid, tenderlinetypeorder');
+        Title2 := ', ' + sByTill;
+      end;
+
+      if (radCashTotalsCashOnly.Checked) then begin
+        Title2 := ', ' +  sCashOnly + Title2;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutlets + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+      BoolAsParam(ParamByName('showemptytenders'), radCashTotalsAllDetailsAllTenders.Checked);
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sCashTotDlgTitle;
+      SaveDialog.FileName := 'CashTotals' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRCashTotals.WBCSV.FileName := SaveDialog.FileName;
+        formQRCashTotals.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRCashTotals.QRCashTotals.ReportTitle := sCashTotRepTitle;
+    formQRCashTotals.QRCashTotals.Preview;
+  finally
+    formQRCashTotals.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowSalesByDateReport;
+begin
+  try
+    formQRSalesByDate := TformQRSalesByDate.Create(Application);
+
+    Title1 := sSalesByDateTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrSalesByDate do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getsalesbydate (:poutletid, :premotelocationid, :pforb, :pitemgroupid, :fromtime, :totime, :periodlength, :returnpricelevels)');
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pforb').AsString := '';
+        if (DBGridItemGroups.SelectedRows.Count > 1) then
+        begin
+          ParamByName('pitemgroupid').AsString := GetSelectedIDString(DBGridItemGroups, 'itemgroupid');
+          Title2 := ', ' + sSelectedItemGroups + Title2;
+        end
+        else
+        begin
+          ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+          Title2 := ', ' + Glbs.ItemGroup + Title2;
+        end;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if (radFAndB.Checked) then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
+        end
+        else if (radFOnly.Checked) then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
+        end
+        else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
+        end;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutlets + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      BoolAsParam(ParamByName('returnpricelevels'), chkSalesIncludePriceLevels.Checked);
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      ParamByName('periodlength').AsFloat := 1;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sSalesByDateDlgTitle;
+      SaveDialog.FileName := 'SalesByDate' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRSalesByDate.WBCSV.FileName := SaveDialog.FileName;
+        formQRSalesByDate.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRSalesByDate.QRSalesByDate.ReportTitle := sSalesByDateRepTitle;
+    if chkSalesIncludePriceLevels.Checked then
+    formQRSalesByDate.QRSalesByDate.Page.Orientation := TPrinterOrientation(1)    //poLandscape
+    else
+    formQRSalesByDate.QRSalesByDate.Page.Orientation := TPrinterOrientation(0);   //poPortrait
+    formQRSalesByDate.QRSalesByDate.Preview;
+  finally
+    formQRSalesByDate.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowAccountPETransReport;
+begin
+  try
+    formQRAccountPETrans := TformQRAccountPETrans.Create(Application);
+
+    Title1 := sAccPeriodTitle1;
+    Title2 := '';
+    {if (radPeriodEndAll.Checked) then begin
+      Title3 := 'From ' + FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime) +
+       ' To ' + FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime);
+    end
+    else begin
+      Title3 := Glbs.PeriodEndAccountType + ' at ' + FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',Glbs.PeriodEndWhenEnded);
+    end;}
+    Title3 := Format(sSpecDate,[Glbs.PeriodEndAccountType,FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',Glbs.PeriodEndWhenEnded)]);
+
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrAccountPETrans do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getperiodendtransactions(:pperiodendid, :fromtime, :totime, :viewtransactions, :mailout)');
+
+      if (chkViewTransactions.Checked) then begin
+        Title2 := Title2 + sTrans;
+      end
+      else begin
+        Title2 := Title2 + sAcctBal;
+      end;
+
+      if (chkIncludeZeroBalances.Checked) then begin
+        Title2 := Title2 + ', ' + sZeroIncluded;
+      end
+      else begin
+        SQL.Add('  where ((openingbalance <> 0) or (closingbalance <> 0) or (invoiced <> 0) or (paid <> 0))');
+        Title2 := Title2 + ', ' + sZeroExcluded;
+      end;
+ 
+      SQL.Add('  order by  accountid, transactiondate');
+
+{      if (radPeriodEndAll.Checked) then begin
+        ParamByName('pperiodendid').AsInteger := -1;
+        ParamByName('fromtime').AsDateTime := FFromTime;
+        ParamByName('totime').AsDateTime := FToTime;
+      end
+      else begin
+        ParamByName('pperiodendid').AsInteger := Glbs.PeriodEndID;
+        ParamByName('fromtime').AsDateTime := 0;
+        ParamByName('totime').AsDateTime := 0;
+      end;}
+
+      ParamByName('pperiodendid').AsInteger := Glbs.PeriodEndID;
+      ParamByName('fromtime').AsDateTime := 0;
+      ParamByName('totime').AsDateTime := 0;
+
+      BoolAsParam(ParamByName('viewtransactions'), chkViewTransactions.Checked);
+      BoolAsParam(ParamByName('mailout'), False);
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sAccPeriodDlgTitle;
+      SaveDialog.FileName := 'AccountPETrans' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRAccountPETrans.WBCSV.FileName := SaveDialog.FileName;
+        formQRAccountPETrans.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRAccountPETrans.qrAccountPETrans.ReportTitle := sAccPeriodRepTitle;
+    formQRAccountPETrans.qrAccountPETrans.Preview;
+  finally
+    formQRAccountPETrans.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowAccountPEStatementReport;
+begin
+  try
+    formQRAccountPEMailout := TformQRAccountPEMailout.Create(Application);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrAccountPETrans do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getperiodendtransactions(:pperiodendid, :fromtime, :totime, :viewtransactions, :mailout)');
+
+      if (not chkIncludeZeroBalances.Checked) then begin
+        SQL.Add('  where ((openingbalance <> 0) or (closingbalance <> 0) or (invoiced <> 0) or (paid <> 0))');
+      end;
+
+      SQL.Add('  order by accountid, transactiondate');
+{      if (radPeriodEndAll.Checked) then begin
+        ParamByName('pperiodendid').AsInteger := -1;
+        ParamByName('fromtime').AsDateTime := FFromTime;
+        ParamByName('totime').AsDateTime := FToTime;
+      end
+      else begin
+        ParamByName('pperiodendid').AsInteger := Glbs.PeriodEndID;
+        ParamByName('fromtime').AsDateTime := 0;
+        ParamByName('totime').AsDateTime := 0;
+      end;}
+
+      ParamByName('pperiodendid').AsInteger := Glbs.PeriodEndID;
+      ParamByName('fromtime').AsDateTime := 0;
+      ParamByName('totime').AsDateTime := 0;
+
+      BoolAsParam(ParamByName('viewtransactions'), True);
+      BoolAsParam(ParamByName('mailout'), True);
+
+      Open;
+    end;
+
+    formQRAccountPEMailout.qrAccountPEMailout.ReportTitle := sAccPeriodMailoutRepTitle;
+    formQRAccountPEMailout.qrAccountPEMailout.Preview;
+  finally
+    formQRAccountPEMailout.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowClockInsReport;
+begin
+  try
+    formQRClockIns := TformQRClockIns.Create(Application);
+
+    Title1 := sClockInRepTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrClockIns do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getclockins(:premotelocationid, :clockintype, :fromtime, :totime, :showallstaff, :needoutletid)');
+
+      if (radStaffSelected.Checked) then begin
+        SQL.Add('where (staffid = ' + IntToStr(Glbs.StaffID) + ')');
+        SQL.Add('order by remotelocationname, clockintime');
+        Title2 := Glbs.StaffName;
+      end
+      else begin
+        Title2 := sAllStaffTitle2;
+        if (radClockInsOrderStaffName.Checked) then begin
+          if (ckbGroupRole.Checked) then
+          begin
+            SQL.Add('order by remotelocationname, staffrolename, staffname, clockintime');
+          end
+          else
+          begin
+            SQL.Add('order by remotelocationname, staffname, clockintime');
+          end;
+          Title2 := Title2 + ', ' +  sByStaffName;
+        end
+        else if (radClockInsOrderClockInTime.Checked) then begin
+          SQL.Add('order by clockintime, staffname');
+          Title2 := Title2 + ', ' + sByClockInTime;
+        end
+        else if (radClockInsOrderClockOutTime.Checked) then begin
+          SQL.Add('order by clockouttime, staffname');
+          Title2 := Title2 + ', ' +  sByClockOutTime;
+        end;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+          formQRClockIns.ReportRemoteLocationID := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+          formQRClockIns.ReportRemoteLocationID := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+        formQRClockIns.ReportRemoteLocationID := Glbs.RemoteLocationID;
+      end;
+
+      ParamByName('clockintype').AsInteger := 2;
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+      BoolAsParam(ParamByName('showallstaff'), chkShowAllStaff.Checked);
+      ParamByName('needoutletid').AsInteger := 0;
+
+      formQRClockIns.ReportFromTime := FFromTime;
+      formQRClockIns.ReportToTime := FToTime;
+      formQRClockIns.ReportShowAllStaff := chkShowAllStaff.Checked;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sClockInDlgTitle;
+      SaveDialog.FileName := 'Clock Ins' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRClockIns.WBCSV.FileName := SaveDialog.FileName;
+        formQRClockIns.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRClockIns.StartTime := FFromTime;
+    formQRClockIns.qrClockIns.ReportTitle := sClockInRepTitle;
+    formQRClockIns.qrClockIns.Preview;
+  finally
+    formQRClockIns.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowAccountSummariesReport;
+var
+   AccountID, AccountTypeID: Integer;
+begin
+  if CheckDate then begin
+    AccountID := -1;
+    AccountTypeID := -1;
+    if (radAccountSelected.Checked) then begin
+      AccountID := Glbs.AccountID;
+    end;
+    if (radAccountSelectedType.Checked) then begin
+      AccountTypeID := Glbs.AccountTypeID;
+    end;
+    if DM.GetAccountSummary(FFromTime,FToTime,AccountID,AccountTypeID)> 0 then begin
+      formQRAccountSummary := TformQRAccountSummary.Create(Application);
+      try
+        formQRAccountSummary.StartPeriod := FFromTime;
+        formQRAccountSummary.EndPeriod := FToTime;
+        formQRAccountSummary.QRAccountSummary.Preview;
+      finally
+        formQRAccountSummary.Free;
+      end;
+    end
+    else begin
+      MessageDlg(sNoSummryAvailMsg,mtInformation,[mbok],0);
+    end;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowStaffTipsReport;
+begin
+  try
+    formQRStaffTips := TformQRStaffTips.Create(Application);
+
+    Title1 := sStaffTipsTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrStaffTips do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getstafftips(:poutletid, :premotelocationid, :pstaffid, :ptenderlinetypeid, :fromtime, :totime)');
+      SQL.Add('  order by outletname, remotelocationname, staffname, whentendered');
+
+      if (radStaffSelected.Checked) then begin
+        ParamByName('pstaffid').AsInteger := Glbs.StaffID;
+        Title2 := Glbs.StaffName;
+      end
+      else begin
+        Title2 := sAllStaffTitle2;
+        ParamByName('pstaffid').AsInteger := -1;
+{        if (radClockInsOrderStaffName.Checked) then begin
+          SQL.Add('order by staffname, clockintime');
+          Title2 := Title2 + ', By Staffname';
+        end
+        else if (radClockInsOrderClockInTime.Checked) then begin
+          SQL.Add('order by clockintime, staffname');
+          Title2 := Title2 + ', By Clock In Time';
+        end
+        else if (radClockInsOrderClockOutTime.Checked) then begin
+          SQL.Add('order by clockouttime, staffname');
+          Title2 := Title2 + ', By Clock Out Time';
+        end;}
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutletsTitle2 + ', ' + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      ParamByName('ptenderlinetypeid').AsInteger := -1;
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sStaffTipsDlgTitle;
+      SaveDialog.FileName := 'Staff Tips' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRStaffTips.WBCSV.FileName := SaveDialog.FileName;
+        formQRStaffTips.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRStaffTips.StartTime := FFromTime;
+    formQRStaffTips.QRStaffTips.ReportTitle := sStaffTipsRepTitle;
+    formQRStaffTips.QRStaffTips.Preview;
+  finally
+    formQRStaffTips.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowNoSalesReport;
+begin
+  try
+    formQRNoSales := TformQRNoSales.Create(Application);
+
+    Title1 := sNoSalesTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrNoSales do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getnosalesreport(:poutletid, :premotelocationid, :pstaffid, :fromtime, :totime)');
+      SQL.Add('  order by outletname, remotelocationname, staffname, whentendered');
+
+      if (radStaffSelected.Checked) then begin
+        ParamByName('pstaffid').AsInteger := Glbs.StaffID;
+        Title2 := Glbs.StaffName;
+      end
+      else begin
+        Title2 := sAllStaffTitle2;
+        ParamByName('pstaffid').AsInteger := -1;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutletsTitle2 + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sNoExportDlgTitle;
+      SaveDialog.FileName := 'No Sales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRNoSales.WBCSV.FileName := SaveDialog.FileName;
+        formQRNoSales.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRNoSales.QRNoSales.ReportTitle := sWaitorNoSalesRepTitle;
+    formQRNoSales.QRNoSales.Preview;
+  finally
+    formQRStaffTips.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowItemModSalesReport;
+begin
+  try
+    formQRItemModSales := TformQRItemModSales.Create(Application);
+    Title1 := 'Item/Mod Sales Report';
+    Title2 := '';
+    Title3 := 'From ' + FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime) +
+     ' To ' + FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrItemModSales do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getitemmodsales (:poutletid, :premotelocationid, :pforb, :pmodgroupid, :pitemgroupid, :fromtime, :totime)');
+
+      if (radShowModGroupsExludeCustom.Checked) then
+      begin
+        SQL.Add('where modifierid <> 0 or modifierid is null');
+      end
+      else if (radShowModGroupsOnlyCustom.Checked) then
+      begin
+        SQL.Add('where modifierid = 0 or modifierid is null');
+      end;
+
+      if (radGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder, modgrouporder, modorder, modifierid');
+        Title2 := ', By Group / Item Order';
+      end
+      else if (radUnits.Checked) then begin
+        SQL.Add('order by amountsold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder, modgrouporder, modorder, modifierid');
+        Title2 := ', By Units Sold';
+      end
+      else if (radPrice.Checked) then begin
+        SQL.Add('order by averageunitprice desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder, modgrouporder, modorder, modifierid');
+        Title2 := ', By Average Unit Price';
+      end
+      else if (radGross.Checked) then begin
+        SQL.Add('order by grosssold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder, modgrouporder, modorder, modifierid');
+        Title2 := ', By Gross Value Sold';
+      end
+      else if (radDiscount.Checked) then begin
+        SQL.Add('order by discount desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder, modgrouporder, modorder, modifierid');
+        Title2 := ', By Discount Given';
+      end
+      else if (radNett.Checked) then begin
+        SQL.Add('order by nettsold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder, modgrouporder, modorder, modifierid');
+        Title2 := ', By Nett Value Sold';
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+        ParamByName('pforb').AsString := '';
+        Title2 := Title2 + ', ' + Glbs.ItemGroup;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if radFAndB.Checked then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', Food & Beverage' + Title2;
+        end else if radFOnly.Checked then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', Food' + Title2;
+        end else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', Beverage' + Title2;
+        end;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := 'All Outlets' + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radShowModGroupsAll.Checked) or (radShowModGroupsExludeCustom.Checked) or (radShowModGroupsOnlyCustom.Checked) then
+      begin
+        ParamByName('pmodgroupid').AsInteger := -1;
+        if (radShowModGroupsAll.Checked) then
+          Title1 := Title1 + ', All Modifiers'
+        else if (radShowModGroupsExludeCustom.Checked) then
+          Title1 := Title1 + ', All Defined Modifiers'
+        else
+          Title1 := Title1 + ', Only Custom Modifiers';
+      end
+      else begin
+        if (radModGroupAll.Checked) then begin
+          ParamByName('pmodgroupid').AsInteger := 0;
+          Title1 := Title1 + ', Only Grouped Modifier';
+        end
+        else begin
+          ParamByName('pmodgroupid').AsInteger := Glbs.ModGroupID;
+          Title1 := Title1 + ', ' + Glbs.ModGroup;
+        end;
+      end;
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := 'Item/Mod Sales Report file export';
+      SaveDialog.FileName := 'ItemModSales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRItemModSales.WBCSV.FileName := SaveDialog.FileName;
+        formQRItemModSales.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRItemModSales.QRItemModSales.ReportTitle := 'WizBang Waiter Item/Mods Sales Report';
+    formQRItemModSales.QRItemModSales.Preview;
+  finally
+    formQRItemModSales.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowModItemsReport;
+begin
+  try
+    formQRModItems := TformQRModItems.Create(Application);
+    Title1 := 'Modifier with Items Report';
+    Title2 := '';
+    Title3 := 'From ' + FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime) +
+     ' To ' + FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrModItems do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getmodswithitems(:poutletid, :premotelocationid, :pforb, :pitemgroupid, :pmodgroupid, :pricetype,  :fromtime, :totime, :showsharing)');
+
+      if (radShowModGroupsExludeCustom.Checked) then
+      begin
+        SQL.Add('where modifierid <> 0');
+      end
+      else if (radShowModGroupsOnlyCustom.Checked) then
+      begin
+        SQL.Add('where modifierid = 0');
+      end;
+
+      if (radModifiersOrderDefault.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, forb desc, modifierorder, modifier');
+        Title2 := ', By Default Order';
+      end
+      else if (radModifiersOrderModifier.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, forb desc, modifier');
+        Title2 := ', By Item';
+      end
+      else if (radModifiersOrderUnits.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, nettqty desc, forb desc, modifier');
+        Title2 := ', By Units';
+      end
+      else if (radModifiersOrderPrice.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, modprice desc, forb desc, modifier');
+        Title2 := ', By Average Price';
+      end
+      else if (radModifiersOrderValue.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, nett desc, forb desc, modifier');
+        Title2 := ', By Value';
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+        ParamByName('pforb').AsString := '';
+        Title2 := Title2 + ', ' + Glbs.ItemGroup;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if radFAndB.Checked then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', Food & Beverage' + Title2;
+        end else if radFOnly.Checked then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', Food' + Title2;
+        end else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', Beverage' + Title2;
+        end;
+      end;
+
+      if (radExcludeZeros.Checked) then begin
+        ParamByName('pricetype').AsInteger := 1;
+        Title2 := Title2 + ', Zero Values Excluded';
+      end
+      else if (radIncludeZeros.Checked) then begin
+        ParamByName('pricetype').AsInteger := -1;
+        Title2 := Title2 + ', Zero Values Included';
+      end
+      else if (radOnlyZeros.Checked) then begin
+        ParamByName('pricetype').AsInteger := 0;
+        Title2 := Title2 + ', Zero Values ONLY';
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := 'All Outlets' + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radShowModGroupsAll.Checked) or (radShowModGroupsExludeCustom.Checked) or (radShowModGroupsOnlyCustom.Checked) then
+      begin
+        ParamByName('pmodgroupid').AsInteger := -1;
+        if (radShowModGroupsAll.Checked) then
+          Title1 := Title1 + ', All Modifiers'
+        else if (radShowModGroupsExludeCustom.Checked) then
+          Title1 := Title1 + ', All Defined Modifiers'
+        else
+          Title1 := Title1 + ', Only Custom Modifiers';
+      end
+      else begin
+        if (radModGroupAll.Checked) then begin
+          ParamByName('pmodgroupid').AsInteger := 0;
+          Title1 := Title1 + ', Only Grouped Modifier';
+        end
+        else begin
+          ParamByName('pmodgroupid').AsInteger := Glbs.ModGroupID;
+          Title1 := Title1 + ', ' + Glbs.ModGroup;
+        end;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+      BoolAsParam(ParamByName('showsharing'), AppDetails.ShowSharing);
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := 'Modifier With Items Report file export';
+      SaveDialog.FileName := 'ModifierItems' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRModItems.WBCSV.FileName := SaveDialog.FileName;
+        formQRModItems.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRModItems.QRModItems.ReportTitle := 'WizBang Waiter Modifier With Items Report';
+    formQRModItems.QRModItems.Preview;
+  finally
+    formQRModItems.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowOrderByBumpedReport;
+begin
+  try
+    formQROrdersByBumped := TformQROrdersByBumped.Create(Application);
+
+    Title1 := sAvgBumpTitle;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then
+    begin
+      Exit;
+    end;
+
+    with DM.qrOrdersbumped do
+    begin
+      SQL.Clear;
+      SQL.Add('select * from getorderlinebumpinfo (:poutletid ,:premotelocationid, :pforb, :pitemgroupid,:fromtime, :totime, :NEEDEXACTSTARTTIME)');
+      if (radItemGroup.Checked) then
+      begin
+        ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+        ParamByName('pforb').AsString := '';
+        Title2 := ', ' + Glbs.ItemGroup + Title2;
+      end
+      else
+      begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if (radFAndB.Checked) then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
+        end
+        else if (radFOnly.Checked) then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
+        end
+        else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
+        end;
+      end;
+      ParamByName('NEEDEXACTSTARTTIME').AsInteger := AppDetails.NeedExactStartTimeForBumped;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        ParamByName('poutletid').AsInteger := -1;
+        Title2 := sAllOutletsTitle2 + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + ', ' + Title2;
+      end;
+      ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then
+    begin
+      SaveDialog.Title := sNoExportDlgTitle;
+      SaveDialog.FileName := 'OrderBumped' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQROrdersByBumped.WBCSV.FileName := SaveDialog.FileName;
+        formQROrdersByBumped.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQROrdersByBumped.QROrders.ReportTitle := sAvgBumpTitle;
+    formQROrdersByBumped.QROrders.Preview;
+  finally
+    formQROrdersByBumped.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowItemByBumpedReport;
+begin
+  try
+    formQRItemsByBumped := TformQRItemsByBumped.Create(Application);
+
+    Title1 := sAvgItemBumpTitle;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then
+    begin
+      Exit;
+    end;
+
+    with DM.qrOrdersbumped do
+    begin
+      SQL.Clear;
+      SQL.Add('select * from getorderlinebumpinfo (:poutletid ,:premotelocationid, :pforb, :pitemgroupid,:fromtime, :totime, :NEEDEXACTSTARTTIME) order by itemid');
+      if (radItemGroup.Checked) then
+      begin
+        ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+        ParamByName('pforb').AsString := '';
+        Title2 := ', ' + Glbs.ItemGroup + Title2;
+      end
+      else
+      begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if (radFAndB.Checked) then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
+        end
+        else if (radFOnly.Checked) then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
+        end
+        else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
+        end;
+      end;
+      ParamByName('NEEDEXACTSTARTTIME').AsInteger := AppDetails.NeedExactStartTimeForBumped;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        ParamByName('poutletid').AsInteger := -1;
+        Title2 := sAllOutletsTitle2 + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + ', ' + Title2;
+      end;
+      ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then
+    begin
+      SaveDialog.Title := sNoExportDlgTitle;
+      SaveDialog.FileName := 'ItemBumped' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRItemsByBumped.WBCSV.FileName := SaveDialog.FileName;
+        formQRItemsByBumped.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRItemsByBumped.QROrders.ReportTitle := sAvgItemBumpTitle;
+    formQRItemsByBumped.QROrders.Preview;
+  finally
+    formQRItemsByBumped.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowItemCountByBumpedReport;
+begin
+  try
+    formQRItemCountByBumped := TformQRItemCountByBumped.Create(Application);
+
+    Title1 := sAvgItemBumpTitle;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then
+    begin
+      Exit;
+    end;
+
+    with DM.qrOrdersbumped do
+    begin
+      SQL.Clear;
+      SQL.Add('select * from getorderlinebumpinfo (:poutletid ,:premotelocationid, :pforb, :pitemgroupid,:fromtime, :totime, :NEEDEXACTSTARTTIME) order by itemid');
+      if (radItemGroup.Checked) then
+      begin
+        ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+        ParamByName('pforb').AsString := '';
+        Title2 := ', ' + Glbs.ItemGroup + Title2;
+      end
+      else
+      begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if (radFAndB.Checked) then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
+        end
+        else if (radFOnly.Checked) then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
+        end
+        else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
+        end;
+      end;
+      ParamByName('NEEDEXACTSTARTTIME').AsInteger := AppDetails.NeedExactStartTimeForBumped;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        ParamByName('poutletid').AsInteger := -1;
+        Title2 := sAllOutletsTitle2 + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + ', ' + Title2;
+      end;
+      ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then
+    begin
+      SaveDialog.Title := sNoExportDlgTitle;
+      SaveDialog.FileName := 'ItemCountBumped' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRItemCountByBumped.WBCSV.FileName := SaveDialog.FileName;
+        formQRItemCountByBumped.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRItemCountByBumped.QROrders.ReportTitle := sAvgItemBumpTitle;
+    formQRItemCountByBumped.QROrders.Preview;
+  finally
+    formQRItemCountByBumped.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowSalePeriodSalesReport;
+begin
+  try
+    formQRSalePeriodSales := TformQRSalePeriodSales.Create(Application);
+
+    Title1 := sSalePeriodTitle;
+    Title2 := '';
+    Title3 := Format(sDateRange, [FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM', FFromTime), FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM', FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrSalePeriodSales do
+    begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from GETITEMSALECATEGORYPERIODSALES (:poutletid, :premotelocationid, :pforb, :psaleperiodid, :pitemgroupid, :fromtime, :totime,:deleteditems)');
+
+      if (radGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, TIMEPERIODNAME, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sGroupItemOrder;
+      end
+      else if (radUnits.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, TIMEPERIODNAME, amountsold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sUnitSold;
+      end
+      else if (radPrice.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, TIMEPERIODNAME, averageunitprice desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sAvgUPrice;
+      end
+      else if (radGross.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, TIMEPERIODNAME, grosssold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sGrossSold;
+      end
+      else if (radDiscount.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, TIMEPERIODNAME, discount desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sDiscount;
+      end
+      else if (radNett.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, TIMEPERIODNAME, nettsold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sNetSold;
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+        ParamByName('pforb').AsString := '';
+        Title2 := Title2 + ', ' + Glbs.ItemGroup;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if (radFAndB.Checked) then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
+        end
+        else if (radFOnly.Checked) then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
+        end
+        else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
+        end;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutlets + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radSalePeriodAll.Checked) then begin
+        ParamByName('psaleperiodid').AsInteger := -1;
+        Title1 := Title1 + ', ' +  sAllSalePeriod;
+      end
+      else begin
+        ParamByName('psaleperiodid').AsInteger := Glbs.SalePeriodID;
+        Title1 := Title1 + ', ' + Glbs.SalePeriodName;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+      ParamByName('deleteditems').AsInteger := Integer(not dm.ItemGroupsCurrent);
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sSalePeriodDlgTitle;
+      SaveDialog.FileName := 'SalePeriodSales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRSalePeriodSales.WBCSV.FileName := SaveDialog.FileName;
+        formQRSalePeriodSales.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRSalePeriodSales.QRSalePeriodSales.ReportTitle := sSalePeriodRepTitle;
+    formQRSalePeriodSales.QRSalePeriodSales.Preview;
+  finally
+    formQRSalePeriodSales.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowAccountTransactionReport;
+begin
+  try
+    formQRAccountTransaction := TformQRAccountTransaction.Create(Application);
+    Title1 := sAcctTransRepTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    if(chkSBExtendedDetail.Checked) then begin
+      formQRAccountTransaction.lblWhoTransaction.Caption := sWhoTransacton;
+      formQRAccountTransaction.lblWhenTransaction.Caption := sWhenTransaction;
+      if (not chkRemNumbers.Checked) then begin
+        formQRAccountTransaction.lblInvoiceNo.Caption := sInvoiceNo;
+        formQRAccountTransaction.lblTenderNo.Caption := sTenderNo;
+        formQRAccountTransaction.txtInvoiceNo.DataField := 'INVOICENO';
+        formQRAccountTransaction.txtTenderNo.DataField := 'TENDERNO';
+      end
+      else begin
+        formQRAccountTransaction.lblInvoiceNo.Caption := sRemInvoiceNo;
+        formQRAccountTransaction.lblTenderNo.Caption := sRemTenderNo;
+        formQRAccountTransaction.txtInvoiceNo.DataField := 'REMINVOICENO';
+        formQRAccountTransaction.txtTenderNo.DataField := 'REMTENDERNO';
+      end;
+    end
+    else begin
+        if (not chkSBTransType.Checked and not radAccountAll.Checked) and ckbGroupAccount.Checked then begin
+          formQRAccountTransaction.QRExpr2.Enabled := True;
+          formQRAccountTransaction.QRExpr2.Expression := '''Acct #: '' + qrAccountTransaction.ACCOUNTNO + '' - '' + qrAccountTransaction.AccountName';
+        end
+        else if (chkSBTransType.Checked) then begin
+          formQRAccountTransaction.QRExpr2.Enabled := True;
+          formQRAccountTransaction.QRExpr2.Expression := 'IF(qrAccountTransaction.loyaltyreward = '''', qrAccountTransaction.TransactionType,qrAccountTransaction.TransactionType + '' - Reward Redeemed: '' + qrAccountTransaction.loyaltyreward)';
+        end;
+
+        formQRAccountTransaction.lblWhoTransaction.Caption := '';
+        formQRAccountTransaction.lblWhenTransaction.Caption := '';
+        formQRAccountTransaction.lblInvoiceNo.Caption := '';
+        formQRAccountTransaction.lblTenderNo.Caption := '';
+        formQRAccountTransaction.txtInvoiceNo.DataField := '';
+        formQRAccountTransaction.txtTenderNo.DataField := '';
+    end;
+
+    // set caption empty, in QRAccountTransactionBeforePrint clear datafields and subtotals from displaying if caption = ''
+    case (frmSBOptions.ItemIndex) of
+      0: begin
+        formQRAccountTransaction.lblLoyalty1Change.Caption := '';
+        formQRAccountTransaction.lblLoyalty2Change.Caption := '';
+      end;
+      1: begin
+        //leave as is....
+      end;
+      2: begin                                                     
+        formQRAccountTransaction.lblAcctBalChange.Caption := '';
+        formQRAccountTransaction.lblLoyalty2Change.Caption := '';
+      end;
+      3: begin
+        formQRAccountTransaction.lblAcctBalChange.Caption := '';
+        formQRAccountTransaction.lblLoyalty1Change.Caption := '';
+      end;
+    end;
+
+
+
+    with dm.qrAccountTransaction do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select P.OUTLETID, P.OUTLETNAME, P.REMOTELOCATIONID, P.REMOTELOCATIONNAME, P.LASTTRANSRECEIVED, P.ACCOUNTTYPEID, P.ACCOUNTTYPE, P.ACCOUNTID, P.ACCOUNTNO, P.ACCOUNTNAME, P.LASTTRANSACTION,');
+      SQL.Add('SUM(P.CURRENTBALANCECHANGE) CURRENTBALANCECHANGE, cast(SUM(P.LOYALTYPOINTS1CHANGE) as Integer) LOYALTYPOINTS1CHANGE, cast(SUM(P.LOYALTYPOINTS2CHANGE)as Integer) LOYALTYPOINTS2CHANGE,');
+      SQL.Add('P.TRANSACTIONTYPE, P.LOYALTYREWARD,');
+      SQL.Add('P.INVOICENO, P.REMINVOICENO,');
+      SQL.Add('P.TENDERNO, P.REMTENDERNO,');
+      SQL.Add('P.WHOTRANSACTION, P.WHENTRANSACTION');
+
+      SQL.Add('from GETACCOUNTTRANSACTIONDETAIL (:fromtime,:totime,:poutletid,:premotelocationid,:paccounttypeid,:paccountid,:pschemeorbalance,:pschemeorbalancedetail,:ptransactiontype,:ptransactiondetail) p');
+
+      SQL.Add('GROUP BY P.OUTLETID, P.OUTLETNAME, P.REMOTELOCATIONID, P.REMOTELOCATIONNAME, P.LASTTRANSRECEIVED, P.ACCOUNTTYPEID, P.ACCOUNTTYPE, P.ACCOUNTID, P.ACCOUNTNO, P.ACCOUNTNAME, P.LASTTRANSACTION,');
+      SQL.Add('P.TRANSACTIONTYPE, P.LOYALTYREWARD,');
+      SQL.Add('P.INVOICENO, P.WHOTRANSACTION, P.WHENTRANSACTION, P.REMINVOICENO,');
+      SQL.Add('P.TENDERNO, P.REMTENDERNO, ');
+      SQL.Add('P.WHOTRANSACTION, P.WHENTRANSACTION');
+      //if (radGroup.Checked) then begin
+        SQL.Add('order by p.outletname, p.remotelocationname, p.accounttype, p.accountname, p.transactiontype, p.loyaltyreward, P.WHENTRANSACTION DESC');
+      //  Title2 := ', ';
+      //end;
+
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutlets + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Visible)) and
+             ((ckbGroupRemoteLocation.Checked) and (ckbGroupRemoteLocation.Visible))  then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end; 
+        Title2 := Title2 + ', ' + sAllLoc ;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+        if (Glbs.RemoteLocationID = 0) then begin
+          if pnlRemoteLocations.Visible then
+            Title2 := Title2 + ', ' + Glbs.RemoteLocationName;
+        end
+        else
+          Title2 := Title2 + ', ' + Glbs.RemoteLocationName;
+      end;
+
+      if (radAccountAll.Checked) then begin
+        ParamByName('paccountid').AsInteger := 0;
+        ParamByName('paccounttypeid').AsInteger := 0;
+        Title1 := Title1 + ', ' + sAllAccts;
+      end
+      else if (radAccountSelected.Checked) then begin
+        ParamByName('paccountid').AsInteger := Glbs.AccountID;
+        ParamByName('paccounttypeid').AsInteger := 0;
+        Title1 := Title1 + ', ' + Glbs.AccountName;
+      end
+      else begin
+        ParamByName('paccountid').AsInteger := 0;
+        ParamByName('paccounttypeid').AsInteger := Glbs.AccountTypeID;
+        Title1 := Title1 + ', ' + Glbs.AccountType;
+      end;
+
+      if (not (ckbGroupAccount.Checked) and ckbGroupAccount.Enabled) then
+        ParamByName('paccountid').AsInteger := -2;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      
+      ParamByName('PSCHEMEORBALANCE').AsInteger := (frmSBOptions.ItemIndex-1);
+      ParamByName('PSCHEMEORBALANCEDETAIL').AsInteger := frmSBDetails.ItemIndex;
+      BoolAsParam(ParamByName('PTRANSACTIONTYPE'),chkSBTransType.Checked);   
+      BoolAsParam(ParamByName('PTRANSACTIONDETAIL'),chkSBExtendedDetail.Checked);
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sAcctRepDlgTitle;
+      SaveDialog.FileName := 'Account Transactions' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRAccountTransaction.WBCSV.FileName := SaveDialog.FileName;
+        formQRAccountTransaction.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRAccountTransaction.QRAccountTransaction.ReportTitle := sAcctTransRepTitle1;
+    formQRAccountTransaction.QRAccountTransaction.Preview;
+  finally
+    formQRAccountTransaction.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowOrdersSalesVoidsReport;
+begin
+  try
+    formQROrdersSalesVoids := TformQROrdersSalesVoids.Create(Application);
+
+    Title1 := sOrdersSalesVoidsTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrOrdersSalesVoids do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getorderssalesvoids (:poutletid, :premotelocationid, :pforb, :pitemgroupid, :fromtime, :totime)');
+
+      if (radOGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemorder');
+        OrdersHeader := 'Orders (By Group / Item Order)';
+      end
+      else if (radOUnits.Checked) then begin
+        SQL.Add('order by ordersqty desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemorder');
+        OrdersHeader := 'Orders (By Units)';
+      end
+      else if (radOValue.Checked) then begin
+        SQL.Add('order by ordersvalue desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemorder');
+        OrdersHeader := 'Orders (By Value)';
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pforb').AsString := '';
+        if (DBGridItemGroups.SelectedRows.Count > 1) then
+        begin
+          ParamByName('pitemgroupid').AsString := GetSelectedIDString(DBGridItemGroups, 'itemgroupid');
+          Title2 := ', ' + sSelectedItemGroups + Title2;
+          formQROrdersSalesVoids.MultipleItemGroups := True;
+        end
+        else
+        begin
+          ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+          Title2 := ', ' + Glbs.ItemGroup + Title2;
+        end;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if (radFAndB.Checked) then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
+        end
+        else if (radFOnly.Checked) then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
+        end
+        else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
+        end;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutletsTitle2 + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sOrdersSalesVoidsDlgTitle;
+      SaveDialog.FileName := 'OrdersSalesVoids' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQROrdersSalesVoids.WBCSV.FileName := SaveDialog.FileName;
+        formQROrdersSalesVoids.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQROrdersSalesVoids.QROrdersSalesVoids.ReportTitle := sOrdersSalesVoidsRepTitle;
+    formQROrdersSalesVoids.QROrdersSalesVoids.Preview;
+  finally
+    formQROrdersSalesVoids.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowAccountTabSalesReport;
+begin
+  try
+    formQRAccountTabSales := TformQRAccountTabSales.Create(Application);
+
+    Title1 := sAccountTabSalesTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrAccountTabSales do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select outletid, outletname, remotelocationid, remotelocationname,');
+      SQL.Add('    accountid, accountname, accounttypeid, accounttype,');
+      SQL.Add('    count(distinct(groupid)) as tabcount,');
+      SQL.Add('    sum(fooddisc) as fooddisc, sum(foodonaccount) as foodonaccount, sum(foodtendered) as foodtendered,');
+      SQL.Add('    sum(foodprorata) as foodprorata, sum(foodnotaccount) as foodnotaccount, sum(foodtotal) as foodtotal,');
+      SQL.Add('    sum(bevdisc) as bevdisc, sum(bevonaccount) as bevonaccount, sum(bevtendered) as bevtendered,');
+      SQL.Add('    sum(bevprorata) as bevprorata, sum(bevnotaccount) as bevnotaccount, sum(bevtotal) as bevtotal,');
+      SQL.Add('    sum(alldisc) as alldisc, sum(allonaccount) as allonaccount, sum(alltendered) as alltendered,');
+      SQL.Add('    sum(allprorata) as allprorata, sum(allnotaccount) as allnotaccount, sum(alltotal) as alltotal');
+      SQL.Add('  from getaccounttabsales (:poutletid, :premotelocationid, :fromtime, :totime)');
+      SQL.Add(' group by outletid, outletname, remotelocationid, remotelocationname,');
+      SQL.Add('    accountid, accountname, accounttypeid, accounttype');
+      SQL.Add(' order by outletname, remotelocationname, accounttype, accountname');
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutletsTitle2 + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sAccountTabSalesDlgTitle;
+      SaveDialog.FileName := 'AccountTabSales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRAccountTabSales.WBCSV.FileName := SaveDialog.FileName;
+        formQRAccountTabSales.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRAccountTabSales.QRAccountTabSales.ReportTitle := sAccountTabSalesRepTitle;
+    formQRAccountTabSales.QRAccountTabSales.Preview;
+  finally
+    formQROrdersSalesVoids.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowOpenTablesReport;
+begin
+  try
+    formQROpenTables := TformQROpenTables.Create(Application);
+
+    Title1 := sOpenTablesTitle1;
+    Title2 := '';
+    Title3 := FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM', Now);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrOpenTablesOLsToPay do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getopentablesolstopay(:poutletid, :premotelocationid)');
+      SQL.Add(' order by outletid, outletname, remotelocationid, remotelocationname, salecategoryid, sectionid, tableno, forb, orderlineid');
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutletsTitle2 + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sOpenTablesDlgTitle;
+      SaveDialog.FileName := 'OpenTabs' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQROpenTables.WBCSV.FileName := SaveDialog.FileName;
+        formQROpenTables.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQROpenTables.QROpenTables.ReportTitle := sOpenTablesRepTitle;
+    formQROpenTables.QROpenTables.Preview;
+  finally
+    formQROpenTables.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowTableSummaryReport;
+begin
+  try
+    formQRTableSummary := TformQRTableSummary.Create(Application);
+
+    Title1 := sTablesSummaryTitle1;
+    Title2 := '';
+    if (radTableOptionOpenOnly.Checked) then
+    begin
+      Title3 := FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM', Now);
+    end
+    else
+    begin
+      Title3 := Format(sDateRange, [FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM', FFromTime), FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM', FToTime)]);
+    end;
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrTabs do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from gettablesreports(:poutletid, :premotelocationid, :pinvoicedthroughaccount, :popentabs, :fromtime, :totime)');
+      SQL.Add(' order by outletid, outletname, remotelocationid, remotelocationname, salecategoryid, sectionid, tableno, whenopened');
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutletsTitle2 + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      ParamByName('pinvoicedthroughaccount').AsInteger := -1;
+
+      if (radTableOptionIncludeOpen.Checked) then
+      begin
+        ParamByName('popentabs').AsInteger := -1;
+      end
+      else if (radTableOptionOpenOnly.Checked) then
+      begin
+        ParamByName('popentabs').AsInteger := 1;
+      end
+      else
+      begin
+        ParamByName('popentabs').AsInteger := 0;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sTablesSummaryDlgTitle;
+      SaveDialog.FileName := 'TabsSummary' + FormatDateTime('yyyymmddhhnn', Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRTableSummary.WBCSV.FileName := SaveDialog.FileName;
+        formQRTableSummary.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRTableSummary.QRTableSummary.ReportTitle := sTablesSummaryRepTitle;
+    formQRTableSummary.QRTableSummary.Preview;
+  finally
+    formQRTableSummary.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowComboSalesReport;
+begin
+  try
+    if radComboOrderCombos.Checked then
+    begin
+      formQRComboSales := TformQRComboSales.Create(Application);
+      formQRComboItemSales := nil;
+    end
+    else
+    begin
+      formQRComboItemSales := TformQRComboItemSales.Create(Application);
+      formQRComboSales := nil;
+    end;
+
+    Title1 := sTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then
+    begin
+      Exit;
+    end;
+
+    with dm.qrCombosSales do
+    begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      if radComboOrderCombos.Checked then
+      begin // combo wise
+        SQL.Add('select p.itemabbrev, p.comboname, p.comboorder, p.comboid, p.combocount, p.combogroupid, p.combogroupname, p.allowcombineinreports, p.remotelocationid, p.remotelocationname,');
+        SQL.Add('    p.itemid, p.itemorder, p.forb, p.itemgroupid, p.itemgroupabbrev, p.itemgrouporder, p.outletid, p.outletname,');
+        SQL.Add('    p.superitemgroupid, p.superitemgroup, p.superitemgroupabbrev, p.superitemgrouporder, p.hideforb, p.comboid, p.averageunitprice,');
+        SQL.Add('    p.amountsold, p.grosssold, p.salestax, p.discount, p.nettsold, p.whendeleted');
+        SQL.Add('  from getcombosales (:poutletid, :premotelocationid, :pforb, :pcomboid, :pitemgroupid, :fromtime, :totime) p');
+        SQL.Add(' order by p.outletname,p.remotelocationname,p.comboorder,p.comboid,p.combogroupid,p.superitemgrouporder,p.forb desc,p.itemgrouporder, p.itemgroupabbrev, p.itemorder');
+        Title2 := ', ' + sComboOrder;
+      end
+      else //item wise
+      begin
+        SQL.Add('select p.itemabbrev, p.comboname, p.comboorder, p.allowcombineinreports, p.remotelocationid, p.remotelocationname,');
+        SQL.Add('    p.itemid, p.itemorder, p.forb, p.itemgroupid, p.itemgroupabbrev, p.itemgrouporder, p.outletid, p.outletname,');
+        SQL.Add('    p.superitemgroupid, p.superitemgroup, p.superitemgroupabbrev, p.superitemgrouporder, p.hideforb, p.comboid, p.averageunitprice, p.whendeleted,');
+        SQL.Add('    sum(p.amountsold)amountsold, sum(p.grosssold)grosssold, sum(p.salestax)salestax, sum(p.discount)discount, sum(p.nettsold)nettsold');
+        SQL.Add('  from getcombosales (:poutletid, :premotelocationid, :pforb, :pcomboid, :pitemgroupid, :fromtime, :totime) p');
+        SQL.Add(' group by p.itemabbrev, p.comboname, p.comboorder, p.allowcombineinreports, p.remotelocationid, p.remotelocationname,');
+        SQL.Add('    p.itemid, p.itemorder, p.forb, p.itemgroupid, p.itemgroupabbrev, p.itemgrouporder, p.outletid, p.outletname,');
+        SQL.Add('    p.superitemgroupid, p.superitemgroup, p.superitemgroupabbrev, p.superitemgrouporder, p.hideforb, p.comboid, p.averageunitprice, p.whendeleted');
+        SQL.Add(' order by p.outletname, p.remotelocationname,p.superitemgrouporder, p.forb desc, p.itemgrouporder, p.itemgroupabbrev,p.itemorder , p.itemid');
+        Title2 := ', ' + sComboItemOrder;
+      end;
+
+      if (frmItemGroups.Visible) and (radItemGroup.Checked) then
+        ParamByName('pitemgroupid').AsInteger := dm.qrItemGroups.fieldbyname('itemgroupid').AsInteger
+      else
+        ParamByName('pitemgroupid').AsInteger := -1;
+
+      if (radFAndB.Checked) then begin
+        ParamByName('pforb').AsString := '';
+        Title2 := ', ' + sFoodBev + Title2;
+      end
+      else if (radFOnly.Checked) then begin
+        ParamByName('pforb').AsString := 'F';
+        Title2 := ', ' + sFood + Title2;
+      end
+      else begin
+        ParamByName('pforb').AsString := 'B';
+        Title2 := ', ' + sBev + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then
+      begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then
+        begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else
+        begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else
+      begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+        Title2 := ', ' + Glbs.RemoteLocationName + Title2;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then
+      begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then
+        begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else
+        begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+
+        Title2 := sAllOutlets + Title2;
+      end
+      else
+      begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName +  Title2;
+      end;
+
+
+      if (radComboAll.Checked) then begin
+        ParamByName('pcomboid').AsInteger := -1;
+        Title1 := Title1 + ', ' +  sAllCombo;
+      end
+      else
+      begin
+        ParamByName('pcomboid').AsInteger := Glbs.ComboId;
+        Title1 := Title1 + ', ' + Glbs.ComboName;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then
+    begin
+      SaveDialog.Title := sSalesCatDlgTitle;
+      SaveDialog.FileName := 'ComboSales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then
+      begin
+        if radComboOrderCombos.Checked then
+        begin
+          formQRComboSales.WBCSV.FileName := SaveDialog.FileName;
+          formQRComboSales.WBCSV.OpenToWrite;
+        end
+        else
+        begin
+          formQRComboItemSales.WBCSV.FileName := SaveDialog.FileName;
+          formQRComboItemSales.WBCSV.OpenToWrite;
+        end;
+      end;
+    end;
+
+    if radComboOrderCombos.Checked then
+    begin
+      formQRComboSales.QRComboSales.ReportTitle := sSalesCatRepTitle;
+      formQRComboSales.QRComboSales.Preview;
+    end
+    else
+    begin
+      formQRComboItemSales.QRComboSales.ReportTitle := sSalesCatRepTitle;
+      formQRComboItemSales.QRComboSales.Preview;
+    end;
+  finally
+    if (Assigned(formQRComboSales)) then
+    begin
+      formQRComboSales.Free;
+    end;
+    if (Assigned(formQRComboItemSales)) then
+    begin
+      formQRComboItemSales.Free;
+    end;
+  end;
+end;
+
+procedure TformReports.ShowEventSalesReport;
+begin
+  try
+    formQREventSales := TformQREventSales.Create(Application);
+    Title1 := sEventSalesRepTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrEventSales do
+    begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from geteventsales (:poutletid, :premotelocationid, :pforb, :peventid, :pitemgroupid, :fromtime, :totime)');
+
+      if (radGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, eventname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sByGroupOrder;
+      end
+      else if (radUnits.Checked) then begin
+        SQL.Add('order by eventname, amountsold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sUnitSold;
+      end
+      else if (radPrice.Checked) then begin
+        SQL.Add('order by eventname, averageunitprice desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sAvgUPrice;
+      end
+      else if (radGross.Checked) then begin
+        SQL.Add('order by eventname, grosssold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sGrossSold;
+      end
+      else if (radDiscount.Checked) then begin
+        SQL.Add('order by eventname, discount desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sDiscount;
+      end
+      else if (radNett.Checked) then begin
+        SQL.Add('order by eventname, nettsold desc, outletname, remotelocationname, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sNetSold;
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+        ParamByName('pforb').AsString := '';
+        Title2 := Title2 + ', ' + Glbs.ItemGroup;
+      end
+      else begin
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if radFAndB.Checked then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
+        end else if radFOnly.Checked then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
+        end else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
+        end;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutlets + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radEventAll.Checked) then
+      begin
+        ParamByName('peventid').AsInteger := -1;
+        Title1 := Title1 + ', ' + sAllEvents;
+      end
+      else if (radEventSelected.Checked) then
+      begin
+        ParamByName('peventid').AsInteger := Glbs.EventID;
+        Title1 := Title1 + ', ' + Glbs.EventName;
+      end;
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then
+    begin
+      SaveDialog.Title := sEventRepDlgTitle;
+      SaveDialog.FileName := 'Event Sales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then
+      begin
+        formQREventSales.WBCSV.FileName := SaveDialog.FileName;
+        formQREventSales.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQREventSales.QREventSales.ReportTitle := sEventRepDlgTitle;
+    formQREventSales.QREventSales.Preview;
+  finally
+    formQREventSales.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowAllStaffOpenPriceOrders;
+begin
+  try
+    formQRStaffOpenPrice := TformQRStaffOpenPrice.Create(Application);
+
+    if (radStaffAll.Checked) then begin
+      Title1 := sAllStaffOpenPriceTitle1;
+    end
+    else begin
+      Title1 := Glbs.FirstName + ' ' + Glbs.Surname + sOpenPriceRepTitle1;
+    end;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrStaffOpenPrice do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getstaffopenprice(:poutletid, :premotelocationid, :pforb, :pstaffid, :fromtime, :totime)');
+
+      if (radOpenPriceStaff.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, staffname, forb desc, whenordereddate, itemid, itemabbrev');
+        OrdersHeader := sByStaff;
+      end
+      else if (radOpenPriceDate.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, whenordereddate, forb desc, staffname, itemid, itemabbrev');
+        OrdersHeader := sByDateTime;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutlets;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radStaffAll.Checked) then begin
+        ParamByName('pstaffid').AsInteger := -1;
+      end
+      else begin
+        ParamByName('pstaffid').AsInteger := Glbs.StaffID;
+      end;
+
+      ParamByName('pforb').AsString := '';
+      if radFAndB.Checked then begin
+        ParamByName('pforb').AsString := '';
+        Title2 := Title2 + ', ' + sFoodBev;
+      end else if radFOnly.Checked then begin
+        ParamByName('pforb').AsString := 'F';
+        Title2 := Title2 + ', ' + sFood;
+      end else begin
+        ParamByName('pforb').AsString := 'B';
+        Title2 := Title2 + ', ' + sBev;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sStaffOrdDlgTitle;
+      SaveDialog.FileName := 'StaffOpenPriceOrders' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRStaffOpenPrice.WBCSV.FileName := SaveDialog.FileName;
+        formQRStaffOpenPrice.WBCSV.OpenToWrite;
+      end;
+    end;
+    formQRStaffOpenPrice.IsStaffOrderBy := radOpenPriceStaff.Checked;
+    formQRStaffOpenPrice.QRStaffOpenPrice.ReportTitle := sStaffOrdRepTitle;
+    formQRStaffOpenPrice.QRStaffOpenPrice.Preview;
+  finally
+    formQRStaffOpenPrice.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowTransListReport;
+begin
+  try
+    formQRTransactionsListing := TformQRTransactionsListing.Create(Application);
+
+    Title1 := sTransactionListingTitle;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrTransList do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from gettranslist (:poutletid, :premotelocationid, :ptillid, :pstaffid, :fromtime, :totime)');
+
+      if (radTransListOptionsCashups.checked) then
+      begin
+        SQL.Add('where (cashupid is not null)');
+        SQL.Add('order by outletname, remotelocationname, cashupid, ');
+        if (ckbGroupStaff.Checked) then
+          SQL.Add('staffname, ');
+        OrdersHeader := sByCashUps;
+      end
+      else if (radTransListOptionsClockins.checked) then
+      begin
+        SQL.Add('where (clockinid is not null)');
+        SQL.Add('order by outletname, remotelocationname, staffname, clockinid, ');
+        if (ckbGroupTill.Checked) then
+          SQL.Add('tillname, ');
+        OrdersHeader := sByClockins;
+      end
+      else
+      begin
+        SQL.Add('order by outletname, remotelocationname, ');
+        if (ckbGroupStaff.Checked) or (radTransListOptionsStaff.Checked) then
+          SQL.Add('staffname, ');
+        if (ckbGroupTill.Checked) then
+          SQL.Add('tillname, ');
+        OrdersHeader := sByStaff;
+      end;
+
+      if (radTransListSortByDate.checked) then
+      begin
+        SQL.Add('whentendered');
+      end
+      else if (radTransListSortByTender.checked) then
+      begin
+        SQL.Add('tenderlinetypeorder, whentendered');
+      end
+      else
+      begin
+        SQL.Add('tendertype, whentendered');
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        ParamByName('poutletid').AsInteger := -1;
+        Title2 := sAllOutlets;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        ParamByName('premotelocationid').AsInteger := -1;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radTillAll.Checked) then begin
+        ParamByName('ptillid').AsInteger := -1;
+      end
+      else begin
+        ParamByName('ptillid').AsInteger := Glbs.TillID;
+      end;
+
+      if (radStaffAll.Checked) then begin
+        ParamByName('pstaffid').AsInteger := -1;
+      end
+      else begin
+        if (DBGridStaffMembers.SelectedRows.Count > 1) then
+        begin
+          ParamByName('pstaffid').AsString := GetSelectedIDString(DBGridStaffMembers, 'staffid');
+        end
+        else
+        begin
+          ParamByName('pstaffid').AsInteger := Glbs.StaffID;
+        end;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sStaffOrdDlgTitle;
+      SaveDialog.FileName := 'TransactionListing' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRTransactionsListing.WBCSV.FileName := SaveDialog.FileName;
+        formQRTransactionsListing.WBCSV.OpenToWrite;
+      end;
+    end;
+    formQRTransactionsListing.QRTransactionsListing.ReportTitle := sTransactionListingTitle;
+    formQRTransactionsListing.QRTransactionsListing.Preview;
+  finally
+    formQRTransactionsListing.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.ShowAccTypeMovementsReport;
+begin
+  try
+    formQRAccTypeMovements := TformQRAccTypeMovements.Create(Application);
+
+    Title1 := sAccTypeMovements;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
+      Exit;
+    end;
+
+    with dm.qrAccountTypeMovements do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getacctypemovementtrans (:poutletid, :premotelocationid, :paccounttypeid, :ploayltyrewardid, :pnosaletypeid, :fromtime, :totime)');
+      SQL.Add('  order by outletname, remotelocationname, accounttype, tendertype, invoicetype, loyaltyreward, nosaletype');
+
+      if (radAccountTypeSelected.Checked) then begin
+        ParamByName('paccounttypeid').AsInteger := Glbs.AccountTypeID;
+        Title2 := Glbs.AccountType;
+      end
+      else begin
+        Title2 := sAccTypeMovementsTitle2;
+        ParamByName('paccounttypeid').AsInteger := -1;
+      end;
+
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
+        end;
+        Title2 := sAllOutletsTitle2 + ', ' + Title2;
+      end
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
+
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
+      end
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (chkShowLoyaltyReward.Checked) then
+      begin
+        ParamByName('ploayltyrewardid').AsInteger := 0;
+      end
+      else
+      begin
+        ParamByName('ploayltyrewardid').AsInteger := -1;
+      end;
+
+      if (chkShowNoSale.Checked) then
+      begin
+        ParamByName('pnosaletypeid').AsInteger := 0;
+      end
+      else
+      begin
+        ParamByName('pnosaletypeid').AsInteger := -1;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    formQRAccTypeMovements.ShowDetails := (chkShowLoyaltyReward.Checked) or (chkShowNoSale.Checked);
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sAccTypeMovementsDlgTitle;
+      SaveDialog.FileName := 'AccType Movements' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRAccTypeMovements.WBCSV.FileName := SaveDialog.FileName;
+        formQRAccTypeMovements.WBCSV.OpenToWrite;
+      end;
+    end;
+
+    formQRAccTypeMovements.QRAccountTypeMovements.ReportTitle := sAccTypeMovementsRepTitle;
+    formQRAccTypeMovements.QRAccountTypeMovements.Preview;
+  finally
+    formQRAccTypeMovements.Free;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.radStaffSelectedClick(Sender: TObject);
+begin
+  if ((Sender = radSaleCategorySelected) and (ReportType = rptypStaffOrders)) then begin
+    Exit;
+  end;
+  radDGTDetails.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.EnableGroupSubTotalCheckBoxes(B: Boolean);
+begin
+  ckbGroupGroup.Enabled := B;
+  ckbGroupForB.Enabled := B;
+  ckbGroupStaff.Enabled := B;
+  ckbGroupAccount.Enabled := B;
+  ckbGroupOutlet.Enabled := ((B) and (chkOutletBreakdown.Checked));
+  ckbGroupRemoteLocation.Enabled := ((B) and (chkRemoteLocationBreakdown.Checked));
+  ckbGroupTerminal.Enabled := B;
+  ckbGroupSaleCategory.Enabled := B;
+  ckbGroupTill.Enabled := B;
+
+  chkOutletBreakdown.Enabled := B;
+  chkRemoteLocationBreakdown.Enabled := B;
+end;
+{******************************************************************************}
+procedure TformReports.radOGroupClick(Sender: TObject);
+begin
+  EnableGroupSubTotalCheckBoxes(radOGroup.Checked);
+  if (not radOGroup.Checked) then begin
+    radDGTDetails.Checked := True;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.radGroupClick(Sender: TObject);
+begin
+  EnableGroupSubTotalCheckBoxes(radGroup.Checked);
+  if (not radGroup.Checked) then begin
+    if (frmDetailsGroupsTotals.Visible) then begin
+      radDGTDetails.Checked := True;
+    end;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.radVStaffClick(Sender: TObject);
+begin
+  EnableGroupSubTotalCheckBoxes(radVStaff.Checked);
+  if (not radVStaff.Checked) then begin
+    radVoidsAllDetails.Checked := True;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.radMenuOrderGroupClick(Sender: TObject);
+begin
+  EnableGroupSubTotalCheckBoxes(radMenuOrderGroup.Checked);
+end;
+{******************************************************************************}
+procedure TformReports.radDGTGroupsClick(Sender: TObject);
+begin
+  if (ReportType in [rptypStaffOrders, rptypOrdersSalesVoids]) then begin
+    radOGroup.Checked := True;
+  end
+  else if (ReportType in [rptypSales, rptypTerminalSales, rptypSaleCategorySales, rptypSectionSales,
+        rptypSalePeriodSales, rptypStaffSales, rptypAccountSales, rptypEventSales ]) then begin
+    radGroup.Checked := True;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.radTCurrentClick(Sender: TObject);
+begin
+  dm.TerminalsCurrent := (TRadioButton(Sender).Tag = 0);
+end;
+{******************************************************************************}
+procedure TformReports.radTillCurrentClick(Sender: TObject);
+begin
+  dm.TillsCurrent := (TRadioButton(Sender).Tag = 0);
+end;
+{******************************************************************************}
+procedure TformReports.radAllItemsClick(Sender: TObject);
+begin
+  radFandB.Enabled := True;
+  radFOnly.Enabled := True;
+  radBOnly.Enabled := True;
+end;
+{******************************************************************************}
+procedure TformReports.radItemGroupClick(Sender: TObject);
+begin
+  radFandB.Enabled := False;
+  radFOnly.Enabled := False;
+  radBOnly.Enabled := False;
+  radFAndB.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.cmdFromDOBClick(Sender: TObject);
+begin
+  if SelectDate(FFromDOB) then begin
+    if (FFromDOB <> 0) then begin
+      txtFromDOB.Text := FormatDateTime('ddd dd mmm yyyy',FFromDOB);
+    end
+    else begin
+      txtFromDOB.Text := '';
+    end;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.cmdToDOBClick(Sender: TObject);
+begin
+  if SelectDate(FToDOB) then begin
+    if (FToDOB <> 0) then begin
+      txtToDOB.Text := FormatDateTime('ddd dd mmm yyyy',FToDOB);
+    end
+    else begin
+      txtToDOB.Text := '';
+    end;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.cmdFromWeddingDateClick(Sender: TObject);
+begin
+  if SelectDate(FFromWeddingDate) then begin
+    if (FFromWeddingDate <> 0) then begin
+      txtFromWeddingDate.Text := FormatDateTime('ddd dd mmm yyyy',FFromWeddingDate);
+    end
+    else begin
+      txtFromWeddingDate.Text := '';
+    end;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.cmdToWeddingDateClick(Sender: TObject);
+begin
+  if SelectDate(FToWeddingDate) then begin
+    if (FToWeddingDate <> 0) then begin
+      txtToWeddingDate.Text := FormatDateTime('ddd dd mmm yyyy',FToWeddingDate);
+    end
+    else begin
+      txtToWeddingDate.Text := '';
+    end;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.cmdPeopleLastWhenInvoicedAfterClick(Sender: TObject);
+begin
+  if SelectDate(FLastWhenInvoicedAfter) then begin
+    if (FLastWhenInvoicedAfter <> 0) then begin
+      txtPeopleLastWhenInvoicedAfter.Text := FormatDateTime('ddd dd mmm yyyy',FLastWhenInvoicedAfter);
+    end
+    else begin
+      txtPeopleLastWhenInvoicedAfter.Text := '';
+    end;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.cmdPeopleLastWhenInvoicedBeforeClick(Sender: TObject);
+begin
+  if SelectDate(FLastWhenInvoicedBefore) then begin
+    if (FLastWhenInvoicedBefore <> 0) then begin
+      txtPeopleLastWhenInvoicedBefore.Text := FormatDateTime('ddd dd mmm yyyy',FLastWhenInvoicedBefore);
+    end
+    else begin
+      txtPeopleLastWhenInvoicedBefore.Text := '';
+    end;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.cmdFromBirthdayClick(Sender: TObject);
+var
+  DayAndMonthText: string;
+
+begin
+  if SelectDayAndMonth(FFromBirthDay, FFromBirthMonth, True, DayAndMonthText) then begin
+    txtFromBirthday.Text := DayAndMonthText;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.cmdToBirthdayClick(Sender: TObject);
+var
+  DayAndMonthText: string;
+begin
+  if SelectDayAndMonth(FToBirthDay, FToBirthMonth, True, DayAndMonthText) then begin
+    txtToBirthday.Text := DayAndMonthText;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.cmdFromAnniversaryClick(Sender: TObject);
+var
+  DayAndMonthText: string;
+
+begin
+  if SelectDayAndMonth(FFromAnniversaryDay, FFromAnniversaryMonth, True, DayAndMonthText) then begin
+    txtFromAnniversary.Text := DayAndMonthText;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.cmdToAnniversaryClick(Sender: TObject);
+var
+  DayAndMonthText: string;
+
+begin
+  if SelectDayAndMonth(FToAnniversaryDay, FToAnniversaryMonth, True, DayAndMonthText) then begin
+    txtToAnniversary.Text := DayAndMonthText;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.radModifiersOrderDefaultClick(Sender: TObject);
+begin
+  EnableGroupSubTotalCheckBoxes(True);
+  if (not(radModifiersOrderDefault.Checked or radModifiersOrderModifier.Checked)) then begin
+    ckbGroupForB.Enabled := False;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.CreateHistoryTimes;
+
+  function IncPeriod(ADateTime: TDateTime; NoOfPeriods: Integer): TDateTime;
+  var
+    AHour, AMinute, ASecond, AMilliSecond: Word;
+    AYear, AWeekOfYear, ADayOfWeek: Word;
+  begin
+    if (radSalesHistory15Min.Checked) then begin
+      Result := DateUtils.IncMinute(ADateTime, NoOfPeriods * 15);
+    end
+    else if (radSalesHistory30Min.Checked) then begin
+      Result := DateUtils.IncMinute(ADateTime, NoOfPeriods * 30);
+    end
+    else if (radSalesHistoryHour.Checked) then begin
+      Result := DateUtils.IncHour(ADateTime, NoOfPeriods);
+    end
+    else if (radSalesHistory2Hour.Checked) then begin
+      Result := DateUtils.IncHour(ADateTime, NoOfPeriods * 2);
+    end
+    else if (radSalesHistory3Hour.Checked) then begin
+      Result := DateUtils.IncHour(ADateTime, NoOfPeriods * 3);
+    end
+    else if (radSalesHistory4Hour.Checked) then begin
+      Result := DateUtils.IncHour(ADateTime, NoOfPeriods * 4);
+    end
+    else if (radSalesHistoryDay.Checked) then begin
+      Result := DateUtils.IncDay(ADateTime, NoOfPeriods);
+    end
+    else if (radSalesHistoryWeek.Checked) then begin
+      Result := DateUtils.IncWeek(ADateTime, NoOfPeriods);
+    end
+    else if (radSalesHistoryFortnight.Checked) then begin
+      Result := DateUtils.IncWeek(ADateTime, NoOfPeriods * 2);
+    end
+    else if (radSalesHistoryMonth.Checked) then begin
+      Result := IncMonth(ADateTime, NoOfPeriods);
+    end
+    else if (radSalesHistoryQuarter.Checked) then begin
+      Result := IncMonth(ADateTime, NoOfPeriods * 3);
+    end
+    else if (radSalesHistoryYear.Checked) then begin
+      //if week or fortnight time slice
+      if (chkSalesHistoryUsePeriodLength.Checked) and
+        ((radSalesHistoryLengthWeek.Checked) or (radSalesHistoryLengthFortnight.Checked)) then begin
+        //compare same week number/day in each year, e.g Tue in 21st week of year
+        //Use ISO 8601 std: Mon is first day of week, first calendar week is the one that includes the first Thu.
+        //see https://www.timeanddate.com/calendar/?year=2017&country=30
+
+        //if incremented year's week date doesn't exist, set datetime to zero
+        DateUtils.DecodeDateWeek(ADateTime, AYear, AWeekOfYear, ADayOfWeek);
+        if not DateUtils.TryEncodeDateWeek(AYear + NoOfPeriods, AWeekOfYear, Result, ADayOfWeek) then
+        begin
+          Result := 0;
+        end else
+        begin
+          DecodeTime(ADateTime, AHour, AMinute, ASecond, AMilliSecond);
+          Result := Result + EncodeTime(AHour, AMinute, ASecond, AMilliSecond);
+        end;
+      end
+      else begin
+        Result := DateUtils.IncYear(ADateTime, NoOfPeriods);
+      end;
+    end;
+  end;
+
+var
+  AYear, AMonth, ADay: Word;
+  AWeekOfYear, ADayOfWeek: Word;
+  I: Integer;
+begin
+  //initialise time variables
+  for I := 1 to SALEHIST_MAXPD do begin
+    GlbSalesHistory.FromTime[I] := 0;
+    GlbSalesHistory.ToTime[I] := 0;
+    GlbSalesHistory.Caption[I] := '';
+  end;
+  GlbSalesHistory.IncludeZeroDate := False;
+  GlbSalesHistory.LastTime := 0;
+  GlbSalesHistory.NumberOfTimes := 0;
+
+  //set daily start / period
+  if (chkSalesHistoryBetweenTimes.Checked) then begin
+    GlbSalesHistory.DailyStart := EncodeTime(udtxtSalesHistorySliceStartHour.Position, udtxtSalesHistorySliceStartMinute.Position, 0, 0);
+    GlbSalesHistory.DailyEnd := EncodeTime(udtxtSalesHistorySliceEndHour.Position, udtxtSalesHistorySliceEndMinute.Position, 0, 0);
+    GlbSalesHistory.DailyPeriod := GlbSalesHistory.DailyEnd - GlbSalesHistory.DailyStart;
+
+    //if Daily Between Times cross over midnight (resulting in a negative period), we need to add 1 day to get the correct period
+    if GlbSalesHistory.DailyPeriod < 0 then
+      GlbSalesHistory.DailyPeriod := GlbSalesHistory.DailyPeriod + 1;
+  end
+  else begin
+    GlbSalesHistory.DailyStart := 0;
+    GlbSalesHistory.DailyEnd := 0;
+    GlbSalesHistory.DailyPeriod := 0;
+  end;
+
+  GlbSalesHistory.NumberOfTimes := UpDownSalesHistoryTimeSpanQuantity.Position;
+  if GlbSalesHistory.NumberOfTimes > SALEHIST_MAXPDPRINT then
+    GlbSalesHistory.NoOfPeriodsToPrint := SALEHIST_MAXPDPRINT
+  else
+    GlbSalesHistory.NoOfPeriodsToPrint := GlbSalesHistory.NumberOfTimes;
+
+  for I := 1 to GlbSalesHistory.NumberOfTimes do begin
+    //set from time
+    if I = 1 then begin
+      GlbSalesHistory.FromTime[I] := FFromTime;
+      if chkSalesHistoryBetweenTimes.Checked then begin
+        //set first from time using selected daily between times' start time, so report and header are correct
+        DecodeDate(GlbSalesHistory.FromTime[I], AYear, AMonth, ADay);
+        GlbSalesHistory.FromTime[I] := EncodeDate(AYear, AMonth, ADay) + GlbSalesHistory.DailyStart;
+      end;
+    end else
+    begin
+      GlbSalesHistory.FromTime[I] := IncPeriod(GlbSalesHistory.FromTime[1], I - 1);
+    end;
+
+    //set to time
+    if GlbSalesHistory.FromTime[I] = 0 then begin
+      GlbSalesHistory.ToTime[I] := 0;
+      GlbSalesHistory.IncludeZeroDate := True; //so non-existent Yearly Week Dates don't break rest of report
+    end
+    else if (chkSalesHistoryUsePeriodLength.Checked) then begin
+      if (radSalesHistoryLength15Min.Checked) then begin
+        GlbSalesHistory.ToTime[I] := DateUtils.IncMinute(GlbSalesHistory.FromTime[I], 15);
+      end
+      else if (radSalesHistoryLength30Min.Checked) then begin
+        GlbSalesHistory.ToTime[I] := DateUtils.IncMinute(GlbSalesHistory.FromTime[I], 30);
+      end
+      else if (radSalesHistoryLengthHour.Checked) then begin
+        GlbSalesHistory.ToTime[I] := DateUtils.IncHour(GlbSalesHistory.FromTime[I]);
+      end
+      else if (radSalesHistoryLength2Hour.Checked) then begin
+        GlbSalesHistory.ToTime[I] := DateUtils.IncHour(GlbSalesHistory.FromTime[I], 2);
+      end
+      else if (radSalesHistoryLength3Hour.Checked) then begin
+        GlbSalesHistory.ToTime[I] := DateUtils.IncHour(GlbSalesHistory.FromTime[I], 3);
+      end
+      else if (radSalesHistoryLength4Hour.Checked) then begin
+        GlbSalesHistory.ToTime[I] := DateUtils.IncHour(GlbSalesHistory.FromTime[I], 4);
+      end
+      else if (radSalesHistoryLengthDay.Checked) then begin
+        GlbSalesHistory.ToTime[I] := DateUtils.IncDay(GlbSalesHistory.FromTime[I]);
+      end
+      else if (radSalesHistoryLengthWeek.Checked) then begin
+        GlbSalesHistory.ToTime[I] := DateUtils.IncWeek(GlbSalesHistory.FromTime[I]);
+      end
+      else if (radSalesHistoryLengthFortnight.Checked) then begin
+        GlbSalesHistory.ToTime[I] := DateUtils.IncWeek(GlbSalesHistory.FromTime[I], 2);
+      end
+      else if (radSalesHistoryLengthMonth.Checked) then begin
+        GlbSalesHistory.ToTime[I] := IncMonth(GlbSalesHistory.FromTime[I]);
+      end
+      else if (radSalesHistoryLengthQuarter.Checked) then begin
+        GlbSalesHistory.ToTime[I] := IncMonth(GlbSalesHistory.FromTime[I], 3);
+      end
+      else if (radSalesHistoryLengthYear.Checked) then begin
+        GlbSalesHistory.ToTime[I] := DateUtils.IncYear(GlbSalesHistory.FromTime[I]);
+      end;
+    end
+    else begin
+      GlbSalesHistory.ToTime[I] := IncPeriod(GlbSalesHistory.FromTime[1], I);
+    end;
+
+    //adjust each ToTime to the Daily Between Times End Time
+    if chkSalesHistoryBetweenTimes.Checked and (GlbSalesHistory.ToTime[I] <> 0) then begin
+      //NB: assumes the minimum unit of Period Spacing and Time Slice is a Day (24 hours),
+      //and ToTime has been set above by adding a full Day (24 hr), Week etc to the FromTime.
+      //Use the to time's date, less a day, plus the daily between times' start time and duration
+      DecodeDate(GlbSalesHistory.ToTime[I], AYear, AMonth, ADay);
+      GlbSalesHistory.ToTime[I] := EncodeDate(AYear, AMonth, ADay) - 1 + GlbSalesHistory.DailyStart + GlbSalesHistory.DailyPeriod;
+    end;
+
+    //set any specific caption
+    if (radSalesHistoryYear.Checked) then begin
+      //if week or fortnight time slice
+      if (chkSalesHistoryUsePeriodLength.Checked) and
+        ((radSalesHistoryLengthWeek.Checked) or (radSalesHistoryLengthFortnight.Checked)) then begin
+        if GlbSalesHistory.FromTime[I] = 0 then begin
+          //use first period's week date, increment years to current period
+          DateUtils.DecodeDateWeek(GlbSalesHistory.FromTime[1], AYear, AWeekOfYear, ADayOfWeek);
+          GlbSalesHistory.Caption[I] := IntToStr(AYear + I - 1) + ' DNE'; //e.g. '2016 DNE' (does not exist);
+        end
+        else begin
+          //use current period's week date
+          DateUtils.DecodeDateWeek(GlbSalesHistory.FromTime[I], AYear, AWeekOfYear, ADayOfWeek);
+          GlbSalesHistory.Caption[I] := IntToStr(AYear) + ' W' + IntToStr(AWeekOfYear) + '-' + IntToStr(ADayOfWeek); //e.g. '2015 W53-1'
+        end;
+      end;
+    end;
+  end;
+
+  //get last time
+  for I := GlbSalesHistory.NumberOfTimes downto 1 do begin
+    GlbSalesHistory.LastTime := GlbSalesHistory.ToTime[I];
+    if GlbSalesHistory.LastTime > 0 then
+      Break;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.radVoidsTotalsOnlyClick(Sender: TObject);
+begin
+  radVStaff.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.radSCCurrentClick(Sender: TObject);
+begin
+  dm.SaleCategoriesCurrent := (TRadioButton(Sender).Tag = 0);
+end;
+{******************************************************************************}
+procedure TformReports.radCashTotalsOrderCashupIDClick(Sender: TObject);
+begin
+  EnableGroupSubTotalCheckBoxes(True);
+  ckbGroupTill.Enabled := radCashTotalsOrderTill.Checked;
+//  ckbGroupOutlet.Enabled := radCashTotalsOrderTill.Checked;
+//  ckbGroupRemoteLocation.Enabled := radCashTotalsOrderTill.Checked;
+end;
+{******************************************************************************}
+procedure TformReports.chkSalesHistoryUsePeriodLengthClick(Sender: TObject);
+begin
+  frmSalesHistoryPeriodLength.Visible := chkSalesHistoryUsePeriodLength.Checked;
+
+  //if Time Slice checked, Daily Between Times is showing and Time Slice value
+  //is less than Day, auto-select to Day, so Daily Between Times stays visible
+  if chkSalesHistoryUsePeriodLength.Checked and chkSalesHistoryBetweenTimes.Checked and
+    (GetSelectedSalesHistoryLengthRadioButton.Tag < radSalesHistoryLengthDay.Tag) then
+    radSalesHistoryLengthDay.Checked := True;
+
+  EnableHistoryBetweenTimesCheckBox;
+end;
+{******************************************************************************}
+procedure TformReports.radSalesHistoryHourClick(Sender: TObject);
+begin
+  radSalesHistoryLength15Min.Checked := radSalesHistory15Min.Checked;
+  radSalesHistoryLength30Min.Checked := radSalesHistory30Min.Checked;
+  radSalesHistoryLengthHour.Checked := radSalesHistoryHour.Checked;
+  radSalesHistoryLength2Hour.Checked := radSalesHistory2Hour.Checked;
+  radSalesHistoryLength3Hour.Checked := radSalesHistory3Hour.Checked;
+  radSalesHistoryLength4Hour.Checked := radSalesHistory4Hour.Checked;
+  radSalesHistoryLengthDay.Checked := radSalesHistoryDay.Checked;
+  radSalesHistoryLengthWeek.Checked := radSalesHistoryWeek.Checked;
+  radSalesHistoryLengthFortnight.Checked := radSalesHistoryFortnight.Checked;
+  radSalesHistoryLengthMonth.Checked := radSalesHistoryMonth.Checked;
+  radSalesHistoryLengthQuarter.Checked := radSalesHistoryQuarter.Checked;
+  radSalesHistoryLengthYear.Checked := radSalesHistoryYear.Checked;
+
+  if (Sender is TRadioButton) then begin
+    radSalesHistoryLength15Min.Enabled := (TRadioButton(Sender).Tag >= 0);
+    radSalesHistoryLength30Min.Enabled := (TRadioButton(Sender).Tag >= 1);
+    radSalesHistoryLengthHour.Enabled := (TRadioButton(Sender).Tag >= 2);
+    radSalesHistoryLength2Hour.Enabled := (TRadioButton(Sender).Tag >= 3);
+    radSalesHistoryLength3Hour.Enabled := (TRadioButton(Sender).Tag >= 4);
+    radSalesHistoryLength4Hour.Enabled := (TRadioButton(Sender).Tag >= 5);
+    radSalesHistoryLengthDay.Enabled := (TRadioButton(Sender).Tag >= 6);
+    radSalesHistoryLengthWeek.Enabled := (TRadioButton(Sender).Tag >= 7);
+    radSalesHistoryLengthFortnight.Enabled := (TRadioButton(Sender).Tag >= 8);
+    radSalesHistoryLengthMonth.Enabled := (TRadioButton(Sender).Tag >= 9);
+    radSalesHistoryLengthQuarter.Enabled := (TRadioButton(Sender).Tag >= 10);
+    radSalesHistoryLengthYear.Enabled := (TRadioButton(Sender).Tag >= 11);
+  end;
+
+  EnableHistoryBetweenTimesCheckBox;
+end;
+{******************************************************************************}
+procedure TformReports.chkSalesHistoryBetweenTimesClick(Sender: TObject);
+begin
+  frmSalesHistoryDailyBetweenTimes.Visible := chkSalesHistoryBetweenTimes.Checked;
+end;
+{******************************************************************************}
+procedure TformReports.radSalesHistoryLengthHourClick(Sender: TObject);
+begin
+  EnableHistoryBetweenTimesCheckBox;
+end;
+{******************************************************************************}
+function TformReports.GetSelectedSalesHistoryPeriodRadioButton: TRadioButton;
+begin
+  if radSalesHistory15Min.Checked then
+    Result := radSalesHistory15Min
+  else if radSalesHistory30Min.Checked then
+    Result := radSalesHistory30Min
+  else if radSalesHistoryHour.Checked then
+    Result := radSalesHistoryHour
+  else if radSalesHistory2Hour.Checked then
+    Result := radSalesHistory2Hour
+  else if radSalesHistory3Hour.Checked then
+    Result := radSalesHistory3Hour
+  else if radSalesHistory4Hour.Checked then
+    Result := radSalesHistory4Hour
+  else if radSalesHistoryDay.Checked then
+    Result := radSalesHistoryDay
+  else if radSalesHistoryWeek.Checked then
+    Result := radSalesHistoryWeek
+  else if radSalesHistoryFortnight.Checked then
+    Result := radSalesHistoryFortnight
+  else if radSalesHistoryMonth.Checked then
+    Result := radSalesHistoryMonth
+  else if radSalesHistoryQuarter.Checked then
+    Result := radSalesHistoryQuarter
+  else if radSalesHistoryYear.Checked then
+    Result := radSalesHistoryYear
+  else
+    Result := nil;
+end;
+{******************************************************************************}
+function TformReports.GetSelectedSalesHistoryLengthRadioButton: TRadioButton;
+begin
+  if radSalesHistoryLength15Min.Checked then
+    Result := radSalesHistoryLength15Min
+  else if radSalesHistoryLength30Min.Checked then
+    Result := radSalesHistoryLength30Min
+  else if radSalesHistoryLengthHour.Checked then
+    Result := radSalesHistoryLengthHour
+  else if radSalesHistoryLength2Hour.Checked then
+    Result := radSalesHistoryLength2Hour
+  else if radSalesHistoryLength3Hour.Checked then
+    Result := radSalesHistoryLength3Hour
+  else if radSalesHistoryLength4Hour.Checked then
+    Result := radSalesHistoryLength4Hour
+  else if radSalesHistoryLengthDay.Checked then
+    Result := radSalesHistoryLengthDay
+  else if radSalesHistoryLengthWeek.Checked then
+    Result := radSalesHistoryLengthWeek
+  else if radSalesHistoryLengthFortnight.Checked then
+    Result := radSalesHistoryLengthFortnight
+  else if radSalesHistoryLengthMonth.Checked then
+    Result := radSalesHistoryLengthMonth
+  else if radSalesHistoryLengthQuarter.Checked then
+    Result := radSalesHistoryLengthQuarter
+  else if radSalesHistoryLengthYear.Checked then
+    Result := radSalesHistoryLengthYear
+  else
+    Result := nil;
+end;
+{******************************************************************************}
+procedure TformReports.EnableHistoryBetweenTimesCheckBox;
+begin
+  chkSalesHistoryBetweenTimes.Enabled := (
+    (GetSelectedSalesHistoryPeriodRadioButton.Tag >= radSalesHistoryDay.Tag) and
+      (not chkSalesHistoryUsePeriodLength.Checked or (chkSalesHistoryUsePeriodLength.Checked and
+        ((GetSelectedSalesHistoryLengthRadioButton.Tag >= radSalesHistoryLengthDay.Tag)))));
+
+  if not chkSalesHistoryBetweenTimes.Enabled then
+    chkSalesHistoryBetweenTimes.Checked := False;
+end;
+{******************************************************************************}
+procedure TformReports.radAccountSelectedTypeClick(Sender: TObject);
+begin
+  DBGridAccounts.DataSource := dm.dsAccountTypes;
+  fmAccountSelectionClick(sender);
+end;
+{******************************************************************************}
+procedure TformReports.radAccountSelectedClick(Sender: TObject);
+begin
+  DBGridAccounts.DataSource := dm.dsAccounts;
+  fmAccountSelectionClick(sender);
+end;
+{******************************************************************************}
+procedure TformReports.radClockInsOrderStaffNameClick(Sender: TObject);
+begin
+  EnableGroupSubTotalCheckBoxes(True);
+  ckbGroupStaff.Enabled := radClockInsOrderStaffName.Checked;
+  ckbGroupRemoteLocation.Enabled := radClockInsOrderStaffName.Checked;
+  chkRemoteLocationBreakdown.Enabled := radClockInsOrderStaffName.Checked;
+end;
+{******************************************************************************}
+procedure TformReports.radCoursesCurrentClick(Sender: TObject);
+begin
+  dm.CoursesCurrent := (TRadioButton(Sender).Tag = 0);
+end;
+{******************************************************************************}
+procedure TformReports.radDiscountSchemesCurrentClick(Sender: TObject);
+begin
+  dm.DiscountSchemesCurrent := (TRadioButton(Sender).Tag = 0);
+end;
+{******************************************************************************}
+procedure TformReports.radCourseAllClick(Sender: TObject);
+begin
+  DBGridCourses.DataSource := dm.dsCourses;
+end;
+{******************************************************************************}
+procedure TformReports.radDiscountSchemeAllClick(Sender: TObject);
+begin
+  DBGridDiscountSchemes.DataSource := dm.dsDiscountSchemes;
+end;
+{******************************************************************************}
+procedure TformReports.cmbOutletsChange(Sender: TObject);
+begin
+  if cmbOutlets.ItemIndex > -1 then //sinu
+  begin
+    dm.CurrentOutletID := FOutletList.Get(cmbOutlets.ItemIndex);  // Integer(cmbOutlets.Items.Objects[cmbOutlets.ItemIndex]);   sinu
+  end;
+  chkOutletBreakdown.Visible := ((ReportType in [rptypSales, rptypAccountSales, rptypEventSales, rptypTerminalSales,
+      rptypTillSales, rptypDiscountSchemeSales, rptypCourseSales, rptypSaleCategorySales, rptypSectionSales, rptypStaffSales,
+      rptypSalesByDate, rptypSalesHistory, rptypCashTotals, rptypItemModSales, rptypModItems,
+      rptypModifiers, rptypNoSales, rptypStaffTips, rptypVoids, rptypOrders, rptypStaffOrders, rptypAccountTransactions,
+      rptypOrdersSalesVoids, rptypAccountTabSales, rptypComboSales])
+     and (cmbOutlets.ItemIndex = 0));
+  chkOutletBreakdown.Checked := True;
+end;
+procedure TformReports.cmbPeopleCustomerChange(Sender: TObject);
+begin
+
+end;
+
+{******************************************************************************}
+procedure TformReports.cmbRemoteLocationsChange(Sender: TObject);
+begin
+  Glbs.RemoteLocationName := cmbRemoteLocations.Items[cmbRemoteLocations.ItemIndex];
+  if cmbRemoteLocations.ItemIndex > 0 then//sinu
+  begin
+    Glbs.RemoteLocationID := FRemLocsList.Get(cmbRemoteLocations.ItemIndex); //Integer(cmbRemoteLocations.Items.Objects[cmbRemoteLocations.ItemIndex])
+  end
+  else//sinu
+  begin
+    Glbs.RemoteLocationID := -1;//sinu
+  end;
+  chkRemoteLocationBreakdown.visible := ((ReportType in [rptypSales, rptypAccountSales, rptypTerminalSales,
+      rptypTillSales, rptypDiscountSchemeSales, rptypCourseSales, rptypSaleCategorySales, rptypSectionSales, rptypStaffSales,
+      rptypSalesByDate, rptypSalesHistory, rptypCashTotals, rptypClockins, rptypItemModSales, rptypModItems,
+      rptypModifiers, rptypNoSales, rptypStaffTips, rptypVoids, rptypOrders, rptypStaffOrders, rptypOrdersSalesVoids,
+      rptypAccountTransactions, rptypAccountTabSales, rptypComboSales])
+    and (cmbRemoteLocations.ItemIndex = 0));;
+  chkRemoteLocationBreakdown.Checked := true;
+end;
+{******************************************************************************}
+procedure TformReports.chkOutletBreakdownClick(Sender: TObject);
+begin
+  ckbGroupOutlet.Enabled := ((chkOutletBreakdown.Checked) and (radGroup.Checked));
+end;
+{******************************************************************************}
+procedure TformReports.chkRemoteLocationBreakdownClick(Sender: TObject);
+begin
+  ckbGroupRemoteLocation.Enabled := ((chkRemoteLocationBreakdown.Checked) and (radGroup.Checked));
+end;
+{******************************************************************************}
+procedure TformReports.DBGridModGroupsCellClick(Column: TColumn);
+begin
+  if (radModGroupAll.Checked) then begin
+    radModGroupSelected.Checked := True;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.radModGroupsCurrentClick(Sender: TObject);
+begin
+  dm.ModGroupCurrent := (TRadioButton(Sender).Tag = 0);
+end;
+{******************************************************************************}
+procedure TformReports.radModGroupAllClick(Sender: TObject);
+begin
+  DBGridModGroups.DataSource := dm.dsModGroups;
+end;
+{******************************************************************************}
+procedure TformReports.radShowModGroupsAllClick(Sender: TObject);
+  procedure PositionGroupBox(var GroupBox: TGroupBox; Left, Top: Integer);
+  begin
+    GroupBox.Visible := True;
+    GroupBox.Left := ((Left * Screen.PixelsPerInch) div 96);
+    GroupBox.Top := ((Top * Screen.PixelsPerInch) div 96);
+  end;
+begin
+  if (radShowModGroupsMods.checked) then
+  begin
+    if (ReportType = rptypItemModSales) then
+    begin
+      PositionGroupBox(frmModGroups, 400, 164);
+    end
+    else if (ReportType = rptypModItems) then
+    begin
+      PositionGroupBox(frmModGroups, 4, 210);
+    end;
+  end
+  else begin
+    frmModGroups.Visible := False;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.SetComboCaptions;
+var
+  iIndex : Integer;
+begin
+  iIndex := cmbPeopleAccountTypes.ItemIndex;
+  cmbPeopleAccountTypes.Items[0] := sAllAcctTypes;
+  cmbPeopleAccountTypes.ItemIndex := iIndex;
+
+  iIndex := cmbOutlets.ItemIndex;
+  cmbOutlets.Items[0] := sAllOutlets;
+  cmbOutlets.ItemIndex := iIndex;
+
+  iIndex := cmbRemoteLocations.ItemIndex;
+  cmbRemoteLocations.Items[0] := sAllLoc;
+  cmbRemoteLocations.Items[1] := sOnlyThisLoc;
+  cmbRemoteLocations.ItemIndex := iIndex;
+
+  iIndex := cmbReportType.ItemIndex;
+  cmbReportType.Items.Clear;
+  cmbReportType.Items.Add(sAcctSummary);
+  cmbReportType.Items.Add(sAcctTabSales);
+  cmbReportType.Items.Add(sAcctTransactions);
+  cmbReportType.Items.Add(sAccTypeMovements);
+  cmbReportType.Items.Add(sRepCashTotals);
+  cmbReportType.Items.Add(sRepClockIns);
+  cmbReportType.Items.Add(sRepMenuItems);
+  cmbReportType.Items.Add(sRepModifiers);
+  cmbReportType.Items.Add(sModsWithItems);
+  cmbReportType.Items.Add(sRepNoSales);
+  cmbReportType.Items.Add(sRepOrders);
+  cmbReportType.Items.Add(sRepOrdersStaff);
+  cmbReportType.Items.Add(sRepStaffOpenPriceItems);
+  cmbReportType.Items.Add(sRepOrdersSalesVoids);
+  cmbReportType.Items.Add(sRepPeople);
+  cmbReportType.Items.Add(sRepPeriodEndStat);
+  cmbReportType.Items.Add(sRepperiodEndTran);
+  cmbReportType.Items.Add(sRepSales);
+  cmbReportType.Items.Add(sRepSalesAcct);
+  cmbReportType.Items.Add(sComboSales);
+  cmbReportType.Items.Add(sRepSalesCourse);
+  cmbReportType.Items.Add(sSalesDiscScheme);
+  cmbReportType.Items.Add(sRepSalesEvent);
+  cmbReportType.Items.Add(sSalesItemwMods);
+  cmbReportType.Items.Add(sRepSalesCat);
+  cmbReportType.Items.Add(sRepSalesSec);
+  cmbReportType.Items.Add(sRepSalesPeriod);
+  cmbReportType.Items.Add(sRepSalesStaff);
+  cmbReportType.Items.Add(sSalesTerminal);
+  cmbReportType.Items.Add(sSalesTill);
+  cmbReportType.Items.Add(sSalesByDate);
+  cmbReportType.Items.Add(sSalesHistory);
+  cmbReportType.Items.Add(sSatffTips);
+  cmbReportType.Items.Add(sRepTablesOpen);
+  cmbReportType.Items.Add(sRepTablesSummary);
+  cmbReportType.Items.Add(sTransactionList);
+  cmbReportType.Items.Add(sVoidsWastage);
+
+  cmbReportType.ItemIndex := iIndex;
+
+  iIndex := cmboSalesHistoryShownData.ItemIndex;
+  cmboSalesHistoryShownData.Items.Clear;
+  cmboSalesHistoryShownData.Items.Add(sUnits);
+  cmboSalesHistoryShownData.Items.Add(sNettValue);
+  cmboSalesHistoryShownData.ItemIndex := iIndex;
+
+  iIndex := cmbPeopleCustomer.ItemIndex;
+  cmbPeopleCustomer.Items.Clear;
+  cmbPeopleCustomer.Items.Add(sAllPeople);
+  cmbPeopleCustomer.Items.Add(sCustomers);
+  cmbPeopleCustomer.Items.Add(sNonCustomers);
+  cmbPeopleCustomer.ItemIndex := iIndex;
+
+  iIndex := cmbPeopleVIP.ItemIndex;
+  cmbPeopleVIP.Items.Clear;
+  cmbPeopleVIP.Items.Add(sAllPeople);
+  cmbPeopleVIP.Items.Add(sVips);
+  cmbPeopleVIP.Items.Add(sNonVipsColon);
+  cmbPeopleVIP.ItemIndex := iIndex;
+
+  iIndex := cmbPeopleGender.ItemIndex;
+  cmbPeopleGender.Items.Clear;
+  cmbPeopleGender.Items.Add(sAll);
+  cmbPeopleGender.Items.Add(sMale);
+  cmbPeopleGender.Items.Add(sFemale);
+  cmbPeopleGender.ItemIndex := iIndex;
+end;
+{******************************************************************************}
+procedure TformReports.SetDBGridCaptions;
+begin
+  dm.qrItemGroupsITEMGROUPABBREV.DisplayLabel := sGroup;
+  dm.qrItemGroupsITEMGROUPNAME.DisplayLabel := sGroupName;
+  dm.qrItemGroupsOUTLETNAME.DisplayLabel := sOwnerOutlet;
+
+  dm.qrOutletsOUTLETNAME.DisplayLabel := sOutlet;
+
+  dm.qrAccountTypesREMOTEOVERRIDEGROUPNAME.DisplayLabel := sQryROGName;
+  dm.qrAccountTypesACCOUNTTYPE.DisplayLabel := sAccountType;
+  dm.qrRemoteGroupsREMOTEOVERRIDEGROUPNAME.DisplayLabel := sQryROGName;
+
+  dm.qrAccountsREMOTEOVERRIDEGROUPNAME.DisplayLabel := sQryROGName;
+  dm.qrAccountsACCOUNTTYPE.DisplayLabel := sAccountType;
+  dm.qrAccountsACCOUNTNAME.DisplayLabel := sAccountName;
+  dm.qrAccountsWHENCLOSED.DisplayLabel := sWhenClosed;
+
+  dm.qrTerminalsTERMINALID.DisplayLabel := sTerminalId;
+  dm.qrTerminalsTERMINALNAME.DisplayLabel := sTerminal;
+  dm.qrTerminalsWANAME.DisplayLabel := sWorkArea;
+  dm.qrTerminalsOUTLETNAME.DisplayLabel := sOutlet;
+  dm.qrTerminalsWHENDELETED.DisplayLabel := sWhenDeleted;
+
+  dm.qrSaleCategoriesSALECATEGORY.DisplayLabel := sSaleCategory;
+  dm.qrSaleCategoriesWHENDELETED.DisplayLabel := sWhenDeleted;
+
+  dm.qrSectionsSECTION.DisplayLabel := sSection;
+  dm.qrSectionsWHENDELETED.DisplayLabel := sWhenDeleted;
+
+  dm.qrCoursesCOURSE.DisplayLabel := sCourse;
+  dm.qrCoursesWHENDELETED.DisplayLabel := sWhenDeleted;
+
+  dm.qrAccountPEsWHENUPD.DisplayLabel := sWhenEnded;
+  dm.qrAccountPEsACCOUNTTYPE.DisplayLabel := sAccountType;
+
+  dm.qrStaffREMOTEOVERRIDEGROUPNAME.DisplayLabel := sQryROGName;
+  dm.qrStaffSTAFFNAME.DisplayLabel := sStaffName;
+  dm.qrStaffFIRSTNAME.DisplayLabel := sFirstName;
+  dm.qrStaffSURNAME.DisplayLabel := sSurname;
+  dm.qrStaffWHENEND.DisplayLabel := sWhenEnd;
+  dm.qrStaffWHENBEGIN.DisplayLabel := sWhenBegin;
+
+  dm.qrCombosCOMBONAME.DisplayLabel := sComboName;
+  dm.qrCombosWHENDELETED.DisplayLabel := sWhenDeleted;
+end;
+{******************************************************************************}
+function TformReports.GetSelectedIDString(aDBGrid: TDBGrid; aIDFieldName: string): string;
+var
+  I: Integer;
+  aBookmark: TBookmark;
+  aResult: string;
+
+begin
+  aResult := '';
+  try
+    aBookmark := aDBGrid.DataSource.DataSet.GetBookmark;
+    for I := 0 to (aDBGrid.SelectedRows.Count - 1) do
+    begin
+      aDBGrid.DataSource.DataSet.GotoBookmark(aDBGrid.SelectedRows.Items[I]);
+      if (aResult <> '') then
+      begin
+        aResult := aResult + ',';
+      end;
+      aResult := aResult + aDBGrid.DataSource.DataSet.FieldByName(aIDFieldName).AsString;
+    end;
+    aDBGrid.DataSource.DataSet.GotoBookmark(aBookmark);
+    aDBGrid.DataSource.DataSet.FreeBookmark(aBookmark);
+  finally
+    Result := aResult;
+  end;
+end;
+{******************************************************************************}
+procedure TformReports.radSalePeriodSelectedClick(Sender: TObject);
+begin
+  if ((Sender = radSalePeriodSelected) and (ReportType = rptypStaffOrders)) then begin
+    Exit;
+  end;
+  radDGTDetails.Checked := True;
+end;
+
+procedure TformReports.DBGridSalePeriodsCellClick(Column: TColumn);
+begin
+  radSalePeriodSelected.Checked := True;
+end;
+
+procedure TformReports.menuHelpUpdatesClick(Sender: TObject);
+begin
+  if FileExists(AppDetails.UpdatePath) then
+    ShellExecute(Handle, 'open', PChar(AppDetails.UpdatePath), PChar('/update'), nil, SW_SHOWNORMAL);
+end;
+
+procedure TformReports.chkSBExtendedDetailClick(Sender: TObject);
+begin
+  chkSBTransType.Checked := chkSBExtendedDetail.Checked;
+  chkSBTransType.Enabled := not chkSBTransType.Checked;
+  ckbGroupRemoteLocation.Checked := True;
+  ckbGroupRemoteLocation.Enabled := not chkSBExtendedDetail.Checked;
+  chkRemoteLocationBreakdown.Checked := True;
+  chkRemoteLocationBreakdown.Enabled := not chkSBExtendedDetail.Checked;
+end;
+
+procedure TformReports.frmSBOptionsClick(Sender: TObject);
+begin
+  if (frmSBOptions.ItemIndex = 1) and (ReportType <> rptypAccTypeMovements) then
+  begin
+    frmSBDetails.ItemIndex := 0;
+    frmSBDetails.Enabled := False;
+  end
+  else
+    frmSBDetails.Enabled := True;
+end;
+{******************************************************************************}
+procedure TformReports.fmAccountSelectionClick(Sender: TObject);
+begin
+  ckbGroupAccount.Enabled := not radAccountSelected.Checked;
+  ckbGroupAccount.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.DBGridCombosCellClick(Column: TColumn);
+begin
+  radComboSelected.Checked := True;
+end;
+{******************************************************************************}
+procedure TformReports.radComboCurrentClick(Sender: TObject);
+begin
+  dm.CombosCurrent := (TRadioButton(Sender).Tag = 0);
+end;
+
+procedure TformReports.radComboSelectedClick(Sender: TObject);
+begin
+  if ((Sender = radComboSelected) and (ReportType = rptypComboSales)) then begin
+    Exit;
+  end;
+  radDGTDetails.Checked := True;
+end;
+
+procedure TformReports.radComboOrderItemClick(Sender: TObject);
+begin
+  EnableGroupSubTotalCheckBoxes(radGroup.Checked);
+  if (not radGroup.Checked) then begin
+    if (frmDetailsGroupsTotals.Visible) then begin
+      radDGTDetails.Checked := True;
+    end;
+  end;
+
+  frmItemGroups.Visible := radComboOrderItem.Checked;
+  frmItemGroups.Enabled := radComboOrderItem.Checked;
+end;
+
+procedure TformReports.cmdDatesLockClick(Sender: TObject);
+begin
+  txtTo.Enabled := ((ReportType <> rptypSalesHistory) and (not cmdDatesLock.Down));
+  cmdTo.Enabled := ((ReportType <> rptypSalesHistory) and (not cmdDatesLock.Down));
+end;
+
+procedure TformReports.MenuAboutClick(Sender: TObject);
+var
+  TitleBitMap: TBitMap;
+begin
+  TitleBitMap := TBitMap.Create;
+  try
+    TitleImageList.GetBitMap(0, TitleBitMap);
+    ShowAboutBox('onetap Reports', TitleBitMap);
+  finally
+    TitleBitMap.Free;
+  end;
+end;
+
+procedure TformReports.radECurrentClick(Sender: TObject);
+begin
+  dm.EventsCurrent := (TRadioButton(Sender).Tag = 0);
+end;
+
+procedure TformReports.DBGridEventsCellClick(Column: TColumn);
+begin
+  if (radEventAll.Checked) then
+    radEventSelected.Checked := True;
+end;
+
+procedure TformReports.navEventsBeforeAction(Sender: TObject;
+  Button: TNavigateBtn);
+begin
+  if (radEventAll.Checked) then
+    radEventSelected.Checked := True;
+end;
+
+procedure TformReports.radEventAllClick(Sender: TObject);
+begin
+  DBGridEvents.DataSource := dm.dsEvents;
+//  fmEventSelectiono
+end;
+
+procedure ApplicationInitialization;
+var
+  k: Integer;
+  OutputBuffer: PChar; // holds local info
+  SelectedLCID: LCID; // holds the selected LCID
+  iLangId: Integer;
+  smldName : string;
+
+begin
+  smldName := ChangeFileExt(Application.ExeName, '.mld');
+  AppDetails := TAppDetails.Create;
+  if  FileExists(smldName) then
+  begin
+    {allocate memory for the string}
+//    BinaryDictionary := TIvBinaryDictionary.Create(Application);
+    OutputBuffer := StrAlloc(255);
+    SelectedLCID := GetUserDefaultLCID;
+
+    {get the numeric thousands separator}
+    GetLocaleInfo(SelectedLCID, LOCALE_SISO639LANGNAME, OutputBuffer, 255);
+    iLangId := -99;
+
+//    BinaryDictionary.Enabled := False;
+//    BinaryDictionary.FileName := smldName;
+//    BinaryDictionary.CheckLevel := ivclCodePage;
+//    for k := 0 to BinaryDictionary.LanguageCount - 1 do
+//    begin
+//      if TIvLanguage(BinaryDictionary.Languages[k]).ISOLanguage = OutputBuffer then
+//      begin
+//        iLangId := k;
+//        Break;
+//      end;
+//    end;
+
+    if iLangId = -99 then
+      Exit;
+
+    if iLangId <> AppDetails.Language then
+    begin
+      //No Need to set language . Let Delphi take the regional settings;
+      MessageDlg(sLanguageMismatch,mtInformation,[mbOk],0);
+      AppDetails.Language := iLangId;
+    end;
+
+//    try
+//      BinaryDictionary.Language := AppDetails.Language;
+//      BinaryDictionary.Enabled := True;
+//    except
+//      BinaryDictionary.Enabled := False;
+//    end;
+  end;
+end;
+
+procedure TformReports.radTransListSortByTenderClick(Sender: TObject);
+begin
+  EnableGroupSubTotalCheckBoxes(True);
+  if (not (radTransListOptionsAll.Checked)) then
+  begin
+    if (not (radTransListOptionsCashups.Checked)) then
+    begin
+      ckbGroupStaff.Enabled := False;
+    end
+    else begin
+      ckbGroupTill.Enabled := False;
+    end;
+  end;
+  if (radTransListOptionsCashups.Checked) then
+  begin
+    chkCashupReference.Enabled := True;
+    chkCashupNotes.Enabled := True;
+  end
+  else begin
+    chkCashupReference.Enabled := False;
+    chkCashupNotes.Enabled := False;
+  end;
+end;
+
+procedure TformReports.FormActivate(Sender: TObject);
+begin
+  //Only do this first time in....
+  if (LoggedInAlready) then begin
+    Exit;
+  end;
+
+ if (not LogonStaffCheck(9)) then begin     //haven't passed the check...
+    ExitProcess(0);
+    Close;
+    Exit;
+  end;
+  LoggedInAlready:= True;
+end;
+
+procedure TformReports.navAccountTypesBeforeAction(Sender: TObject;
+  Button: TNavigateBtn);
+begin
+  if (radAccountTypeAll.Checked) then
+    radAccountTypeSelected.Checked := True;
+end;
+
+procedure TformReports.DBGridAccountTypesCellClick(Column: TColumn);
+begin
+  if (radAccountTypeAll.Checked) then
+    radAccountTypeSelected.Checked := True;
+end;
+
+procedure TformReports.cmdStaffOrdersKPIClick(Sender: TObject);
+begin
+  lblReportType.Visible := False;
+  cmdDoReport.Visible := False;
+  cmdStaffOrdersKPI.Visible := False;
+  pnlStaffOrdersKPISetup.Visible := True;
+  pnlStaffOrdersKPISetup.Align := alClient;
+  sgStaffOrdersKPIClick(Sender);
+
+end;
+
+procedure TformReports.cmdStaffOrdersKPIAddIG_NClick(Sender: TObject);
+var
+  i, j: Integer;
+  FoundIG: Boolean;
+
+begin
+  with DBGridStaffOrdersKPI.DataSource.DataSet do
+  begin
+    for i:=0 to DBGridStaffOrdersKPI.SelectedRows.Count-1 do
+    begin
+      FoundIG := False;
+      //GotoBookmark((DBGridStaffOrdersKPI.SelectedRows.Items[i]));
+      for j:=0 to sgStaffOrdersKPIItemGroupsN.RowCount-1 do
+      begin
+        if (sgStaffOrdersKPIItemGroupsN.Cells[1, j] = FieldAsString(FieldByName('itemgroupname'), '')) then
+        begin
+          FoundIG := True;
+          Break;
+        end;
+      end;
+      if (FoundIG) then
+        Continue;
+
+      if (sgStaffOrdersKPIItemGroupsN.Cells[0, sgStaffOrdersKPIItemGroupsN.Row] <> '') then
+        sgStaffOrdersKPIItemGroupsN.RowCount := sgStaffOrdersKPIItemGroupsN.RowCount+1;
+      sgStaffOrdersKPIItemGroupsN.Row := sgStaffOrdersKPIItemGroupsN.RowCount-1;
+
+      sgStaffOrdersKPIItemGroupsN.Cells[0, sgStaffOrdersKPIItemGroupsN.Row] := IntToStr(FieldAsInt(FieldByName('itemgroupid'), 0));
+      sgStaffOrdersKPIItemGroupsN.Cells[1, sgStaffOrdersKPIItemGroupsN.Row] := FieldAsString(FieldByName('itemgroupname'), '');
+    end;
+  end;
+  txtStaffOrdersKPINameChange(Sender);
+end;
+
+procedure TformReports.cmdStaffOrdersKPIRemoveIG_NClick(Sender: TObject);
+var
+  ARow, i, j: Integer;
+
+begin
+  ARow := sgStaffOrdersKPIItemGroupsN.Row;
+
+  for i:=0 to sgStaffOrdersKPIItemGroupsN.ColCount-1 do
+    for j:=ARow to sgStaffOrdersKPIItemGroupsN.RowCount-2 do
+      sgStaffOrdersKPIItemGroupsN.Cells[i, j] := sgStaffOrdersKPIItemGroupsN.Cells[i, j+1];
+
+  if (sgStaffOrdersKPIItemGroupsN.RowCount = 1) then
+  begin
+    sgStaffOrdersKPIItemGroupsN.Cells[0, 0] := '';
+    sgStaffOrdersKPIItemGroupsN.Cells[1, 0] := '';
+  end;
+
+  sgStaffOrdersKPIItemGroupsN.RowCount := sgStaffOrdersKPIItemGroupsN.RowCount-1;
+  txtStaffOrdersKPINameChange(Sender);
+end;
+
+procedure TformReports.cmdStaffOrdersKPIAddIG_DClick(Sender: TObject);
+var
+  i, j: Integer;
+  FoundIG: Boolean;
+
+begin
+  with DBGridStaffOrdersKPI.DataSource.DataSet do
+  begin
+    for i:=0 to DBGridStaffOrdersKPI.SelectedRows.Count-1 do
+    begin
+      FoundIG := False;
+      GotoBookmark(DBGridStaffOrdersKPI.SelectedRows.Items[i]);
+      for j:=0 to sgStaffOrdersKPIItemGroupsD.RowCount-1 do
+      begin
+        if (sgStaffOrdersKPIItemGroupsD.Cells[1, j] = FieldAsString(FieldByName('itemgroupname'), '')) then
+        begin
+          FoundIG := True;
+          Break;
+        end;
+      end;
+      if (FoundIG) then
+        Continue;
+
+      if (sgStaffOrdersKPIItemGroupsD.Cells[0, sgStaffOrdersKPIItemGroupsD.Row] <> '') then
+        sgStaffOrdersKPIItemGroupsD.RowCount := sgStaffOrdersKPIItemGroupsD.RowCount+1;
+      sgStaffOrdersKPIItemGroupsD.Row := sgStaffOrdersKPIItemGroupsD.RowCount-1;
+
+      sgStaffOrdersKPIItemGroupsD.Cells[0, sgStaffOrdersKPIItemGroupsD.Row] := IntToStr(FieldAsInt(FieldByName('itemgroupid'), 0));
+      sgStaffOrdersKPIItemGroupsD.Cells[1, sgStaffOrdersKPIItemGroupsD.Row] := FieldAsString(FieldByName('itemgroupname'), '');
     end;
   end;   
-  QtyChangedManully := False;
+  txtStaffOrdersKPINameChange(Sender);
 end;
-{******************************************************************************}
-procedure TformPaymentTable.txtQtyExit(Sender: TObject);
-//var
-  //akm 13.5.1
-//  Err: Integer;
-//  TheQty: Extended;
-//  TheUnitPrice: Currency;
-//  ToPay: Currency;
-begin
-  //akm 13.5.1 - no need to validate qty at all
-  {if txtQty.Text = '' then
-    txtQty.Text := '0'
-  else
-  try
-    if OLList.Count>0 then
-    begin
-      if txtQty.Text='' then
-       TheQty := 0.00
-      else
-      begin
-        Val(txtQty.Text, TheQty, Err);
-        if Err<>0 then
-          TheQty := 0.00;
-      end;
-      TheUnitPrice := TOL(OLList[grdToPay.Row-1]^).UnitPrice;
-      ToPay := TheQty*TheUnitPrice;
-      if ToPay > ConvertToCurr(grdToPay.Cells[3, grdToPay.Row]) then begin
-        ShowQuickMsg('Please enter a valid quantity.');
-        txtQty.SetFocus;
-        txtQty.SelectAll;
-        //DoCalcToPay := False; //jeh 12.5.1
-        Exit;
-      end else if (ConvertToCurr(txtQty.Text) > 99999999.99) then begin
-        ShowQuickMsg('Please enter a valid quantity.');
-        txtQty.SetFocus;
-        txtQty.SelectAll;
-        //DoCalcToPay := False; //jeh 12.5.1
-        Exit;
-      end;
-    end;
-  except on e: exception do begin
-    ShowQuickMsg('Please enter a valid quantity.');
-    txtQty.SetFocus;
-    txtQty.SelectAll;
-  end; end;}
 
-  DoCalcToPay := False; //akm 12.5.1
-end;
-{******************************************************************************}
-procedure TformPaymentTable.SetCurrentTime;
-begin
-  DecodeTime(Now, CurrentHour, CurrentMin, CurrentSec, CurrentMSec);    //Jon 24-06-2002
-  CurrentTime := ((CurrentHour * 100) + CurrentMin);
-  CurrentDay := (DayOfTheWeek(Now));
-end;
-{******************************************************************************}
-procedure TformPaymentTable.BuildTenderSurchargeList;
+procedure TformReports.cmdStaffOrdersKPIRemoveIG_DClick(Sender: TObject);
 var
-  I, J: Integer;
-  SurchargeItem: TSurchargeItem;
-  TL: TTL;
-  bAddSurcharge: Boolean;
-begin
-  LogMessage(ltPaymentTrace, '456' + #9);
-  for I := (SurchargeList.Count - 1) downto 0 do begin
-    SurchargeItem := SurchargeList.Items[I];
-    if (SurchargeItem.SurchargeType = stTenderType) then begin
-      SurchargeItem.Free;
-      SurchargeList.Delete(I);
-    end;
-  end;
+  ARow, i, j: Integer;
 
-  for J := 0 to (TLList.Count-1) do begin
-    TL := TLList.Items[J];
-    bAddSurcharge := (TL.SurchargeItemID > 0) and
-                      ( ((PaymentOnSelectedItems or AmountSplitingStarted) and ( TL.TenderGroupID = FTenderGrpID))
-                          or
-                         ((not(PaymentOnSelectedItems or AmountSplitingStarted)) )
-                      );
-    If bAddSurcharge  then
-    //if (TL.SurchargeItemID > 0) then
-    begin
-      SurchargeItem := nil;
-      for I := (SurchargeList.Count - 1) downto 0 do begin
-        SurchargeItem := SurchargeList.Items[I];
-        if (SurchargeItem.ItemID = TL.SurchargeItemID) then begin
-          Break;
-        end
-        else begin
-          SurchargeItem := nil;
-        end;
-      end;
-      if (not Assigned(SurchargeItem)) then begin
-        SurchargeItem := TSurchargeItem.Create;
-        SurchargeItem.ItemID := TL.SurchargeItemID;
-        SurchargeItem.ItemAbbrev := TL.SurchargeItemAbbrev;
-        SurchargeItem.Percent := TL.SurchargePercent;
-        SurchargeItem.Fixed := TL.SurchargeFixed;
-        SurchargeItem.Amount := 0.00;
-        SurchargeItem.SurchargeType := stTenderType;
-        SurchargeItem.SalesTaxPercent := TL.SurchargeSalesTaxPercent;
-        SurchargeList.Add(SurchargeItem);
-      end;
-      SurchargeItem.Amount := SurchargeItem.Amount + TL.TLSurcharge;
-    end;
-  end;
-
-  FSurcharge := 0.00;
-  for I := (SurchargeList.Count-1) downto 0 do begin
-    FSurcharge := FSurcharge + TSurchargeItem(SurchargeList[I]).Amount;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.ChangeAllowCreditLabel(AllowCredit: Boolean;VerifyPin:Boolean=True);
 begin
-  if (AllowCredit) then begin
-    lblAllowCredit.Caption := sCreditAllowed;
-    lblAllowCredit.Font.Color := clRed;
-{ to prevent double pin check we dont verify pin here as:
-    outside of fiscal we have already checked pin on TryLookupCashSaleAccount and LoadAccount
-, with fiscal we dont seem to check pin on SetAccount so dont check it on charge rank either
+  ARow := sgStaffOrdersKPIItemGroupsD.Row;
 
-  if you can't charge to an account if you can't USE it.
-  }
-    if ((GlbLogin.RankAccount < GlbAccount.AccountChargeRank) or ((ManagerAuthorise.Authorise) and (ManagerAuthorise.AuthoriseAccChargeRank >= GlbAccount.AccountChargeRank))) then begin
-      { if ((AppDetails.AccChargePinCheckRank >= GlbAccount.AccountChargeRank) and (not VerifyPinNo)) then begin   }
-      SetOnAccount(False);
-      cmdOnAccount.Visible := False;
-      lblAllowCredit.Caption := sCreditAllowedNotPriv;
-      Exit;
-    end
-    else begin
-      cmdOnAccount.Visible := True;
-      SetOnAccount (AppDetails.PaymentAutoSelectPayOnAccount);   //Jon 20-10-2003
-    end;
-    {
-    SetOnAccount(False);
-    cmdOnAccount.Visible := False;
-    end;  }
-  end
-  else begin
-    lblAllowCredit.Caption := sCreditNotAllowed;
-    lblAllowCredit.Font.Color := clBlack;
-    SetOnAccount(False);
-    cmdOnAccount.Visible := False;
-  end;
-  LogMessage(ltPaymentTrace, '614' + #9 + 'lblAllowCredit.Caption=' + lblAllowCredit.Caption);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.SetOnAccount(State: Boolean);    //Jon 16-10-2003
-begin
-  LogMessage(ltPaymentTrace, '457' + #9);
-  // fiscal printing
-  if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode))) then
-  if Trim(AppDetails.FiscalAccountPaymentMethod) = '' then
+  for i:=0 to sgStaffOrdersKPIItemGroupsD.ColCount-1 do
+    for j:=ARow to sgStaffOrdersKPIItemGroupsD.RowCount-2 do
+      sgStaffOrdersKPIItemGroupsD.Cells[i, j] := sgStaffOrdersKPIItemGroupsD.Cells[i, j+1];
+
+  if (sgStaffOrdersKPIItemGroupsD.RowCount = 1) then
   begin
-    ShowMsg(sConfigureAcctPayMethod);
-    Exit;
+    sgStaffOrdersKPIItemGroupsD.Cells[0, 0] := '';
+    sgStaffOrdersKPIItemGroupsD.Cells[1, 0] := '';
   end;
 
-  OnAccount := (State and GlbRegistrationInfo.WaiterChargeAccounts and (not FForceUnSelectAccount));
-  cmdOnAccount.Down := OnAccount;
-
-  SubsidyCalc.IsHostTransaction := (GlbEvent.EventID >0) and
-                                  (GlbEvent.AccountID > 0) and
-                                  (OnAccount) and (GlbEvent.SubsidyID > 0);
-
-  LogMessage(ltPaymentTrace, '434' + #9);
-  CalculateToPay;
-  LogMessage(ltPaymentTrace, '524' + #9);
+  sgStaffOrdersKPIItemGroupsD.RowCount := sgStaffOrdersKPIItemGroupsD.RowCount-1;
+  txtStaffOrdersKPINameChange(Sender);
 end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdOnAccountClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '538' + #9);
-  inherited;
 
-  SetOnAccount(not OnAccount);
-  RecalculateTotals;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdLoyaltyDesClick(Sender: TObject);
-begin
-  LogMessage(ltPaymentTrace, '371' + #9);
-  inherited;
-  DoLoyalty(False);
-  LogMessage(ltPaymentTrace, '372' + #9);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.TestAllOLsLoyaltyItem(AList: Tlist;FindNewOnly: Boolean);
+procedure TformReports.sgStaffOrdersKPIClick(Sender: TObject);
 var
+  tmpStaffOrderKPI: TStaffOrderKPI;
+  i, j: Integer;
+
+begin
+  PopulatingFields := True;
+  try
+    txtStaffOrdersKPIName.Text := '';
+    txtStaffOrdersKPIConversionRate.Text := '1';
+    txtStaffOrdersKPIItemGroupsNName.Text := '';
+    txtStaffOrdersKPIItemGroupsDName.Text := '';
+    rgStaffORdersKPIDisplayResultAs.ItemIndex := 0;
+    rgStaffOrdersKPITotalsN.ItemIndex := 0;
+    rgStaffOrdersKPITotalsD.ItemIndex := 0;
+    for i:=0 to sgStaffOrdersKPIItemGroupsN.ColCount-1 do
+      for j:=0 to sgStaffOrdersKPIItemGroupsN.RowCount-1 do
+        sgStaffOrdersKPIItemGroupsN.Cells[i, j] := '';
+
+    sgStaffOrdersKPIItemGroupsN.RowCount := 1;
+
+    for i:=0 to sgStaffOrdersKPIItemGroupsD.ColCount-1 do
+      for j:=0 to sgStaffOrdersKPIItemGroupsD.RowCount-1 do
+        sgStaffOrdersKPIItemGroupsD.Cells[i, j] := '';
+
+    sgStaffOrdersKPIItemGroupsD.RowCount := 1;
+
+    tmpStaffOrderKPI := TStaffOrderKPI(sgStaffOrdersKPI.Objects[0, sgStaffOrdersKPI.Row]);
+    if (not Assigned(tmpStaffOrderKPI)) then Exit;
+
+    with tmpStaffOrderKPI do
+    begin
+      txtStaffOrdersKPIName.Text := KPIName;
+      txtStaffOrdersKPIConversionRate.Text := FloatToStr(ConversionRatio);
+      txtStaffOrdersKPIItemGroupsNName.Text := ItemGroupNName;
+      txtStaffOrdersKPIItemGroupsDName.Text := ItemGroupDName;
+      rgStaffORdersKPIDisplayResultAs.ItemIndex := DisplayAs;
+      rgStaffOrdersKPITotalsN.ItemIndex := ItemGroupNTotalAs;
+      rgStaffOrdersKPITotalsD.ItemIndex := ItemGroupDTotalAs;
+
+      for i:=0 to ItemGroupN.Count-1 do
+      begin
+        if (i > 0) then
+          sgStaffOrdersKPIItemGroupsN.RowCount := sgStaffOrdersKPIItemGroupsN.RowCount+1;
+        sgStaffOrdersKPIItemGroupsN.Row := sgStaffOrdersKPIItemGroupsN.RowCount-1;
+        sgStaffOrdersKPIItemGroupsN.Cells[0, i] := IntToStr(ItemGroupN.Get(i));
+        if (DBGridStaffOrdersKPI.DataSource.DataSet.Locate('itemgroupid', sgStaffOrdersKPIItemGroupsN.Cells[0, i], [] )) then
+          sgStaffOrdersKPIItemGroupsN.Cells[1, i] := FieldAsString(DBGridStaffOrdersKPI.DataSource.DataSet.FieldByName('itemgroupname'), '');
+      end;
+
+      for i:=0 to ItemGroupD.Count-1 do
+      begin     
+        if (i > 0) then
+          sgStaffOrdersKPIItemGroupsD.RowCount := sgStaffOrdersKPIItemGroupsD.RowCount+1;
+        sgStaffOrdersKPIItemGroupsD.Row := sgStaffOrdersKPIItemGroupsD.RowCount-1;
+        sgStaffOrdersKPIItemGroupsD.Cells[0, i] := IntToStr(ItemGroupD.Get(i));
+        if (DBGridStaffOrdersKPI.DataSource.DataSet.Locate('itemgroupid', sgStaffOrdersKPIItemGroupsD.Cells[0, i], [] )) then
+          sgStaffOrdersKPIItemGroupsD.Cells[1, i] := FieldAsString(DBGridStaffOrdersKPI.DataSource.DataSet.FieldByName('itemgroupname'), '');
+      end;
+
+      DBGridSalePeriods.DataSource.DataSet.First;
+
+    end;
+  finally
+    PopulatingFields := False;
+  end;
+end;
+
+procedure TformReports.txtStaffOrdersKPINameChange(Sender: TObject);
+var
+  tmpStaffOrderKPI: TStaffOrderKPI;
   i: Integer;
-  ListCount: Integer;
-  aOL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '458' + #9);
-  ListCount := (AList.Count - 1);
-  if (not FindNewOnly) then begin
-    LoyaltyReward.AvailableQty := LoyaltyReward.Qty;
-  end;
 
-  for I := 0 to ListCount do
+begin
+  if (PopulatingFields) then Exit;
+
+  tmpStaffOrderKPI := TStaffOrderKPI(sgStaffOrdersKPI.Objects[0, sgStaffOrdersKPI.Row]);
+  if (not Assigned(tmpStaffOrderKPI)) then
   begin
-    aOL := AList.Items[I];
-    if (aOL.ComboID > 0) then
-      Continue;
-
-    if (aOL.ItemID > 0) then
-    begin
-      if (not FindNewOnly) then
-      begin
-        aOL.LoyaltyItemID := -1;
-        aOL.LoyaltyFreeQty := 0;
-        aOL.LoyaltyFreeDiscount := 0;
-      end;
-      if ((LoyaltyReward.RewardOffer = roItem) and (aOL.LoyaltyFreeQty < aOL.Qty)) then begin
-        if ((aOL.LoyaltyItemID <= 0)) then
-        begin
-          FoundFirstLoyaltyFreeItem := True;
-          aOL.LoyaltyItemID := TestLoyaltyItem(LoyaltyReward.LoyaltyRewardID, aOL.ItemID);
-        end
-        else begin
-          LoyaltyReward.AvailableQty := LoyaltyReward.AvailableQty + aOL.LoyaltyFreeQty;
-        end;
-        LogMessage(ltPaymentTrace, '571' + #9);
-        AllocateItemLoyalty(aOL);
-      end;
-    end;
-  end;
-end;
-{******************************************************************************}
-function TformPaymentTable.TestLoyaltyItem(LoyaltyRewardID: Integer; ItemID: Integer): Integer;
-begin
-  LogMessage(ltPaymentTrace, '459' + #9);
-  try
-    with dm.sp do begin
-      SetStoredProcName('TEST_LOYALTYITEM');         //test_loyaltyitem
-      ParamByName('loyaltyrewardid').AsInteger := LoyaltyRewardID;
-      ParamByName('itemid').AsInteger := ItemID;
-      ExecProc;
-      Result := FieldAsInt(FieldByName('loyaltyitemid'), -1);
-    end;
-  except
-    Result := -1;
-  end;
-end;
-{******************************************************************************}
-function TformPaymentTable.AllocateItemLoyalty(var OL: TOrderLine): Boolean;
-var
-  OldLoyaltyFreeQty: Currency;
-  OldLoyaltyFreeDiscount: Currency;
-begin
-  LogMessage(ltPaymentTrace, '460' + #9);
-  Result := False;
-  if (OL.ComboID > 0) then
-    Exit;  //Don't apply Free Item to Item belonging to a combo
-  if (LoyaltyReward.RewardOffer = roDiscount) and LoyaltyReward.Processed then
-    Exit;
-
-  OldLoyaltyFreeQty := OL.LoyaltyFreeQty;
-  OldLoyaltyFreeDiscount := OL.LoyaltyFreeDiscount;
-  OL.LoyaltyFreeQty := 0;
-  OL.LoyaltyFreeDiscount := 0;
-
-  if OL.ComboID > 0 then
-    Exit;
-
-  if ((LoyaltyReward.LoyaltyRewardID > 0) and (LoyaltyReward.RewardOffer = roItem) and ((LoyaltyReward.AvailableQty) > 0) and (OL.LoyaltyItemID > 0)) then begin
-    if (LoyaltyReward.AvailableQty > OL.Qty) then begin
-      OL.LoyaltyFreeQty := OL.Qty;
-    end
-    else begin
-      OL.LoyaltyFreeQty := LoyaltyReward.AvailableQty;
-    end;
-    OL.LoyaltyFreeDiscount := GetRoundedUpDown(OL.LoyaltyFreeQty * ol.UnitPrice, AppDetails.DecimalPlaces);
-    LoyaltyReward.AvailableQty := LoyaltyReward.AvailableQty - OL.LoyaltyFreeQty;
+    tmpStaffOrderKPI := TStaffOrderKPI.Create;
+    sgStaffOrdersKPI.Objects[0,sgStaffOrdersKPI.Row] := tmpStaffOrderKPI;
+    AppDetails.ListStaffOrderKPI.Add(tmpStaffOrderKPI);
+    tmpStaffOrderKPI.KPIID := AppDetails.ListStaffOrderKPI.Count;
   end;
 
-  Result := ((OL.LoyaltyFreeQty <> OldLoyaltyFreeQty) or (OL.LoyaltyFreeDiscount <> OldLoyaltyFreeDiscount));
-  LogMessage(ltPaymentTrace, '551' + #9 + 'Result=' + BoolToStr(Result, True) + ', OL.OrderLineID=' + IntToStr(OL.OrderLineID) +
-    ', OL.LoyaltyFreeQty=' + FloatToStr(OL.LoyaltyFreeQty) + ', OL.LoyaltyFreeDiscount=' + FloatToStr(OL.LoyaltyFreeDiscount));
-end;
-{******************************************************************************}
-procedure TformPaymentTable.UpdateGrdToPayCells(Row: Integer);
-var
-  aOL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '461' + #9);
-  if (Row > 0) and (Row < grdToPay.RowCount) then
+  with tmpStaffOrderKPI do
   begin
-    aOL := OLToPayList.Items[Row - 1];
-    grdToPay.Row := Row;
+    sgStaffOrdersKPI.Cells[0,sgStaffOrdersKPI.Row] := txtStaffOrdersKPIName.Text;
+    KPIName := txtStaffOrdersKPIName.Text;
+    ConversionRatio := StrToFloatDef(txtStaffOrdersKPIConversionRate.Text, 0);
+    DisplayAs := rgStaffORdersKPIDisplayResultAs.ItemIndex;
+    ItemGroupNName := txtStaffOrdersKPIItemGroupsNName.Text;
+    ItemGroupDName := txtStaffOrdersKPIItemGroupsDName.Text;
+    ItemGroupNTotalAs := rgStaffOrdersKPITotalsN.ItemIndex;
+    ItemGroupDTotalAs := rgStaffOrdersKPITotalsD.ItemIndex;
 
-    grdToPay.Cells[0, Row] := aOL.Positions;
-    grdToPay.Cells[1, Row] := FormatFloat(QTYFORMAT, aOL.Qty);
-    if AppDetails.EnableFiscalPrinting then
+    ItemGroupN.Clear;
+    for i:=0 to sgStaffOrdersKPIItemGroupsN.RowCount-1 do
     begin
-      grdToPay.Cells[1, Row] := FormatFloat(QTYFORMAT, WBRoundTo(aOL.Qty, 3));
+      if (StrToIntDef(sgStaffOrdersKPIItemGroupsN.Cells[0, i], 0) <> 0) then
+        ItemGroupN.Add(StrToIntDef(sgStaffOrdersKPIItemGroupsN.Cells[0, i], 0));
     end;
-    if (aOL.ModsString <> '') then
-      grdToPay.Cells[2, Row] := aOL.ItemString+#13+aOL.ModsString
-    else
-      grdToPay.Cells[2, Row] := aOL.ItemString;
-    if ((LoyaltyReward.RewardOffer = roItem) and (aOL.LoyaltyItemID > 0) and (aOL.LoyaltyFreeQty > 0)) then
-    begin
-      grdToPay.Cells[3, Row] := '* ' + FormatCurrencyNoSign(aOL.Due);
-      grdToPay.Cells[4, Row] := '* ' + FormatCurrencyNoSign(aOL.ToPay - aOL.LoyaltyFreeDiscount);
-      if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-      begin
-        grdToPay.Cells[3, Row] := '* ' + FormatCurrencyNoSign(TruncateTo(aOL.Due, 2));
-        grdToPay.Cells[4, Row] := '* ' + FormatCurrencyNoSign(TruncateTo(aOL.ToPay - aOL.LoyaltyFreeDiscount, 2));
-      end;
-    end
-    else begin
-      grdToPay.Cells[3, Row] := FormatCurrencyNoSign(aOL.Due);
-      grdToPay.Cells[4, Row] := FormatCurrencyNoSign(aOL.ToPay);
-      if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-      begin
-        grdToPay.Cells[3, Row] := FormatCurrencyNoSign(TruncateTo(aOL.Due, 2));
-        grdToPay.Cells[4, Row] := FormatCurrencyNoSign(TruncateTo(aOL.ToPay, 2));
-      end;
-    end;
-    grdItemAutoClick := True;
-    //save what's in the grid to log file
-    LogMessage(ltPaymentTrace, '504' + #9 + 'grdToPay: Row=' + IntToStr(Row) + ', Col0=' + grdToPay.Cells[0, Row] + ', Col1=' + grdToPay.Cells[1, Row] +
-      ', Col2=' + grdToPay.Cells[2, Row] + ', Col3=' + grdToPay.Cells[3, Row] + ', Col4=' + grdToPay.Cells[4, Row]);
 
-    grdToPayClick(nil);
-    LogMessage(ltPaymentTrace, '505' + #9);
+    ItemGroupD.Clear;
+    for i:=0 to sgStaffOrdersKPIItemGroupsD.RowCount-1 do
+    begin
+      if (StrToIntDef(sgStaffOrdersKPIItemGroupsD.Cells[0, i], 0) <> 0) then
+        ItemGroupD.Add(StrToIntDef(sgStaffOrdersKPIItemGroupsD.Cells[0, i], 0));
+    end;
   end;
-  LogMessage(ltPaymentTrace, '564' + #9);
+  cmdStaffOrdersKPIOK.Enabled := True;
 end;
-{******************************************************************************}
-procedure TformPaymentTable.FSetVisibleWindow(Value: TVisibleWindow);
+
+procedure TformReports.cmdStaffOrdersKPINewClick(Sender: TObject);
 begin
-  FVisibleWindow := Value;
-  pnlTender.Visible := (FVisibleWindow = vwTender);
-  pnlToPay.Visible := (FVisibleWindow = vwToPay);
-  if (FVisibleWindow = vwToPay) then begin
-    pnlToPay.Align := alClient;
-  end
-  else begin
-    pnlTender.Align := alClient;
-  end;
+  sgStaffOrdersKPI.RowCount := sgStaffOrdersKPI.RowCount+1;
+  sgStaffOrdersKPI.Row := sgStaffOrdersKPI.RowCount-1;
+  sgStaffOrdersKPIClick(Sender);
 end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdSummaryTableDesClick(Sender: TObject);
-begin
-  PrintSummary;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdLastDesClick(Sender: TObject);
+
+procedure TformReports.cmdStaffOrdersKPIDeleteClick(Sender: TObject);
 var
-  InvoiceID: Integer;
-  InvoiceType: string;
+  tmpStaffOrderKPI: TStaffOrderKPI;
+
 begin
-  try
-    if (AppDetails.ReceiptsViewLastReceipt) or (AppDetails.FiscalType = fiscalTaxCore) then
+  tmpStaffOrderKPI := TStaffOrderKPI(sgStaffOrdersKPI.Objects[0, sgStaffOrdersKPI.Row]);
+  if Assigned(tmpStaffOrderKPI) then
+  begin
+    if (AppDetails.ListStaffOrderKPI.IndexOf(tmpStaffOrderKPI) > -1) then
+      AppDetails.ListStaffOrderKPI.Delete(AppDetails.ListStaffOrderKPI.IndexOf(tmpStaffOrderKPI));
+
+    tmpStaffOrderKPI.Free;
+    LoadStaffOrderKPI;
+    sgStaffOrdersKPIClick(Sender);
+  end;
+  cmdStaffOrdersKPIOK.Enabled := True;
+end;
+
+procedure TformReports.LoadStaffOrderKPI;
+var
+  tmpStaffOrderKPI: TStaffOrderKPI;
+  i, j: Integer;
+
+begin
+  for i:=0 to sgStaffOrdersKPI.ColCount-1 do
+  begin
+    for j:=1 to sgStaffOrdersKPI.RowCount-1 do
     begin
-      if (SelectLastCashSale(InvoiceID, InvoiceType)) and (not AppDetails.EnableFiscalPrinting) then
-      begin
-        if (InvoiceID = -1) then
-        begin
-          ShowQuickMsg(sNoCashSalesToPrint);
-        end
-        else if (InvoiceType = 'I') then
-        begin
-          if (AppDetails.FiscalType = fiscalTaxCore) then
-            PrintTaxCoreInvoice(InvoiceID, True)
-          else
-          begin
-            InsertPrintJob('C Invoice', InvoiceID, AppDetails.PrinterID);
-            ShowQuickMsg(sInvPrinted);
-          end;
-        end
-        else begin
-          if (AppDetails.FiscalType = fiscalTaxCore) then
-            PrintTaxCoreInvoice(InvoiceID, True)
-          else
-          begin
-            InsertPrintJob('C Credit Note', InvoiceID, AppDetails.PrinterID);
-            ShowQuickMsg(sCreditNotePrinted);
-          end;
-        end;
-      end;
-    end
-    else begin
-    if (not dm.TRStartTest) then begin
+      sgStaffOrdersKPI.Cells[i, j] := '';
+      sgStaffOrdersKPI.Objects[i, j] := nil;
+    end;
+  end;
+  sgStaffOrdersKPI.RowCount := 2;
+  sgStaffOrdersKPI.Row := 1;
+  sgStaffOrdersKPI.Cells[0,1] := '';
+  sgStaffOrdersKPI.Objects[0,1] := nil;
+
+  for i:=0 to AppDetails.ListStaffOrderKPI.Count-1 do
+  begin
+    tmpStaffOrderKPI := TStaffOrderKPI(AppDetails.ListStaffOrderKPI.Items[i]);
+    if (sgStaffOrdersKPI.Cells[0, sgStaffOrdersKPI.Row] <> '') then
+      sgStaffOrdersKPI.RowCount := sgStaffOrdersKPI.RowCount+1;
+
+    sgStaffOrdersKPI.Row := sgStaffOrdersKPI.RowCount-1;
+    sgStaffOrdersKPI.Cells[0, sgStaffOrdersKPI.Row] := tmpStaffOrderKPI.KPIName;
+    sgStaffOrdersKPI.Objects[0, sgStaffOrdersKPI.Row] := tmpStaffOrderKPI;
+  end;
+
+  sgStaffOrdersKPI.Row := 1;
+end;
+
+procedure TformReports.cmdStaffOrdersKPICancelClick(Sender: TObject);
+begin
+  lblReportType.Visible := True;
+  cmdDoReport.Visible := True;
+  cmdStaffOrdersKPI.Visible := True;
+  pnlStaffOrdersKPISetup.Visible := False;
+  AppDetails.LoadKPIDetails(AppDetails.Path, '\otreports.ini');
+  LoadStaffOrderKPI;
+  cmdStaffOrdersKPIOK.Enabled := False;
+
+end;
+
+procedure TformReports.cmdStaffOrdersKPIOKClick(Sender: TObject);
+begin
+  pnlStaffOrdersKPISetup.Visible := False;
+  AppDetails.SaveKPIDetails;
+  cmdStaffOrdersKPIOK.Enabled := False;
+end;
+
+procedure TformReports.chkIncludeStaffOrdersKPIClick(Sender: TObject);
+begin
+  AppDetails.IncludeStaffOrdersKPI := chkIncludeStaffOrdersKPI.Checked;
+  AppDetails.SaveKPIDetails;
+end;
+
+procedure TformReports.rgStaffOrdersKPIItemGroupClick(Sender: TObject);
+begin
+  if (rgStaffOrdersKPIItemGroup.ItemIndex = 0) then Exit;
+
+  DBGridStaffOrdersKPI.SelectedRows.Clear;
+  with DBGridStaffOrdersKPI.DataSource.DataSet do
+  begin
+    First;
+    while (not Eof) do
+    begin
+      if ((FieldByName('forb').AsString = 'F') and (rgStaffOrdersKPIItemGroup.ItemIndex in [1, 2])) or // aka All & Food
+         ((FieldByName('forb').AsString = 'B') and (rgStaffOrdersKPIItemGroup.ItemIndex in [1, 3])) then// aka All & Beverage
+        DBGridStaffOrdersKPI.SelectedRows.CurrentRowSelected := True;
+
+      Next;
+    end;
+    First;
+  end;
+end;
+
+procedure TformReports.ShowSectionSalesReport;
+begin
+try
+    formQRSectionSales := TformQRSectionSales.Create(Application);
+
+    Title1 := sSectionTitle1;
+    Title2 := '';
+    Title3 := Format(sDateRange,[FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FFromTime),FormatDateTime('ddd dd mmm yyyy hh:mm AM/PM',FToTime)]);
+
+    if (not CheckDate) then begin
       Exit;
     end;
-    with dm.sp do begin
-      SetStoredProcName('PRINTLASTINVOICE'); //printlastinvoice
 
-      ParamByName('terminalid').AsInteger := AppDetails.TerminalID;
-      ParamByName('printerid').AsInteger := AppDetails.PrinterID;
-      ExecProc;
-      InvoiceID := FieldAsInt(FieldByName('invoiceid'));
-      dm.tr.Commit;
-      if (InvoiceID = 0) then begin
-        ShowQuickMsg('There are no invoices to print.');
+    with dm.qrSectionSales do begin
+      Close;
+      UnPrepare;
+      SQL.Clear;
+      SQL.Add('select * from getsectionsales (:poutletid, :premotelocationid, :pforb, :psectionid, :pitemgroupid, :fromtime, :totime)');
+
+      if (radGroup.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, sectionid, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sGroupItemOrder;
+      end
+      else if (radUnits.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, sectionid, amountsold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sUnitSold;
+      end
+      else if (radPrice.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, sectionid, averageunitprice desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sAvgUPrice;
+      end
+      else if (radGross.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, sectionid, grosssold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sGrossSold;
+      end
+      else if (radDiscount.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, sectionid, discount desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sDiscount;
+      end
+      else if (radNett.Checked) then begin
+        SQL.Add('order by outletname, remotelocationname, sectionid, nettsold desc, superitemgrouporder, forb desc, itemgrouporder, itemgroupabbrev, itemorder');
+        Title2 := ', ' + sNetSold;
+      end;
+
+      if (radItemGroup.Checked) then begin
+        ParamByName('pitemgroupid').AsInteger := Glbs.ItemGroupID;
+        ParamByName('pforb').AsString := '';
+        Title2 := Title2 + ', ' + Glbs.ItemGroup;
       end
       else begin
-        ShowQuickMsg('Last invoice printed.');
-      end;
-    end;
-  end;
-  except
-    dm.tr.Rollback;
-  end;
-end;
-{******************************************************************************}
-function TformPaymentTable.GetCPFNumber(UpdateCPF: Boolean): Boolean;
-var
-  frmCPFNo: TformGetCPFNumber;
-begin
-  Result := False;
-  SFiscalPrinting.FiscalOpTryAgainCommand := False;
-  SFiscalPrinting.SupressFiscalErrorMessage := False;
-
-  if not AppDetails.EnableFiscalPrinting then
-    Exit;
-
-  lblTitle.Caption := sTabPayment;
-  SetStatus(sFiscalPrinterChecking);
-
-  frmCPFNo := TformGetCPFNumber.Create(Nil);
-  try
-    if UpdateCPF then
-      frmCPFNo.AccountID := GlbTable.AccountID;
-
-    frmCPFNo.UpdateCPF := UpdateCPF;
-    frmCPFNo.DisplayTaxDetails := True;
-    FPerorgID := 0;
-    frmCPFNo.ShowManualSelection := ShowManualSelection;
-    NFManualSecond := False;
-    NFManual := False;
-    if frmCPFNo.ShowModal = mrOk then
-    begin
-      FCPFNumber := frmCPFNo.CPFNumber;
-      NFManualSecond := frmCPFNo.NFManualSelected;
-      NFManual := ShowManualSelection and frmCPFNo.NFManual;
-      ClearStatusPage;
-      if NFManual or NFManualSecond then
-        SetStatus(sTabPaymentINManualNFMode, False, True)
-      else if NFEMode then
-        SetStatus(sTabPaymentINNFEMode, False, NFManual)
-      else
-        SetStatus(sTabPayment, False, NFManual);
-
-      if frmCPFNo.AccountID > 0 then
-      begin
-        NFEMode := frmCPFNo.SendToNFE;
-        GlbAccount.AccountID := frmCPFNo.AccountID;
-        GlbTable.AccountID := frmCPFNo.AccountID;
-        FPerorgID := GlbPerOrg.PerorgID;
-      end
-      else
-      begin
-        if Trim(FCPFNumber) <> '' then
-        begin
-          RetrieveCPFAccount;
-          FPerorgID := GlbPerOrg.PerorgID;
+        ParamByName('pitemgroupid').AsInteger := -1;
+        if (radFAndB.Checked) then begin
+          ParamByName('pforb').AsString := '';
+          Title2 := ', ' + sFoodBev + Title2;
         end
-        else
-        begin
-          GlbAccount.AccountID := 0;
-          DeselectAccount;
-          FPerorgID := 0;
-        end;
-      end;
-      Result := True;
-    end;
-  finally
-    frmCPFNo.Free;
-  end;
-  if (not (NFManual or NFEMode)) then
-  begin
-    if not SFiscalPrinting.CheckAuxFileForManufactureNo then
-    begin
-      //ShowMsg(sFiscalManufactureNoNotInAuxFile);
-      PostMessage(Self.Handle, WM_CLOSE, 0, 0);
-      Exit;
-    end;
-    if not SFiscalPrinting.CheckAuxFileForGrandTotal then
-    begin
-      //ShowMsg(sInvalidFiscalTotal);
-      PostMessage(Self.Handle, WM_CLOSE, 0, 0);
-      Exit;
-    end;
-  end;
-end;
-
-procedure TformPaymentTable.RetrieveCPFAccount;
-begin
-  if (DoingTablePayment) then begin   //Jon 25-02-2002
-    Exit;
-  end;
-
-  //fiscal printing
-  if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode))) then
-  if Trim(AppDetails.FiscalAccountPaymentMethod) = '' then
-  begin
-    ShowMsg(sConfigureAcctPayMethod);
-    Exit;
-  end;
-
-  if (CanSelectAccount) then
-  begin
-    with dm.qrCPFAccount do
-    begin
-      try
-        UnPrepare;
-        SQL.Clear;
-
-        SQL.Add('select a.accountid, p.TAXNUMBER, p.perorgid from account a, perorg p ');
-        SQL.Add('where a.PERORGID = p.PERORGID and p.WHENDELETED is null and a.WHENCLOSED is null');
-        SQL.Add('and p.TAXNUMBER = ' + QuotedStr(FCPFNumber));//SQL.Add('select accountid, cpfnumber from account where cpfnumber = ' + QuotedStr(FCPFNumber));
-
-        Prepare;
-        Open;
-        GlbAccount.AccountID := 0;
-        GlbTable.AccountID := 0;
-        GlbTable.PerorgID := 0;
-        if (not EOF) then
-        begin
-          GlbAccount.AccountID := FieldByName('AccountId').AsInteger;
-
-          GlbTable.AccountID := FieldByName('AccountId').AsInteger;
-          GlbTable.PerorgID := FieldByName('perorgid').AsInteger;
-          GlbTable.CPFNumber := FieldByName('TAXNUMBER').AsString;
-          Close;
-          SQL.Clear;
-          SQL.Add('UPDATE AGROUP SET PERORGID = :perorgid, accountid = :accountid, cpfnumber = :cpfnumber where GROUPID = ' + IntToStr(GlbTable.GroupID));
-          ParamByName('perorgid').AsInteger := GlbTable.PerorgID;
-          ParamByName('accountid').AsInteger := GlbTable.AccountID;
-          ParamByName('cpfnumber').AsString := GlbTable.CPFNumber;
-          ExecSQL;
-        end;
-      finally
-        Close;
-      end;
-    end;
-  end;
-end;
-
-procedure TformPaymentTable.cmdGetCPFDesClick(Sender: TObject);
-begin
-  if (DoingTablePayment) then
-    Exit;
-
-  if (AppDetails.EnableFiscalPrinting and CanSelectAccount) then
-  begin
-    if GetCPFNumber(False) then
-    begin
-      InitialiseAccountInfo;
-    end;
-  end;
-end;
-
-procedure TformPaymentTable.ClearVoidLines;
-var
-  OL: TVoidOL;
-  i: Integer;
-begin
-  LogMessage(ltPaymentTrace, '416' + #9);
-  for i := (VoidList.Count - 1) downto 0 do
-  begin
-    OL := VoidList.Items[i];
-    OL.Free;
-    VoidList.Delete(i);
-  end;
-end;
-
-function TformPaymentTable.SendFiscalInvoice: Boolean;
-begin
-  Result := False;
-  if not AppDetails.EnableFiscalPrinting then
-  begin
-    Result := True;
-    Exit;
-  end;
-  // for Fiscal Printing - Open an Invoice in the Fiscal Printer
-end;
-
-procedure TformPaymentTable.LoadAllOlsToPay;
-var
-  aOL: TOrderLine;
-  i: Integer;
-begin
-  LogMessage(ltPaymentTrace, '462' + #9);
-  if not DM.qrOLsToPay.Active then
-    Exit;
-
-  if DM.qrOLsToPay.Eof then
-    Exit;
-
-  ClearUnInvoicedOls;
-  ReloadItems := True;
-  i := 1;
-  while (not DM.qrOLsToPay.Eof) do
-  begin
-    aOL := TOrderLine.Create;
-
-    aOL.OrderLineID := DM.qrOLsToPay.FieldByName('orderlineid').AsInteger;
-    aOL.OrderID := DM.qrOLsToPay.FieldByName('ORDERID').AsInteger;
-    aOL.OrderLineOrder := i;
-    Inc(i);
-    aOL.WhenOrdered := Now;
-    aOL.CourseID := 0;
-    aOL.CourseName := '';
-    aOL.CourseIsMain := False;
-    aOL.ItemID := DM.qrOLsToPay.FieldByName('ITEMID').AsInteger;
-    aOL.ItemGroupID := DM.qrOLsToPay.FieldByName('ITEMGROUPID').AsInteger;
-    aOL.ForB := DM.qrOLsToPay.FieldByName('FORB').AssTRING;
-    aOL.Qty := DM.qrOLsToPay.FieldByName('theQTY').AsDouble;
-    aOL.QtyLeft := DM.qrOLsToPay.FieldByName('QTYLEFT').AsDouble;  //RPC Added
-    aOL.ILQty := aOL.Qty - aOL.QtyLeft;
-    aOL.UnitPrice := DM.qrOLsToPay.FieldByName('UNITPRICE').AsCurrency;
-    aOL.OriginalUnitPrice := DM.qrOLsToPay.FieldByName('originalunitprice').AsCurrency;
-    aOL.ItemString := DM.qrOLsToPay.FieldByName('ITEMABBREV').AsString;
-    aOL.ModsString := FieldAsString(DM.qrOLsToPay.FieldByName('ModText'));
-    aOL.SalesTaxPercent := DM.qrOLsToPay.FieldByName('SALESTAXPERCENT').AsCurrency;
-    aOL.Invoiced := DM.qrOLsToPay.FieldByName('INVOICED').AsCurrency;
-    aOL.CourseName := DM.qrOLsToPay.FieldByName('COURSE').AsString;
-    aOL.ILCount := DM.qrOLsToPay.FieldByName('ILCount').AsInteger;
-    aOL.ShowZeroPriceItem := (aOL.UnitPrice <= 0) and (aOL.QtyLeft > 0);
-    aOL.UnInvoiced := FieldAsCurrency(DM.qrOLsToPay.FieldByName('uninvoiced'));
-    aOL.Positions := DM.qrOLsToPay.FieldByName('positions').AsString;
-    aOL.OLPriceLevel := DM.qrOLsToPay.FieldByName('pricelevel').AsInteger;
-    aOL.TaxSituation := DM.qrOLsToPay.FieldByName('TaxSituation').AsString;
-    aOL.CSOSN := DM.qrOLsToPay.FieldByName('CSOSN').AsString;
-    aOL.CSTICMS := DM.qrOLsToPay.FieldByName('CST_ICMS').AsString;
-    aOL.CFOP := DM.qrOLsToPay.FieldByName('CFOP').AsInteger;
-    aOL.BarCode := DM.qrOLsToPay.FieldByName('Barcode').AsString;
-    aOL.GTIN := DM.qrOLsToPay.FieldByName('gtin').AsString;
-    aOL.NCMProductCode := DM.qrOLsToPay.FieldByName('NCMProductCode').AsString;
-    aOL.CST_PIS := DM.qrOLsToPay.FieldByName('cst_pis').AsString;
-    aOL.CST_COFFINS := DM.qrOLsToPay.FieldByName('cst_coffins').AsString;
-    aOL.CEST := FieldAsInt(DM.qrOLsToPay.FieldByName('cest'));
-    aOL.TaxCoreLabel := FieldAsString(DM.qrOLsToPay.FieldByName('taxlabel'));
-    aOL.ProductOrigin := 0;
-    if Length(aOL.CSTICMS) >= 3 then
-    begin
-      aOL.ProductOrigin := StrToIntDef(Copy(aOL.CSTICMS, 1, 1), 0);
-      aOL.CSTICMS := Copy(aOL.CSTICMS, 2, Length(aOL.CSTICMS) - 1);
-    end;
-    aOL.GLCode := DM.qrOLsToPay.FieldByName('glcode').AsString;
-    aOL.WeighedItem := FieldAsBool(DM.qrOLsToPay.FieldByName('weighteditem'));
-    aOL.ToPay := aOL.UnInvoiced;
-    aOL.Due := aOL.UnInvoiced;
-    aOL.OLQty := aOL.Qty;
-    aOL.ItemGrpType := TItemGrpType(DM.qrOLsToPay.FieldByName('ItemGrpType').AsInteger);
-    if ((DM.qrOLsToPay.FieldByName('comboid').IsNotNull) and (DM.qrOLsToPay.FieldByName('comboid').AsInteger > 0)) then
-    begin
-      aOL.ComboID := DM.qrOLsToPay.FieldByName('comboid').AsInteger;
-      aOL.ComboGroupID := DM.qrOLsToPay.FieldByName('combogroup').AsInteger;
-      aOL.ComboIndex := DM.qrOLsToPay.FieldByName('comboindex').AsInteger;
-      aOL.ComboName := DM.qrOLsToPay.FieldByName('comboname').AsString;
-      aOL.ComboQty := DM.qrOLsToPay.FieldByName('comboqty').AsDouble;
-    end;
-
-    aOL.AllowedDiscount := 0;
-    aOL.ILDiscount := 0;
-    aOL.HostSubsidy := 0;
-    aOL.GuestSubsidy := 0;
-    aOL.SubsidyAllowed := 0;
-
-    if ((aOL.ComboID > 0) and  (aOL.ComboGroupID > 0) and (aOL.ComboIndex > 0)) then
-    begin
-      aOL.AllowedDiscount := DM.qrOLsToPay.FieldByName('OLDiscount').AsCurrency;
-      //aOL.ILDiscount := aOL.AllowedDiscount;
-      aOL.ComboDiscount := aOL.AllowedDiscount;
-    end;
-    aOL.LoyaltyItemID := 0;
-    aOL.LoyaltyFreeQty := 0;
-    aOL.LoyaltyFreeDiscount := 0;
-    aOL.DiscountSchemeItemPercentage := 0;
-    aOL.DiscountSchemeItemAmount := 0;
-    aOL.DiscountSchemeID := 0;
-
-    DM.qrOLsToPay.Next;
-    UnInvoicedOlsToPay.Add(aOL)
-  end;
-  ReloadItems := False;
-  SubsidyCalc.CalculateEventSubsidy(UnInvoicedOlsToPay);
-  LoadUnInvoicedOlsToGrid(UnInvoicedOlsToPay, 0, FToPay);
-end;
-
-procedure TformPaymentTable.ClearUnInvoicedOls;
-var
-  i: Integer;
-  aOL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '463' + #9);
-  for i := UnInvoicedOlsToPay.Count - 1 downto 0 do
-  begin
-    aOL := UnInvoicedOlsToPay.Items[i];
-    aOL.Free;
-    UnInvoicedOlsToPay.Delete(I);
-  end;
-  UnInvoicedOlsToPay.Clear;
-
-  ClearUnInvoicedGrid;
-end;
-
-procedure TformPaymentTable.SetUnInvoicedOLCols;
-begin
-  LogMessage(ltPaymentTrace, '307' + #9);
-  with grdUnInvoicedList do
-  begin
-    ColCount := 8;
-    if AppDetails.EnableCombo then
-      ColCount := 10;
-
-    ColWidths[0] := 30;
-    ColWidths[1] := 50;
-    ColWidths[2] := 40;
-    ColWidths[3] := 40;
-    ColWidths[4] := 200;
-    ColWidths[5] := 40;
-    ColWidths[6] := 50;
-    ColWidths[7] := 50;
-
-    Cells[0, 0] := sQryBF;
-    Cells[1, 0] := sCourse;
-    Cells[2, 0] := sQryQty;
-    Cells[3, 0] := sQryLeft;
-    Cells[4, 0] := sItem;
-    Cells[5, 0] := sQryPos;
-    Cells[6, 0] := sToPay;
-    Cells[7, 0] := sDue;
-    if AppDetails.EnableCombo then
-    begin
-      ColWidths[8] := 110;
-      ColWidths[9] := 90;
-      Cells[8, 0] := sComboName;
-      Cells[9, 0] := sComboSeq;
-    end;
-  end;
-  LogMessage(ltPaymentTrace, '308' + #9);
-end;
-
-procedure TformPaymentTable.LoadUnInvoicedOlsToGrid(AList: TList; aPaid, aToPay: Currency);
-var
-  iRow, i: Integer;
-  aOL: TOrderLine;
-  AddOL: Boolean;
-  FoundCombos: Boolean;
-begin
-  LogMessage(ltPaymentTrace, '295' + #9 + 'aPaid=' + FloatToStr(aPaid) + ', aToPay=' + FloatToStr(aToPay));
-  SetOLCols;
-
-  LogMessage(ltPaymentTrace, '296' + #9);
-  ClearUnInvoicedGrid;
-
-  if PaymentOnSelectedItems or AmountSplitingStarted then
-  begin
-    LogMessage(ltPaymentTrace, '297' + #9);
-    if (APaid >= AToPay) then
-    begin
-      LogMessage(ltPaymentTrace, '298' + #9);
-      ClearOLsWithoutTenderSeqNo; //means delete those items added simply without a tender . Clear those and let operator select the items again
-    end;
-  end
-  else
-  begin
-    LogMessage(ltPaymentTrace, '299' + #9);
-    ClearOLsWithoutTenderSeqNo; //means delete those items added simply without a tender . Clear those and let operator select the items again
-  end;
-
-  if not Assigned(AList) then
-    Exit;
-
-  if AList.Count = 0 then
-    Exit;
-
-  iRow := 1;
-  FoundCombos := False;
-
-  for i := 0 to AList.Count-1 do
-  begin
-    aOL := AList.Items[i];
-    LogMessage(ltPaymentTrace, '300' + #9);
-
-    AddOL := (aOL.UnInvoiced > 0) or ((aOL.UnitPrice <= 0) and (aOL.ShowZeroPriceItem));
-    if (AddOL) then
-    begin
-      LogMessage(ltPaymentTrace, '301' + #9);
-      if aOL.ComboID > 0 then
-        FoundCombos := True;
-      grdUnInvoicedList.Cells[0, iRow] := aOL.ForB;
-      grdUnInvoicedList.Objects[0, iRow] := TObject(aOL.OrderLineID);
-      grdUnInvoicedList.Cells[1, iRow] := aOL.CourseName;
-      if (aOL.ModsString <> '') then
-        grdUnInvoicedList.Cells[4, iRow] := aOL.ItemString+#13+aOL.ModsString
-      else
-        grdUnInvoicedList.Cells[4, iRow] := aOL.ItemString;
-      grdUnInvoicedList.Cells[5, iRow] := aOL.Positions;
-
-      grdUnInvoicedList.Cells[2, iRow] := FormatFloat(QTYFORMAT, aOL.Qty);
-      if aOL.UnitPrice <> 0 then
-        grdUnInvoicedList.Cells[3, iRow] := FormatFloat(QTYFORMAT, aOL.ToPay / aOL.UnitPrice)
-      else
-        grdUnInvoicedList.Cells[3, iRow] := FormatFloat(QTYFORMAT, aOL.Qty);
-      grdUnInvoicedList.Cells[6, iRow] := FormatFloat(CurrencyMask, aOL.Invoiced+aOL.ToPay);
-
-      grdUnInvoicedList.Cells[7, iRow] := FormatFloat(CurrencyMask, aOL.Due);
-      if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-      begin
-        grdUnInvoicedList.Cells[2, iRow] := FormatFloat(QTYFORMAT, TruncateTo(aOL.Qty, 3));
-        if aOL.UnitPrice <> 0 then
-          grdUnInvoicedList.Cells[3, iRow] := FormatFloat(QTYFORMAT, TruncateTo(aOL.ToPay / aOL.UnitPrice, 3))
-        else
-          grdUnInvoicedList.Cells[3, iRow] := FormatFloat(QTYFORMAT, aOL.Qty);
-        grdUnInvoicedList.Cells[6, iRow] := FormatFloat(CurrencyMask, TruncateTo(aOL.Invoiced+aOL.ToPay, 2));
-        grdUnInvoicedList.Cells[7, iRow] := FormatFloat(CurrencyMask, TruncateTo(aOL.Due, 2));
-      end;
-      grdUnInvoicedList.Cells[8, iRow] := aOL.ComboName;
-      grdUnInvoicedList.Cells[9, iRow] := '';
-      if (aOL.ComboIndex > 0) then
-      begin
-        grdUnInvoicedList.Cells[9, iRow] := IntToStr(aOL.ComboIndex);
-      end;
-      Inc(iRow);
-      grdUnInvoicedList.RowCount := grdUnInvoicedList.RowCount + 1;
-    end;
-  end;
-
-  cmdAmountToPay.Enabled := not FoundCombos;
-  if grdUnInvoicedList.RowCount > 2 then
-    grdUnInvoicedList.RowCount := grdUnInvoicedList.RowCount - 1;
-  LogMessage(ltPaymentTrace, '302' + #9);
-end;
-
-procedure TformPaymentTable.ClearUnInvoicedGrid;
-begin
-  LogMessage(ltPaymentTrace, '305' + #9);
-  grdUnInvoicedList.RowCount := 2;
-  grdUnInvoicedList.FixedRows := 1;
-  SetUnInvoicedOLCols;
-
-  grdUnInvoicedList.Cells[0, 1] := '';
-  grdUnInvoicedList.Cells[1, 1] := '';
-  grdUnInvoicedList.Cells[2, 1] := '';
-  grdUnInvoicedList.Cells[3, 1] := '';
-  grdUnInvoicedList.Cells[4, 1] := '';
-  grdUnInvoicedList.Cells[5, 1] := '';
-  grdUnInvoicedList.Cells[6, 1] := '';
-  grdUnInvoicedList.Cells[7, 1] := '';
-  grdUnInvoicedList.Cells[8, 1] := '';
-  grdUnInvoicedList.Cells[9, 1] := '';
-  LogMessage(ltPaymentTrace, '306' + #9);
-end;
-
-procedure TformPaymentTable.UpdateUnInvoicedOLValues(Apply: Boolean);
-var
-  i, j: Integer;
-  aOL, SOL: TOrderLine;
-
-begin
-  LogMessage(ltPaymentTrace, '323' + #9 + 'Apply=' + BoolToStr(Apply, True) + ', TempItemList.Count=' + IntToStr(TempItemList.Count));
-  if not Assigned(UnInvoicedOlsToPay) then
-    Exit;
-
-  if UnInvoicedOlsToPay.Count = 0 then
-    Exit;
-
-  for i := 0 to OLToPayList.Count - 1 do
-  begin
-    aOL := OLToPayList.Items[i];
-    LogMessage(ltPaymentTrace, '324' + #9 + 'aOL.OrderLineID=' + IntToStr(aOL.OrderLineID) + ', aOL.ToPay=' + FloatToStr(aOL.ToPay) + ', aOL.Qty=' + FloatToStr(aOL.Qty) +
-      ', aOL.AllowedDiscount=' + FloatToStr(aOL.AllowedDiscount) + ', aOL.SubsidyAllowed=' + FloatToStr(aOL.SubsidyAllowed));
-
-    for j := 0 to UnInvoicedOlsToPay.Count - 1 do
-    begin
-      SOL := UnInvoicedOlsToPay.Items[j];
-      if aOL.OrderLineID = SOL.OrderLineID then
-      begin
-        LogMessage(ltPaymentTrace, '325' + #9 + 'SOL.OrderLineID=' + IntToStr(SOL.OrderLineID) +
-          ', SOL.UnInvoiced=' + FloatToStr(SOL.UnInvoiced) + ', SOL.Invoiced=' + FloatToStr(SOL.Invoiced) +
-          ', SOL.QtyLeft=' + FloatToStr(SOL.QtyLeft) + ', SOL.Qty=' + FloatToStr(SOL.Qty) + ', SOL.Due=' + FloatToStr(SOL.Due) + ', SOL.ToPay=' + FloatToStr(SOL.ToPay) +
-          ', SOL.UnitPrice=' + FloatToStr(SOL.UnitPrice) + ', SOL.ShowZeroPriceItem=' + BoolToStr(SOL.ShowZeroPriceItem, True) +
-          ', SOL.AllowedDiscount=' + FloatToStr(SOL.AllowedDiscount) + ', SOL.SubsidyAllowed=' + FloatToStr(SOL.SubsidyAllowed));
-
-        SOL.UnInvoiced := SOL.UnInvoiced - aOL.ToPay ;
-        SOL.Invoiced := SOL.Invoiced + aOL.ToPay ;
-        SOL.QtyLeft := SOL.Qty - aOL.Qty;
-        SOL.Qty := SOL.Qty - aOL.Qty;
-        if SOL.QtyLeft < 0 then
-          SOL.QtyLeft := 0;
-        if SOL.Qty < 0 then
-          SOL.Qty := 0;
-        SOL.Due := SOL.UnInvoiced;
-        SOL.ToPay := SOL.UnInvoiced;
-        if SOL.UnitPrice = 0 then
-          SOL.ShowZeroPriceItem := False;
-        SOL.AllowedDiscount := SOL.AllowedDiscount - aOL.AllowedDiscount;
-        SOL.SubsidyAllowed := SOL.SubsidyAllowed - aOL.SubsidyAllowed;
-
-        LogMessage(ltPaymentTrace, '326' + #9 +
-          'SOL.UnInvoiced=' + FloatToStr(SOL.UnInvoiced) + ', SOL.Invoiced=' + FloatToStr(SOL.Invoiced) +
-          ', SOL.QtyLeft=' + FloatToStr(SOL.QtyLeft) + ', SOL.Qty=' + FloatToStr(SOL.Qty) + ', SOL.Due=' + FloatToStr(SOL.Due) + ', SOL.ToPay=' + FloatToStr(SOL.ToPay) +
-          ', SOL.UnitPrice=' + FloatToStr(SOL.UnitPrice) + ', SOL.ShowZeroPriceItem=' + BoolToStr(SOL.ShowZeroPriceItem, True) +
-          ', SOL.AllowedDiscount=' + FloatToStr(SOL.AllowedDiscount) + ', SOL.SubsidyAllowed=' + FloatToStr(SOL.SubsidyAllowed));
-        Break;
-      end;
-    end;
-  end;
-
-  if ((Apply) and (TempItemList.Count > 0)) then
-  begin
-    for i := 0 to OLToPayList.Count - 1 do
-    begin
-      aOL := OLToPayList.Items[i];
-      for j := 0 to TempItemList.Count - 1 do
-      begin
-        SOL := TempItemList.Items[j];
-        if aOL.OrderLineID = SOL.OrderLineID then
-        begin
-          LogMessage(ltPaymentTrace, '327' + #9 + 'SOL.OrderLineID=' + IntToStr(SOL.OrderLineID) +
-            ', SOL.UnInvoiced=' + FloatToStr(SOL.UnInvoiced) + ', SOL.Invoiced=' + FloatToStr(SOL.Invoiced) +
-            ', SOL.QtyLeft=' + FloatToStr(SOL.QtyLeft) + ', SOL.Qty=' + FloatToStr(SOL.Qty) + ', SOL.Due=' + FloatToStr(SOL.Due) + ', SOL.ToPay=' + FloatToStr(SOL.ToPay) +
-            ', SOL.UnitPrice=' + FloatToStr(SOL.UnitPrice) +
-            ', SOL.AllowedDiscount=' + FloatToStr(SOL.AllowedDiscount) + ', SOL.SubsidyAllowed=' + FloatToStr(SOL.SubsidyAllowed));
-
-          SOL.UnInvoiced := SOL.UnInvoiced - aOL.ToPay;
-          SOL.Invoiced := SOL.Invoiced + aOL.ToPay;
-          SOL.QtyLeft := SOL.Qty - aOL.Qty;
-          SOL.Qty := SOL.Qty - aOL.Qty;
-          SOL.Due := SOL.UnInvoiced;
-
-          SOL.ToPay := SOL.UnInvoiced;
-          SOL.AllowedDiscount := SOL.AllowedDiscount - aOL.AllowedDiscount; // calculating the new allowed discount for that item
-          SOL.SubsidyAllowed := SOL.SubsidyAllowed - aOL.SubsidyAllowed;
-
-          LogMessage(ltPaymentTrace, '328' + #9 +
-            'SOL.UnInvoiced=' + FloatToStr(SOL.UnInvoiced) + ', SOL.Invoiced=' + FloatToStr(SOL.Invoiced) +
-            ', SOL.QtyLeft=' + FloatToStr(SOL.QtyLeft) + ', SOL.Qty=' + FloatToStr(SOL.Qty) + ', SOL.Due=' + FloatToStr(SOL.Due) + ', SOL.ToPay=' + FloatToStr(SOL.ToPay) +
-            ', SOL.UnitPrice=' + FloatToStr(SOL.UnitPrice) +
-            ', SOL.AllowedDiscount=' + FloatToStr(SOL.AllowedDiscount) + ', SOL.SubsidyAllowed=' + FloatToStr(SOL.SubsidyAllowed));
-          Break;
-        end;
-      end;
-    end;
-  end;
-  LogMessage(ltPaymentTrace, '329' + #9);
-end;
-
-procedure TformPaymentTable.LoadUnInvoicedOlsToOLToPayList(AList: TList);
-var
-  i, iCount: Integer;
-  aOL, OL: TOrderLine;
-  AddOL: Boolean;
-begin
-  LogMessage(ltPaymentTrace, '309' + #9);
-  if not Assigned(AList) then
-    Exit;
-
-  if AList.Count = 0 then
-    Exit;
-
-  LogMessage(ltPaymentTrace, '310' + #9);
-  ClearAllOrderLines;
-  for i := 0 to AList.Count - 1 do
-  begin
-    aOL := AList.Items[i];
-    AddOL := (aOL.Due > 0) or (aOL.UnInvoiced > 0) or ((aOL.UnitPrice <= 0) and (aOL.ShowZeroPriceItem));
-
-    LogMessage(ltPaymentTrace, '311' + #9 + 'aOL.OrderLineID=' + IntToStr(aOL.OrderLineID) + ', aOL.Due=' + FloatToStr(aOL.Due) + ', aOL.UnInvoiced=' + FloatToStr(aOL.UnInvoiced) +
-      ', aOL.UnitPrice=' + FloatToStr(aOL.UnitPrice) + ', aOL.ShowZeroPriceItem=' + BoolToStr(aOL.ShowZeroPriceItem, True));
-
-    if ((AddOL) and (DM.qrOLsToPay.Locate('orderlineid', aOL.OrderLineID, [])) and
-        (not dm.qrOLsToPay.Fields[0].IsNull)) then
-    begin
-      iCount := OLToPayList.Count;
-      LogMessage(ltPaymentTrace, '312' + #9 + 'iCount=' + IntToStr(iCount));
-      AddOrderLine(AList, i);
-      if ((OLToPayList.Count = (iCount + 1)) and (aOL.ComboID >0) and (aOL.ComboGroupID > 0) and (aOL.ComboIndex > 0)) then
-      begin
-        LogMessage(ltPaymentTrace, '313' + #9);
-        OL := OLToPayList.Items[OLToPayList.Count - 1];
-        OL.ComboDiscount := aOL.ComboDiscount;
-      end;
-    end;
-  end;
-
-  if (AppDetails.OneBill) and (FUseDiscountAmount) and (FDiscCalculator.OneBillUseDiscountAmount) then
-    FDiscountAmount := FDiscCalculator.OneBillDiscountAmount;
-
-  LogMessage(ltPaymentTrace, '314' + #9);
-  grdItemAutoClick := True;
-  grdToPay.Row := 1;
-
-  LogMessage(ltPaymentTrace, '315' + #9);
-  CalculateToPay(True);
-  LogMessage(ltPaymentTrace, '316' + #9);
-end;
-
-procedure TformPaymentTable.UpdateOLTenderID(ATenderID: Integer);
-var
-  i: Integer;
-  aOL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '330' + #9 + 'ATenderID=' + IntToStr(ATenderID));
-  for i := 0 to OLToPayList.Count - 1 do
-  begin
-    aOL := OLToPayList.Items[i];
-    LogMessage(ltPaymentTrace, '331' + #9 + 'aOL.OrderLineID=' + IntToStr(aOL.OrderLineID));
-    aOL.TenderSeqID := ATenderID;
-  end;
-end;
-
-
-procedure TformPaymentTable.CopyOL(aDestOL: TOrderLine; aSourceOL: TOrderLine);
-begin
-  aDestOL.CopyOL(aSourceOL);
-end;
-
-procedure TformPaymentTable.DeleteOLsOfTender(TL:TTL;ASeqNo: Integer);
-var
-  i, iCount, j: Integer;
-  aOL, SOL, tmpOL: TOrderLine;
-  FoundSelected: Boolean;
-begin
-  LogMessage(ltPaymentTrace, '465' + #9);
-  iCount := TL.OLList.Count;
-  SOL := nil;
-  aOL := nil;
-
-  for i := TL.OLList.Count - 1 downto 0 do
-  begin
-    tmpOL := TL.OLList.Items[i];
-
-    if Assigned(TempItemList) then
-    begin
-      for j := 0 to TempItemList.Count - 1 do
-      begin
-        SOL := TempItemList.Items[j];
-        if SOL.OrderLineID = tmpOL.OrderLineID then
-        begin
-          SOL.Qty := SOL.Qty + tmpOL.Qty;
-          SOL.ToPay := SOL.ToPay + tmpOL.ToPay;
-          SOL.Due := SOL.ToPay;
-          SOL.UnInvoiced := SOL.ToPay;
-          SOL.Invoiced := SOL.Invoiced - tmpOL.ToPay;
-          SOL.QtyLeft := SOL.QtyLeft + tmpOL.Qty;
-
-          if SOL.UnitPrice = 0 then
-            SOL.ShowZeroPriceItem := True;
-
-          SOL.AllowedDiscount := GetRoundedUpDown(SOL.AllowedDiscount + tmpOL.AllowedDiscount, AppDetails.DecimalPlaces);
-          SOL.SubsidyAllowed := GetRoundedUpDown(SOL.SubsidyAllowed + tmpOL.SubsidyAllowed, AppDetails.DecimalPlaces);
-
-          SOL.LoyaltyFreeQty := 0;
-          SOL.LoyaltyFreeDiscount := 0;
-          Break;
-        end;
-      end;
-      SOL := nil;
-    end;
-
-    for j := 0 to UnInvoicedOlsToPay.Count - 1 do
-    begin
-      SOL := UnInvoicedOlsToPay.Items[j];
-      if SOL.OrderLineID = tmpOL.OrderLineID then
-      begin
-        SOL.Qty := SOL.Qty + tmpOL.Qty;
-        SOL.ToPay := SOL.ToPay + tmpOL.ToPay;
-        SOL.Due := SOL.ToPay;
-        SOL.UnInvoiced := SOL.ToPay;
-        SOL.Invoiced := SOL.Invoiced - tmpOL.ToPay;
-        SOL.QtyLeft := SOL.QtyLeft + tmpOL.Qty;
-
-        if SOL.UnitPrice = 0 then
-          SOL.ShowZeroPriceItem := True;
-
-        SOL.AllowedDiscount := GetRoundedUpDown(SOL.AllowedDiscount + tmpOL.AllowedDiscount, AppDetails.DecimalPlaces);
-        SOL.SubsidyAllowed := GetRoundedUpDown(SOL.SubsidyAllowed + tmpOL.SubsidyAllowed, AppDetails.DecimalPlaces);
-
-        LoyaltyReward.AvailableQty := LoyaltyReward.AvailableQty + tmpOL.LoyaltyFreeQty;   //do only once
-        SOL.LoyaltyFreeQty := 0;
-        SOL.LoyaltyFreeDiscount := 0;
-        Break;
-      end;
-    end;
-
-    FoundSelected := False;
-    for j := 0 to OLToPayList.Count - 1 do
-    begin
-      aOL := OLToPayList.Items[j];
-      if aOL.OrderLineID = tmpOL.OrderLineID then
-      begin
-        FoundSelected := True;
-        Break;
-      end;
-      aOL := nil;
-    end;
-
-    if (not FoundSelected) and Assigned(SOL) then
-    begin
-      AddOrderLine(UnInvoicedOlsToPay, UnInvoicedOlsToPay.IndexOf(SOL));
-      ReOrderOLtoPayList;
-    end
-    else if Assigned(aOL) then
-    begin
-      if (not Assigned(SOL)) or ((Assigned(SOL) and ((aOL.Qty + tmpOL.Qty) < SOL.Qty))) then
-      begin
-        aOL.Qty := aOL.Qty + tmpOL.Qty;
-        aOL.ToPay := aOL.ToPay + tmpOL.ToPay;
-        aOL.Due := aOL.ToPay;
-        aOL.UnInvoiced := aOL.ToPay;
-        aOL.Invoiced := aOL.Invoiced + tmpOL.Invoiced;
-        aOL.QtyLeft := aOL.QtyLeft + tmpOL.Qty;
-
-        if aOL.UnitPrice = 0 then
-          aOL.ShowZeroPriceItem := True;
-
-        aOL.AllowedDiscount := GetRoundedUpDown(aOL.AllowedDiscount + tmpOL.AllowedDiscount, AppDetails.DecimalPlaces);
-        aOL.SubsidyAllowed := GetRoundedUpDown(aOL.SubsidyAllowed + tmpOL.SubsidyAllowed, AppDetails.DecimalPlaces);
-      end
-      else if ((aOL.Qty + tmpOL.Qty) >= SOL.Qty) then
-      begin
-        aOL.Qty := sOL.Qty;
-        aOL.ToPay := sOL.ToPay;
-        aOL.Due := sOL.ToPay;
-        aOL.UnInvoiced := sOL.ToPay;
-        aOL.Invoiced := sOL.Invoiced;
-        aOL.QtyLeft := sOL.QtyLeft;
-
-        if aOL.UnitPrice = 0 then
-          aOL.ShowZeroPriceItem := True;
-
-        aOL.AllowedDiscount := sOL.AllowedDiscount;
-        aOL.SubsidyAllowed := sOL.SubsidyAllowed;
-      end;
-      aOL.LoyaltyFreeQty := 0;
-      aOL.LoyaltyFreeDiscount := 0;
-      aOL.TenderSeqID := 0;
-    end;
-
-    tmpOL.Free;
-    TL.OLList.Delete(i);
-  end;
-
-  if TL.OLList.Count <> iCount then
-  begin
-    LogMessage(ltPaymentTrace, '435' + #9);
-    CalculateToPay;
-    LogMessage(ltPaymentTrace, '525' + #9);
-  end;
-end;
-
-procedure TformPaymentTable.ReOrderOLtoPayList;
-
-var
-  i, iCount, j: Integer;
-  aOL, SOL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '473' + #9);
-  iCount := OLToPayList.Count - 1;
-
-  for i := 0 to UnInvoicedOlsToPay.Count - 1 do
-  begin
-    SOL := UnInvoicedOlsToPay.Items[i];
-    for j := 0 to OLToPayList.Count - 1 do
-    begin
-      aOL := OLToPayList.Items[j];
-
-      if SOL.OrderLineID = aOL.OrderLineID then
-      begin
-        OLToPayList.Add(aOL);
-      end;
-    end;
-  end;
-  
-  for i := iCount downto 0 do
-    OLToPayList.Delete(i);
-
-end;
-
-procedure TformPaymentTable.ClearOLsWithoutTenderSeqNo;
-var
-  i, iCount: Integer;
-  aOL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '464' + #9);
-  iCount := OLToPayList.Count;
-  for i := OLToPayList.Count - 1 downto 0 do
-  begin
-    aOL := OLToPayList.Items[i];
-    if aOL.TenderSeqID <= 0 then
-    begin
-      if ((LoyaltyReward.LoyaltyRewardID > 0) and (LoyaltyReward.RewardOffer = roItem) and (aOL.LoyaltyItemID > 0)) then begin
-        LoyaltyReward.AvailableQty := LoyaltyReward.AvailableQty + aOL.LoyaltyFreeQty;
-      end;
-
-      OLToPayList.Delete(i);
-    end;
-  end;
-
-  if iCount = OLToPayList.Count then
-    Exit;
-
-  with grdToPay do
-  begin
-    RowCount := 2;
-
-    Cells[0, 1] := '';
-    Cells[1, 1] := '';
-    Cells[2, 1] := '';
-    Cells[3, 1] := '';
-    Cells[4, 1] := '';
-
-    for i := 0 to OLToPayList.Count - 1 do
-    begin
-      aOL := OLToPayList.Items[i];
-      if (DM.qrOLsToPay.Locate('orderlineid', aOL.OrderLineID, []) and (not dm.qrOLsToPay.Fields[0].IsNull)) then
-        AddOrderLine(UnInvoicedOlsToPay, i);
-    end;
-  end;
-end;
-
-function TformPaymentTable.CheckForUnTenderedItems: Boolean;
-var
-  i: Integer;
-  aOL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '466' + #9);
-  Result := False;
-  try
-    for i := 0 to OLToPayList.Count - 1 do
-    begin
-      aOL := OLToPayList.Items[i];
-      if aOL.TenderSeqID <= 0 then
-      begin
-        Result := True;
-        Exit;
-      end;
-    end;
-  finally
-    FDiscCalculator.OneBillUseDiscountAmount := (not Result);
-  end;
-end;
-
-
-procedure TformPaymentTable.ClearUnTenderedOrderLines;
-var
-  OL: TOrderLine;
-  i: Integer;
-begin
-  LogMessage(ltPaymentTrace, '226' + #9);
-  if (AppDetails.OneBill) and (FUseDiscountAmount) then
-    FDiscountAmount := 0;
-
-  for I := (OLToPayList.Count - 1) downto 0 do
-  begin
-    OL := OLToPayList.Items[I];
-    if OL.TenderSeqID > 0 then
-    begin
-      if (AppDetails.OneBill) and (FUseDiscountAmount) then
-        FDiscountAmount := FDiscountAmount + OL.AllowedDiscount;
-
-      Continue;
-    end;
-
-    if ((LoyaltyReward.LoyaltyRewardID > 0) and (LoyaltyReward.RewardOffer = roItem) and (OL.LoyaltyItemID > 0) and (OL.ComboID <= 0)) then begin
-      LoyaltyReward.AvailableQty := LoyaltyReward.AvailableQty + OL.LoyaltyFreeQty;
-    end;
-    OL.Free;
-    OLToPayList.Delete(I);
-  end;
-
-  if (AppDetails.OneBill) and (FUseDiscountAmount) and (OLToPayList.Count = 0) then
-  begin
-    FDiscountAmount := FDiscCalculator.OneBillDiscountAmount;
-    FDiscCalculator.OneBillUseDiscountAmount := True;
-  end;
-
-  if OLToPayList.Count = 0 then
-  begin
-    LogMessage(ltPaymentTrace, '227' + #9);
-    with grdToPay do
-    begin
-      RowCount := 2;
-      Cells[0, 1] := '';
-      Cells[1, 1] := '';
-      Cells[2, 1] := '';
-      Cells[3, 1] := '0.00';
-      Cells[4, 1] := '0.00';
-      Row := 1;
-    end;
-  end;
-
-  LogMessage(ltPaymentTrace, '228' + #9);
-  CalculateToPay();
-
-  LogMessage(ltPaymentTrace, '229' + #9);
-  grdItemAutoClick := True;
-  grdToPayClick(nil);
-  LogMessage(ltPaymentTrace, '230' + #9);
-end;
-
-procedure TformPaymentTable.AssociateOLSToTender(var TL: TTL ; ATenderSeqNo: Integer);
-var
-  i: Integer;
-  aOL, tmpOL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '231' + #9);
-  for i := 0 to OLToPayList.Count - 1 do
-  begin
-    aOL := OLToPayList.Items[i];
-    if ((aOL.TenderSeqID = ATenderSeqNo) and ((aOL.Qty > 0) or ((aOL.UnitPrice <= 0) and (aOL.ShowZeroPriceItem)) )) then
-    begin
-      LogMessage(ltPaymentTrace, '232' + #9);
-      tmpOL := TOrderLine.Create;
-      CopyOL(tmpOL, aOL);
-      TL.OLList.Add(tmpOL);
-    end;
-  end;
-  LogMessage(ltPaymentTrace, '233' + #9);
-end;
-
-procedure TformPaymentTable.GetAllSelectedOLs(var AList: Tlist);
-var
-  i, j: Integer;
-  aOL, ListOL: TOrderLine;
-  TL: TTL;
-  bAddTender, ItemsSelected, OLAlreadyAdded: Boolean;
-begin
-  LogMessage(ltPaymentTrace, '234' + #9 + 'FRecordType=' + IntToStr(Ord(FRecordType)) + ', PaymentOnSelectedItems=' + BoolToStr(PaymentOnSelectedItems, True) +
-    ', FSelectedItemsNotPaidFull=' + BoolToStr(FSelectedItemsNotPaidFull, True) + ', AmountSplitingStarted=' + BoolToStr(AmountSplitingStarted, True) +
-    ', FTenderGrpID=' + IntToStr(FTenderGrpID) + ', FGetAllItems=' + BoolToStr(FGetAllItems, True));
-
-  if not Assigned(AList) then
-    Exit;
-
-  //Get all ols already selected.
-  AList.Clear;
-
-  ItemsSelected := PaymentOnSelectedItems or FSelectedItemsNotPaidFull or AmountSplitingStarted;
-
-  //Added all OLs already selected and associated to tender.
-  if FRecordType in [rtTenderedItems, rtBoth] then
-  begin
-    for i := 0 to TLList.Count-1 do
-    begin
-      TL := TLList.Items[i];
-      LogMessage(ltPaymentTrace, '235' + #9 + 'TL.TenderGroupID=' + IntToStr(TL.TenderGroupID));
-
-      if AppDetails.OneBill then
-        bAddTender := ((not ItemsSelected) or (ItemsSelected and (FTenderGrpID = TL.TenderGroupID)))
-      else
-        bAddTender := (FGetAllItems) or ((not FGetAllItems) and (((not ItemsSelected) or (ItemsSelected and (FTenderGrpID = TL.TenderGroupID)))));
-
-      if ((bAddTender) and (Assigned(TL.OLList)) and (TL.OLList.Count > 0)) then
-      begin
-        LogMessage(ltPaymentTrace, '236' + #9);
-        for j := 0 to TL.OLList.Count - 1 do
-        begin
-          AList.Add(TL.OLList.Items[j]);
-        end;
-      end;
-    end;
-  end;
-
-  if FRecordType in [rtUnTenderedItems, rtBoth] then
-  begin
-    for i := 0 to OLToPayList.Count - 1 do
-    begin
-      aOL := OLToPayList.Items[i];
-      LogMessage(ltPaymentTrace, '237' + #9 + 'aOL.OrderLineID=' + IntToStr(aOL.OrderLineID) + ', aOL.QtyLeft=' + FloatToStr(aOL.QtyLeft));
-
-      //determine if OL has already been added to the list (in the code above)
-      OLAlreadyAdded := False;
-      for j := 0 to Pred(AList.Count) do
-      begin
-        ListOL := AList.Items[j];
-        if (aOL.OrderLineID = ListOL.OrderLineID) and (aOL.QtyLeft = 0) then
-        begin
-          OLAlreadyAdded := True;
-          Break;
-        end;
-      end;
-
-      if not OLAlreadyAdded then
-      begin
-        LogMessage(ltPaymentTrace, '238' + #9);
-        AList.Add(aOL);
-      end;
-    end;
-  end;
-  LogMessage(ltPaymentTrace, '239' + #9);
-end;
-
-procedure TformPaymentTable.CombineSameOls(var AList: TList);
-var
-  tmpList: TList;
-  i, j: Integer;
-  aOL, SOL, tmpNewOL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '467' + #9);
-  //returns a list of copied OLs, so ensure they are freed as required
-
-  if AList.Count = 0 then
-    Exit;
-
-  tmpList := TList.Create;
-  try
-    for i := 0 to AList.Count - 1 do
-    begin
-      SOL := AList.Items[i];
-      SOL.AlreadyCombined := False;
-    end;
-
-    if AList.Count >= 2 then
-    begin
-      for i := 0 to AList.Count - 2 do
-      begin
-        SOL := AList.Items[i];
-        if not SOL.AlreadyCombined then
-        begin
-          tmpNewOL := TOrderLine.Create;
-          CopyOL(tmpNewOL, SOL);         //copy it first, so dont change original that might be OL assigned to a TL
-          tmpList.Add(tmpNewOL);  
-          SOL := tmpNewOL;               //change the copy, not the original
-
-          for j := AList.Count - 1 downto i + 1  do
-          begin
-            aOL := AList.Items[j];
-
-            if not aOL.AlreadyCombined then
-            if ((i <> j) and (SOL.OrderLineID = aOL.OrderLineID)) then
-            begin
-              SOL.ToPay := SOL.ToPay + aOL.ToPay;
-              if (SOL.UnitPrice <> 0) then
-                SOL.Qty := SOL.ToPay / SOL.UnitPrice
-              else
-                SOL.Qty := SOL.Qty + aOL.Qty;
-              if (AppDetails.EnableFiscalPrinting) then
-                SOL.Qty := TruncateTo(SOL.Qty, 3)
-              else
-                SOL.Qty := CRoundTo(SOL.Qty, 4);
-              SOL.Due := SOL.ToPay;
-              SOL.UnInvoiced := SOL.ToPay;
-              SOL.AllowedDiscount := SOL.AllowedDiscount + aOL.AllowedDiscount;
-              SOL.ComboQty := SOL.ComboQty + aOL.ComboQty;
-              SOL.SubsidyAllowed := SOL.SubsidyAllowed + aOL.SubsidyAllowed;
-              aOL.AlreadyCombined := True;
-            end;
-          end;
-        end;
-      end;
-
-      SOL := AList.Items[AList.Count-1];  //last item
-      if not SOL.AlreadyCombined then
-      begin
-        tmpNewOL := TOrderLine.Create;
-        CopyOL(tmpNewOL, SOL);
-        tmpList.Add(tmpNewOL);
-      end;
-    end
-    else
-    begin
-      SOL := AList.Items[0];
-      tmpNewOL := TOrderLine.Create;
-      CopyOL(tmpNewOL, SOL);
-      tmpList.Add(tmpNewOL);
-    end;
-
-    AList.Clear;
-    for i := 0 to tmpList.Count - 1 do
-      AList.Add(tmpList.Items[i]);
-
-  finally
-    tmpList.Clear;
-    tmpList.Free;
-  end;
-end;
-
-procedure TformPaymentTable.CalculateAmountForUntenderedItems;
-begin
-  LogMessage(ltPaymentTrace, '468' + #9);
-  if PaymentOnSelectedItems or AmountSplitingStarted then
-  begin
-    FRecordType := rtBoth;
-
-    FPayment := 0;
-    txtPayment.Text := FormatCurrencyNoSign(FPayment);
-  end;
-  LogMessage(ltPaymentTrace, '436' + #9);
-  CalculateToPay;
-  LogMessage(ltPaymentTrace, '526' + #9);
-end;
-
-function TformPaymentTable.GetNFManualExtraDetails:Boolean;
-var
-  frmManual: TformNFEDetail;
-begin
-  Result := False;
-  FManualSeries := '';
-  FManualSubSeries := '';
-  FManualInvNo := '';
-
-  if not AppDetails.EnableFiscalPrinting then
-    Exit;
-
-  frmManual := TformNFEDetail.Create(Nil);
-  try
-    frmManual.DisplayTaxDetails := False;
-    frmManual.NFManual := NFManual;
-    frmManual.DisplayNFEDetails := False;
-    if frmManual.ShowModal = mrOk then
-    begin
-      FManualSeries := frmManual.ManualSeries;
-      FManualSubSeries := frmManual.ManualSubSeries;
-      FManualInvNo := frmManual.ManualInvoiceNo;
-      Result := True;
-    end;
-  finally
-    frmManual.Free;
-  end;
-end;
-
-procedure TformPaymentTable.FormActivate(Sender: TObject);
-begin
-  inherited;
-  FormActivated := True;
-end;
-
-function TformPaymentTable.GetNFEDetails:Boolean;
-var
-  frmNFE : TformNFEDetail;
-begin
-  Result := False;
-  FManualSeries := '';
-  FManualSubSeries := '';
-  FManualInvNo := '';
-
-  if not AppDetails.EnableFiscalPrinting then
-    Exit;
-
-  frmNFE := TformNFEDetail.Create(Nil);
-  try
-    frmNFE.DisplayTaxDetails := False;
-    frmNFE.NFManual := False;
-    frmNFE.DisplayNFEDetails := True;
-    if frmNFE.ShowModal = mrOk then
-      Result := True;
-  finally
-    frmNFE.Free;
-  end;
-end;
-
-procedure TformPaymentTable.ReloadItemsForThePayment(AList: TList; aPaid: Currency);
-var
-  i: Integer;
-  OldQty, Allocated, AmountToPay, UnInvoiced, ToPay: Currency;
-  aOL, NewOL: TOrderLine;
-  ToPayChanged, AddZeroPricedOL: Boolean;
-  DiscAmount: Currency;
-  TotalAllocate: Currency;
-begin
-  LogMessage(ltPaymentTrace, '278' + #9 + 'AList.Count=' + IntToStr(AList.Count) + ', aPaid=' + FloatToStr(aPaid) +
-    ', FDiscountAmount=' + FloatToStr(FDiscountAmount) + ', FComboDiscount=' + FloatToStr(FComboDiscount) +
-    ', FTotalSubsidyAllowed=' + FloatToStr(FTotalSubsidyAllowed) + ', FSalesTax=' + FloatToStr(FSalesTax));
-
-  DiscAmount := FDiscountAmount + FComboDiscount + FTotalSubsidyAllowed;
-
-  ReloadItems := True;
-  ClearAllOrderLines;
-  ReloadItems := False;
-
-  i := 0;
-  Allocated := 0.00;
-  ReloadItems := True;
-
-  if (AppDetails.EnableFiscalPrinting and FUseItemDiscounts) then
-    APaid := APaid + FSalesTax;
-
-  AmountToPay := GetRoundedUpDown(APaid, AppDetails.DecimalPlaces);
-  if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-    AmountToPay := TruncateTo(APaid, 2);
-  LogMessage(ltPaymentTrace, '279' + #9 + 'AmountToPay=' + FloatToStr(AmountToPay));
-
-  while ((i <= AList.Count - 1) and (Allocated < AmountToPay)) do
-  begin
-    aOL := AList.Items[i];
-    UnInvoiced := aOL.UnInvoiced;
-    ToPay := aOL.ToPay;
-    AddZeroPricedOL := ((aOL.UnitPrice <= 0) and aOL.ShowZeroPriceItem);
-    if ((aOL.Qty > 0) and (DiscAmount > 0)) then
-    begin
-      UnInvoiced := aOL.UnInvoiced - aOL.AllowedDiscount - aOL.SubsidyAllowed;
-      ToPay := aOL.ToPay - aOL.AllowedDiscount - aOL.SubsidyAllowed;
-    end;
-
-    if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-      ToPay := TruncateTo(ToPay, 2);
-
-    LogMessage(ltPaymentTrace, '280' + #9 + 'Allocated=' + FloatToStr(Allocated) + ', UnInvoiced=' + FloatToStr(UnInvoiced) + ', ToPay=' + FloatToStr(ToPay) +
-      ', aOL.UnInvoiced=' + FloatToStr(aOL.UnInvoiced) + ', aOL.ToPay=' + FloatToStr(aOL.ToPay) + ', aOL.AllowedDiscount=' + FloatToStr(aOL.AllowedDiscount) +
-      ', aOL.SubsidyAllowed=' + FloatToStr(aOL.SubsidyAllowed) + ', aOL.UnitPrice=' + FloatToStr(aOL.UnitPrice) +
-      ', aOL.ShowZeroPriceItem=' + BoolToStr(aOL.ShowZeroPriceItem, True) + ', aOL.Qty=' + FloatToStr(aOL.Qty));
-
-    if AddOrderLine(AList, i) then
-    begin
-      LogMessage(ltPaymentTrace, '281' + #9);
-      if ((((aOL.Qty - aOL.LoyaltyFreeQty) > 0) and (UnInvoiced > 0)) or (AddZeroPricedOL) ) then
-      begin
-        LogMessage(ltPaymentTrace, '282' + #9);
-
-        //NewOL is the OrderLine just added by AddOrderLine
-        NewOL := OLToPayList.Items[grdToPay.Row - 1];
-        NewOL.ComboID := 0;
-        NewOL.ComboGroupID := 0;
-        NewOL.ComboIndex := 0;
-        NewOL.ComboDiscount := 0;
-        NewOL.ComboName := '';
-        NewOL.ComboQty := 0;
-
-        if ((AppDetails.EnableCombo) and (aOL.ComboID > 0) and (aOL.ComboGroupID > 0) and (aOL.ComboIndex > 0)) then
-        begin
-          LogMessage(ltPaymentTrace, '283' + #9);
-          NewOL.ComboID := aOL.ComboID;
-          NewOL.ComboGroupID := aOL.ComboGroupID;
-          NewOL.ComboIndex := aOL.ComboIndex;
-          NewOL.ComboName := aOL.ComboName;
-          NewOL.ApplyDiscountType := aOL.ApplyDiscountType;
-          NewOL.FreeComboItem := aOL.FreeComboItem;
-          NewOL.ComboDiscount := 0;
-          NewOL.ComboQty := aOL.ComboQty;
-          NewOL.AllowedDiscount := aOL.AllowedDiscount;
-          NewOL.SubsidyAllowed := aOL.SubsidyAllowed;
-          NewOL.ILDiscount := aOL.ILDiscount;
-          NewOL.Qty := aOL.Qty;
-          NewOL.OrderLineID := aOL.OrderLineID;
-        end;
-
-        ToPayChanged := False;
-        if (AppDetails.TaxExclusivePrices) then
-        begin
-          LogMessage(ltPaymentTrace, '284' + #9);
-          TotalAllocate := GetRoundedUpDown(Allocated + ((ToPay * (100 + NewOL.SalesTaxPercent)) / 100), AppDetails.DecimalPlaces);
-          if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-            TotalAllocate := TruncateTo((Allocated + ((ToPay * (100 + NewOL.SalesTaxPercent)) / 100)), 2);
-
-          if (TotalAllocate > AmountToPay) then
-          begin
-            LoyaltyReward.AvailableQty := LoyaltyReward.AvailableQty + NewOL.LoyaltyFreeQty;
-            if ((DiscAmount > 0)) then
-              NewOL.ToPay := ((AmountToPay - Allocated) * 100) / (100 + NewOL.SalesTaxPercent) / (1 - ((NewOL.AllowedDiscount) / NewOL.ToPay))
-            else
-              NewOL.ToPay := ((AmountToPay - Allocated) * 100) / (100 + NewOL.SalesTaxPercent);
-
-            if ((DiscAmount > 0)) then
-              NewOL.AllowedDiscount := NewOL.ToPay  -  ((AmountToPay - Allocated) * 100) / (100 + NewOL.SalesTaxPercent);
-            ToPay := ((AmountToPay - Allocated) * 100) / (100 + NewOL.SalesTaxPercent);
-            ToPayChanged := True;
-          end;
-          Allocated := Allocated + ((ToPay * (100 + NewOL.SalesTaxPercent)) / 100);
+        else if (radFOnly.Checked) then begin
+          ParamByName('pforb').AsString := 'F';
+          Title2 := ', ' + sFood + Title2;
         end
-        else
-        begin
-          LogMessage(ltPaymentTrace, '285' + #9);
-          TotalAllocate := GetRoundedUpDown(Allocated + ToPay, AppDetails.DecimalPlaces);
-          if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-            TotalAllocate := TruncateTo(Allocated + ToPay, 2) ;
-          if (TotalAllocate > AmountToPay) then
-          begin
-            LoyaltyReward.AvailableQty := LoyaltyReward.AvailableQty + NewOL.LoyaltyFreeQty;
-            if ((DiscAmount > 0)) then
-              NewOL.ToPay := ((AmountToPay - Allocated) / (1 - ((NewOL.AllowedDiscount+NewOL.SubsidyAllowed)/NewOL.ToPay)))
-            else
-              NewOL.ToPay := (AmountToPay - Allocated);
-
-            ToPay := (AmountToPay - Allocated);
-            ToPayChanged := True;
-          end;
-          Allocated := Allocated + ToPay;
-        end;
-
-        NewOL.QtyChanged := False;
-        if (ToPayChanged) then
-        begin
-          LogMessage(ltPaymentTrace, '286' + #9);
-          NewOL.QtyChanged := True;
-          OldQty := NewOL.Qty;
-          if AppDetails.EnableFiscalPrinting then
-            NewOL.ToPay := TruncateTo(NewOL.ToPay, 2)
-          else
-            NewOL.ToPay := CRoundTo(NewOL.ToPay, 2);
-
-          if (NewOL.UnitPrice > 0) then
-          begin
-            NewOL.Qty := CRoundTo(NewOL.ToPay / NewOL.UnitPrice, 4);
-          end
-          else begin
-            NewOL.Qty := 0;
-          end;
-
-          if ((DiscAmount > 0)) then
-          begin
-            if OldQty <> NewOL.Qty then
-            begin
-              LogMessage(ltPaymentTrace, '287' + #9);
-              NewOL.AllowedDiscount := GetRoundedUpDown(NewOL.AllowedDiscount * (NewOL.Qty/OldQty), AppDetails.DecimalPlaces);
-              NewOL.SubsidyAllowed := GetRoundedUpDown(NewOL.SubsidyAllowed * (NewOL.Qty/OldQty), AppDetails.DecimalPlaces);
-            end
-            else
-            begin
-              LogMessage(ltPaymentTrace, '288' + #9);
-              NewOL.AllowedDiscount := GetRoundedUpDown(NewOL.AllowedDiscount, AppDetails.DecimalPlaces) ;
-              NewOL.SubsidyAllowed := GetRoundedUpDown(NewOL.SubsidyAllowed, AppDetails.DecimalPlaces) ;
-            end;
-          end;
-          NewOL.Due := NewOL.Due - NewOL.ToPay;
-          NewOL.UnInvoiced := NewOL.UnInvoiced - NewOL.ToPay;
-
-          LogMessage(ltPaymentTrace, '289' + #9);
-          AllocateItemLoyalty(NewOL);
-
-          LogMessage(ltPaymentTrace, '290' + #9);
-          UpdateGrdToPayCells(grdToPay.Row);
-          LogMessage(ltPaymentTrace, '568' + #9);
+        else begin
+          ParamByName('pforb').AsString := 'B';
+          Title2 := ', ' + sBev + Title2;
         end;
       end;
-    end;
 
-    inc(i);
-  end;
-
-  while (i <= AList.Count - 1) do
-  begin
-    LogMessage(ltPaymentTrace, '291' + #9);
-    aOL := AList.Items[i];
-    AddZeroPricedOL := ((aOL.UnitPrice <= 0) and aOL.ShowZeroPriceItem);
-    if (((aOL.Qty > 0) and (DiscAmount > 0) ) or AddZeroPricedOL) then
-    begin
-      UnInvoiced := aOL.UnInvoiced - aOL.AllowedDiscount - aOL.SubsidyAllowed;
-
-      LogMessage(ltPaymentTrace, '292' + #9 + 'UnInvoiced=' + FloatToStr(UnInvoiced) +
-        ', aOL.UnInvoiced=' + FloatToStr(aOL.UnInvoiced) + ', aOL.AllowedDiscount=' + FloatToStr(aOL.AllowedDiscount) +
-        ', aOL.SubsidyAllowed=' + FloatToStr(aOL.SubsidyAllowed) + ', aOL.UnitPrice=' + FloatToStr(aOL.UnitPrice) +
-        ', aOL.ShowZeroPriceItem=' + BoolToStr(aOL.ShowZeroPriceItem, True) + ', aOL.Qty=' + FloatToStr(aOL.Qty));
-
-      if (UnInvoiced <= 0) then
-      begin
-        LogMessage(ltPaymentTrace, '293' + #9);
-        AddOrderLine(AList, i); // means adding free items at the end of the list if items selected
-      end;
-    end;
-    Inc(i);
-  end;
-
-  ReloadItems := False;
-  LogMessage(ltPaymentTrace, '294' + #9);
-end;
-
-procedure TformPaymentTable.ClearTempItemList;
-begin
-  LogMessage(ltPaymentTrace, '269' + #9);
-  ClearListObjects(TempItemList);
-end;
-
-procedure TformPaymentTable.RecalculateTotals;
-begin
-  LogMessage(ltPaymentTrace, '240' + #9 + 'PaymentOnSelectedItems=' + BoolToStr(PaymentOnSelectedItems, True) + ', FSelectedItemsNotPaidFull=' + BoolToStr(FSelectedItemsNotPaidFull, True) +
-    ', AmountSplitingStarted=' + BoolToStr(AmountSplitingStarted, True));
-  LogMessage(ltPaymentTrace, '248' + #9 + 'FPayment=' + FloatToStr(FPayment)+ ', FTip=' + FloatToStr(FTip) + ', FChange=' + FloatToStr(FChange) +
-    ', FTender=' + FloatToStr(FTender) + ', FRounding=' + FloatToStr(FRounding) + ', FTenderGrpID=' + IntToStr(FTenderGrpID));
-
-  if PaymentOnSelectedItems or FSelectedItemsNotPaidFull or AmountSplitingStarted  then
-    TLList.RecalculateTotals(FPayment, FTip, FChange, FTender, FRounding, FTenderGrpID)
-  else
-    TLList.RecalculateTotals(FPayment, FTip, FChange, FTender, FRounding);
-  LogMessage(ltPaymentTrace, '241' + #9 + 'FPayment=' + FloatToStr(FPayment)+ ', FTip=' + FloatToStr(FTip) + ', FChange=' + FloatToStr(FChange) +
-    ', FTender=' + FloatToStr(FTender) + ', FRounding=' + FloatToStr(FRounding));
-
-  if FPayment < 0 then
-    txtTPayment.Text := '0.00'
-  else
-    txtTPayment.Text := FormatCurrencyNoSign(FPayment);
-
-  txtTTip.Text := FormatCurrencyNoSign(FTip);
-  txtTChange.Text := FormatCurrencyNoSign(FChange);
-
-  if FTender < 0 then
-    txtTTender.Text := '0.00'
-  else
-    txtTTender.Text := FormatCurrencyNoSign(FTender);
-
-  if FPayment < 0 then
-    txtPayment.Text := '0.00'
-  else
-    txtPayment.Text := FormatCurrencyNoSign(FPayment);
-
-  LogMessage(ltPaymentTrace, '242' + #9 + 'GlbEvent.EventID=' + IntToStr(GlbEvent.EventID) + ', SubsidyCalc.IsHostTransaction=' + BoolToStr(SubsidyCalc.IsHostTransaction, True));
-  LogMessage(ltPaymentTrace, '243' + #9 + 'FToPay=' + FloatToStr(FToPay) + ', FSurcharge=' + FloatToStr(FSurcharge) + ', FComboDiscount=' + FloatToStr(FComboDiscount) +
-    ', FDiscountAmount=' + FloatToStr(FDiscountAmount) + ', FLoyaltyFreeItemDiscount=' + FloatToStr(FLoyaltyFreeItemDiscount) + ', FTotalSubsidyAllowed=' + FloatToStr(FTotalSubsidyAllowed) +
-    ', FPayment=' + FloatToStr(FPayment) + ', FSalesTax=' + FloatToStr(FSalesTax));
-
-  if ((GlbEvent.EventID <=0) or (SubsidyCalc.IsHostTransaction)) then
-    FStillDue := GetRoundedUpDown(CalculateStillDue(FToPay + FSurcharge, FComboDiscount + FDiscountAmount + FLoyaltyFreeItemDiscount+FTotalSubsidyAllowed, FPayment, FSalesTax), AppDetails.DecimalPlaces)
-  else
-    FStillDue := GetRoundedUpDown(CalculateStillDue(FToPay + FSurcharge, FComboDiscount + FLoyaltyFreeItemDiscount+FTotalSubsidyAllowed, FPayment, FSalesTax), AppDetails.DecimalPlaces);
-  LogMessage(ltPaymentTrace, '244' + #9 + 'FStillDue=' + FloatToStr(FStillDue));
-
-  if ((GlbAccount.AccountID > 0) and (OnAccount)) then begin
-    LogMessage(ltPaymentTrace, '248' + #9 + 'GlbAccount.AccountID=' + IntToStr(GlbAccount.AccountID) + ', OnAccount=' + BoolToStr(OnAccount, True));
-
-    if ((GlbAccount.CreditLimitActive) and (FStillDue > (GlbAccount.CreditLimit - GlbAccount.CurrentBalance))) then begin
-      FRequired := (FStillDue - (GlbAccount.CreditLimit - GlbAccount.CurrentBalance));
-      LogMessage(ltPaymentTrace, '245' + #9 + 'FRequired=' + FloatToStr(FRequired) + ', GlbAccount.CreditLimitActive=' + BoolToStr(GlbAccount.CreditLimitActive) +
-        ', GlbAccount.CreditLimit' + FloatToStr(GlbAccount.CreditLimit) + ', GlbAccount.CurrentBalance=' + FloatToStr(GlbAccount.CurrentBalance));
-    end
-    else begin
-      FRequired := 0;
-      LogMessage(ltPaymentTrace, '246' + #9 + 'FRequired=' + FloatToStr(FRequired));
-    end;
-  end
-  else begin
-    FRequired := FStillDue;
-    LogMessage(ltPaymentTrace, '247' + #9 + 'FRequired=' + FloatToStr(FRequired));
-  end;
-  if FRequired < 0 then
-    txtStillDue.Text := '0.00'
-  else
-    txtStillDue.Text := FormatCurrencyNoSign(FRequired);
-end;
-
-procedure TformPaymentTable.ProcessTheRemainingItems(TLPay: Currency);
-var
-  i: Integer;
-  tmpOl: TOrderLine;
-  AddZeroPriceOl: Boolean;
-begin
-  LogMessage(ltPaymentTrace, '317' + #9);
-  FProcessedAllItems := True;
-  FSelectedItemsNotPaidFull := True;
-  ClearAllOrderLines;
-  for i := 0 to TempItemList.Count -1 do // add back the rest of the items which are not paid completely
-  begin
-    LogMessage(ltPaymentTrace, '322' + #9);
-    tmpOl := TempItemList.Items[i];
-    AddZeroPriceOl := (tmpOl.UnitPrice <= 0) and tmpOl.ShowZeroPriceItem;
-    if (((tmpOl.UnInvoiced > 0) or AddZeroPriceOl) and
-        (DM.qrOLsToPay.Locate('orderlineid', tmpOl.OrderLineID, [])) and
-        (not dm.qrOLsToPay.Fields[0].IsNull)) then
-    begin
-      LogMessage(ltPaymentTrace, '318' + #9);
-      AddOrderLine(TempItemList, i);
-    end;
-  end;
-  LogMessage(ltPaymentTrace, '319' + #9);
-  LoadUnInvoicedOlsToGrid(TempItemList, TLPay, fAmtToPay);
-  LogMessage(ltPaymentTrace, '320' + #9);
-  CalculateToPay;
-  LogMessage(ltPaymentTrace, '321' + #9);
-  txtPayment.Text := FormatCurrencyNoSign(FPayment);
-end;
-
-procedure TformPaymentTable.CopyItemSToTempList;
-var
-  i: Integer;
-  tmpOl, tmpNew: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '270' + #9);
-  for i := 0 to OLToPayList.Count - 1 do
-  begin
-    tmpOl := OLToPayList.Items[i];
-    if Assigned(tmpOl) then
-    begin
-      tmpNew := TOrderLine.Create;
-      CopyOL(tmpNew, tmpOl);
-      tmpNew.UnInvoiced := tmpOl.ToPay;
-      LogMessage(ltPaymentTrace, '271' + #9 + 'tmpNew.OrderLineID=' + IntToStr(tmpNew.OrderLineID) + ', tmpNew.UnInvoiced=' + FloatToStr(tmpNew.UnInvoiced));
-      TempItemList.Add(tmpNew);
-    end;
-  end;
-end;
-
-procedure TformPaymentTable.LoadSelectedToPayList;
-var
-  i: Integer;
-  tmpList: TList;
-  tmpRecordType: TRecType;
-
-begin
-  LogMessage(ltPaymentTrace, '469' + #9);
-  with grdToPay do
-  begin
-    RowCount := 2;
-    Cells[0, 1] := '';
-    Cells[1, 1] := '';
-    Cells[2, 1] := '';
-    Cells[3, 1] := '0.00';
-    Cells[4, 1] := '0.00';
-  end;
-  tmpRecordType := FRecordType;
-  FRecordType := rtUnTenderedItems;  //only those left to be tendered
-
-  tmpList := TList.Create;
-  GetAllSelectedOLs(tmpList);  //only those left to be tendered
-  CombineSameOls(tmpList);    //copies of OLs now in tmpOLList so need to free them
-
-  with grdToPay do
-  begin
-    //set row count, but leave as is if list empty (with 2nd blank line)
-    if tmpList.Count > 0 then
-      RowCount := tmpList.Count + 1;
-
-    for i := 0 to (tmpList.Count - 1) do
-    begin
-      LogMessage(ltPaymentTrace, '556' + #9);
-      UpdateGrdToPayCells(i+1);
-      LogMessage(ltPaymentTrace, '569' + #9);
-    end;
-  end;
-
-  FRecordType := tmpRecordType;
-  ClearListObjects(tmpList, True);
-  LogMessage(ltPaymentTrace, '437' + #9);
-  CalculateToPay(True);
-  LogMessage(ltPaymentTrace, '527' + #9);
-end;
-
-procedure TformPaymentTable.ApplyPreviousNonAppliedDiscount;
-begin
-  LogMessage(ltPaymentTrace, '470' + #9);
-  Exit;
-
-  if TLList.Count <= 0 then
-    Exit;
-
-  ClearAllOrderLines;
-
-  LoadUnInvoicedOlsToGrid(UnInvoicedOlsToPay, 0, 0);
-  AddAllOrderLines;
-  RecalculateTotals;
-  LogMessage(ltPaymentTrace, '438' + #9);
-  CalculateToPay;
-  LogMessage(ltPaymentTrace, '528' + #9);
-end;
-
-procedure TformPaymentTable.ResetLoyaltyReward;
-begin
-  LogMessage(ltPaymentTrace, '408' + #9);
-  FLoyaltyDiscount := 0;
-  with LoyaltyReward do
-  begin
-    LoyaltyRewardID := -1;
-    LoyaltyReward := '';
-    LoyaltyPoints1 := 0;
-    LoyaltyPoints2 := 0;
-    Qty := 0;
-    DecrementLoyalty1Points := 0;
-    DecrementLoyalty2Points := 0;
-    RewardOffer := roNone;
-    NoSaleTypeID := 0;
-    TenderLineTypeID := 0;
-    Processed := False;
-    AvailableQty := 0;
-  end;
-end;
-
-procedure TformPaymentTable.ApplyLoyalty(tmpList: TList;FindNewOnly: Boolean = False);
-var
-  i: Integer;
-begin
-  LogMessage(ltPaymentTrace, '449' + #9);
-  if ((OldLoyaltyRewardOffer = roItem) or (LoyaltyReward.RewardOffer = roItem)) then
-  begin
-    TestAllOLsLoyaltyItem(tmpList, FindNewOnly);
-
-    for i := 0 to OLToPayList.Count-1 do       //tmpList might include OL linked to TenderLines
-    begin
-      LogMessage(ltPaymentTrace, '557' + #9);
-      UpdateGrdToPayCells(I + 1);
-      LogMessage(ltPaymentTrace, '570' + #9);
-    end;
-  end;
-end;
-
-procedure TformPaymentTable.SetItemSelection;
-begin
-  LogMessage(ltPaymentTrace, '224' + #9 + 'FRecordType=' + IntToStr(Ord(FRecordType)));
-  FRecordType := rtBoth;
-
-  if not AppDetails.OneBill then
-  begin
-    if ((OnAccount) or (TLList.Count = 0)) then {means 100% discount so no tender lines}
-    begin
-      if OnAccount then
-      begin
-        if (GlbAccount.CreditLimitActive) then
-        begin
-          if ((FStillDue > 0) and (FStillDue > (GlbAccount.CreditLimit - GlbAccount.CurrentBalance)) ) then
-            FRecordType := rtTenderedItems;
-          if GlbAccount.CreditLimit = 0 then
-          begin
-            if ((FStillDue > 0) and (GlbAccount.CurrentBalance > 0 ) ) then // means account is charged
-              FRecordType := rtTenderedItems;
-          end;
-        end;
-      end
-      else
-        FRecordType := rtUnTenderedItems;
-    end
-    else
-    begin
-      if FComboDiscount > 0 then
-      begin
-        if (GetRoundedUpDown( FComboDiscount - FSurcharge, AppDetails.DecimalPlaces) <> GetRoundedUpDown(FTopay, AppDetails.DecimalPlaces)) then //means 100% combo discount
-          FRecordType := rtTenderedItems;
-      end
-      else
-        FRecordType := rtTenderedItems;
-    end;
-  end;
-
-  if ItemsSelectedManually and (OnAccount ) then
-  begin
-    if (TLList.Count > 0) then
-    begin
-      if (GetRoundedUpDown(FPayment + FLoyaltyFreeItemDiscount + FComboDiscount + FDiscountAmount - FSurcharge, AppDetails.DecimalPlaces) = GetRoundedUpDown(FTopay, AppDetails.DecimalPlaces)) then
-        FRecordType := rtTenderedItems
-      else
-        FRecordType := rtBoth;
-    end
-    else
-      FRecordType := rtUnTenderedItems;
-  end;
-
-  if ((GetRoundedUpDown(GlbTable.Uninvoiced, AppDetails.DecimalPlaces) = GetRoundedUpDown(FPayment + FComboDiscount+ FDiscountAmount, AppDetails.DecimalPlaces)) and
-    (not ItemsSelectedManually)) then // means last payment
-    FRecordType := rtBoth;
-  LogMessage(ltPaymentTrace, '225' + #9 + 'FRecordType=' + IntToStr(Ord(FRecordType)));
-end;
-
-function TformPaymentTable.GetSelectedAccount(AAccountID: Integer; AShowAcctScanned: Boolean; PromptLoyalty: Boolean; PrevAccountID: Integer;
-  VerifyPin: Boolean = False; ForGoodyDiscount: Boolean = False): Boolean;
-var
-  tmpList: TList;
-  PinEntered: Boolean;
-  sClearItem: Boolean;
-  i: Integer;
-  TL: TTL;
-  tmpTLList: TTLList;
-  ConfResult: TModalResult;
-  TimeToExit: Boolean;
-begin
-  LogMessage(ltPaymentTrace, '373' + #9);
-  Result := False;
-
-  if not sExternalAccountIntegration.AllowOnetapAccounts then
-  begin
-    LogMessage(ltPaymentTrace, '374' + #9);
-    Exit;
-  end;
-
-  //Check goody discount account is only used if a goody discount has just been scanned
-  if (AAccountID = AppDetails.GoodyDiscountAccountID) and (not ForGoodyDiscount) then
-  begin
-    LogMessage(ltPaymentTrace, '375' + #9);
-    //NB: Goody discount account may be partially selected, e.g., cmdSelectAccountClick > SelectAccount sets GlbAccount.AccountID (which don't want)
-    //If the AccountID has changed, then revert to previously selected account
-    if GlbAccount.AccountID <> PrevAccountID then
-    begin
-      if (PrevAccountID = 0) then
-        DeselectAccount
-      else
-        GlbAccount.LoadAccount(PrevAccountID, GlbTable.SaleCategoryID, CurrentTime, CurrentDay);
-    end;
-    ShowMsg(sGoodyDiscAcctExclusiveToGoodyDiscSale);
-    Exit;
-  end;
-
-  //if in a Goody discounted sale, disallow loading a different account
-  if InGoodyDiscountedSale then
-  begin
-    LogMessage(ltPaymentTrace, '376' + #9);
-    ShowQuickMsg(sNoAcctSelectionForGoodyDiscSale);
-    Exit;
-  end;
-
-  ConfResult := mrNone;
-  TimeToExit:= False;
-
-  RecalculateDiscount := True;
-  tmpList := TList.Create;
-  try
-    if (not GlbAccount.LoadAccount(aAccountID, GlbTable.SaleCategoryID, CurrentTime, CurrentDay)) then
-    begin
-      LogMessage(ltPaymentTrace, '377' + #9);
-      ShowQuickMsg(sCannotFindCustAcct);
-      Exit;
-    end;
-
-    //set the account record details as with USelectAccount
-    FoundFirstLoyaltyFreeItem := False;
-    FCPFNumber := GlbAccount.PerorgTaxNumber;
-
-    if ((GlbAccount.AccountRank > GlbLogin.RankAccount) or ((ManagerAuthorise.Authorise) and (GlbAccount.AccountRank > ManagerAuthorise.AuthoriseAccountRank))) then
-    begin
-      LogMessage(ltPaymentTrace, '378' + #9);
-      ShowQuickMsg(sAccountRankNotAllowSelAccount);
-      if (PrevAccountID = 0) then
-        DeselectAccount
-      else
-        GlbAccount.LoadAccount(PrevAccountID, GlbTable.SaleCategoryID, CurrentTime, CurrentDay);
-      TimeToExit := True;
-    end;
-
-    PinEntered := (GlbLogin.LoginPIN > 0);
-
-    if (not TimeToExit) and ((not PinEntered) and (VerifyPin)) then
-    begin
-      if ((AppDetails.AccountPinCheckRank <= GlbAccount.AccountRank) and (GlbLogin.LoginPIN = 0) and (not (VerifyPinNo))) then
-      begin
-        LogMessage(ltPaymentTrace, '379' + #9);
-        if (PrevAccountID = 0) then
-          DeselectAccount
-        else
-          GlbAccount.LoadAccount(PrevAccountID, GlbTable.SaleCategoryID, CurrentTime, CurrentDay);
-        TimeToExit := True;
-      end;
-    end;
-
-    if (not TimeToExit) and (GlbAccount.AccountInactive = accInactive) then
-    begin
-      LogMessage(ltPaymentTrace, '380' + #9);
-      ShowMsg(sAccountInactive);
-      if (PrevAccountID = 0) then
-        DeselectAccount
-      else
-        GlbAccount.LoadAccount(PrevAccountID, GlbTable.SaleCategoryID, CurrentTime, CurrentDay);
-      TimeToExit := True;
-    end;
-
-    sClearItem := True;
-    if (not TimeToExit) and (TLList.Count > 0) then
-    begin
-      if AppDetails.EFTPOSIntegrated and EFTPOSTransExists then
-      begin
-        sClearItem := False;
-        ShowMsg(sRefundTenderBeforeAcctChange, True);
-      end
-      else if ((PaymentOnSelectedItems or AmountSplitingStarted)) then
-      begin
-        ConfResult := (ShowConf(sConfirmClearCurrentSelection));
-        if (ConfResult = mrNo) then
-          sClearItem := False;
-      end;
-
-      if not sClearItem then
-      begin
-        LogMessage(ltPaymentTrace, '381' + #9);
-        if (PrevAccountID = 0) then
-          DeselectAccount(True, ConfResult)
-        else
-          GlbAccount.LoadAccount(PrevAccountID, GlbTable.SaleCategoryID, CurrentTime, CurrentDay);
-        TimeToExit := True;
-      end;
-    end;
-
-    if (not sExternalAccountIntegration.AllowOnetapLoyaltyAccounts) then
-    begin
-      LogMessage(ltPaymentTrace, '382' + #9);
-      DeselectAccount;
-      TimeToExit := True;
-    end;
-
-    if (not TimeToExit) then
-    begin
-      if Assigned(FDiscCalculator) then
-      begin
-        LogMessage(ltPaymentTrace, '383' + #9);
-        FDiscCalculator.ClearItemLevelDiscounts;
-      end;
-      txtDiscountPercent.Text := FormatFloat(PRICEFORMAT, 0);
-      txtDiscountAmount.Text := FormatFloat(PRICEFORMAT, 0);
-    end;
-
-    txtAccountName.Text := GlbAccount.AccountName;
-
-    //Only if account is active, so dont discount or show loyalty reward options
-    if (GlbAccount.AccountInactive = accActive) then begin
-      LogMessage(ltPaymentTrace, '384' + #9 + 'GlbAccount.AccountDiscount=' + FloatToStr(GlbAccount.AccountDiscount) +
-        ', GlbAccount.UseItemDiscounts=' + BoolToStr(GlbAccount.UseItemDiscounts, True) + ', GlbAccount.UseTimePeriods=' + BoolToStr(GlbAccount.UseTimePeriods));
-      FDiscountPercent := GlbAccount.AccountDiscount;
-      FDiscountAmount := 0;
-      FLimitMaximum := GlbAccount.LimitMaximum;
-      FMaxDiscount := GlbAccount.MaxDiscount;
-      FOrigDiscountPercent := GlbAccount.AccountDiscount;
-      FCurrentBalance := GlbAccount.CurrentBalance;
-      FUseDiscountAmount := False;
-      FUseItemDiscounts := ((GlbAccount.UseItemDiscounts) or (GlbAccount.UseTimePeriods));
-    end
-    else begin
-      FDiscountPercent := 0;
-      FDiscountAmount := 0;
-      FOrigDiscountPercent := 0;
-      FCurrentBalance := GlbAccount.CurrentBalance;
-      FUseDiscountAmount := False;
-      FUseItemDiscounts := False;
-    end;   // Account Active block ends
-
-    LogMessage(ltPaymentTrace, '595' + #9);
-    lblAllowItemLevelDiscount.Caption := '';
-    if FUseItemDiscounts then
-    begin
-      LogMessage(ltPaymentTrace, '591' + #9);
-      lblAllowItemLevelDiscount.Caption := sAllowedItemLevelDiscount;
-    end;
-
-    if (GlbTable.AccountID = GlbAccount.AccountID) then
-    begin
-      LogMessage(ltPaymentTrace, '385' + #9);
-      if GlbTable.DiscountRate > 0 then
-      begin
-        FOrigDiscountPercent := GlbTable.DiscountRate;
-        FUseItemDiscounts := False;
-        FUseDiscountAmount := False;
-        FDiscountPercent := GlbTable.DiscountRate;
-        txtDiscountPercent.Text := FormatFloat('####0', FDiscountPercent);
-        LogMessage(ltPaymentTrace, '386' + #9 + 'FDiscountPercent=' + FloatToStr(FDiscountPercent));
-        lblAllowItemLevelDiscount.Caption := sTabDiscountApplied;
-      end
-      else if GlbTable.TabDiscountAmt > 0 then
-      begin
-        FUseDiscountAmount := True;
-        FUseItemDiscounts := False;
-        FDiscountPercent := 0;
-        if ((GlbTable.TabDiscountAmt-GlbTable.ILDiscount) > FToPay) then
-          FDiscountAmount := FToPay
-        else
-          FDiscountAmount := GlbTable.TabDiscountAmt-GlbTable.ILDiscount;
-
-        if FDiscountAmount < 0 then
-          FDiscountAmount := 0;
-
-        txtDiscountAmount.Text := FormatFloat('####0', FDiscountAmount);
-        LogMessage(ltPaymentTrace, '387' + #9 + 'FDiscountAmount=' + FloatToStr(FDiscountAmount));
-        lblAllowItemLevelDiscount.Caption := sTabDiscountApplied;
-      end;
-    end;
-
-    ChangeAllowCreditLabel(GlbAccount.AllowCredit and (GlbAccount.AccountInactive = accActive), VerifyPin);    //do before CalculateDiscounts, so OnAccount is set
-
-    if (TimeToExit) then Exit;
-
-    if (TLList.Count > 0) and sClearItem then
-    begin
-      LogMessage(ltPaymentTrace, '388' + #9);
-      tmpTLList:= TLList;
-      TLList := TTLList.Create;
-      ClearAllTenderLines;
-      for i := 0 to tmpTLList.Count - 1 do
-      begin
-        TL := tmpTLList.Items[i];
-        LogMessage(ltPaymentTrace, '389' + #9);
-        DeleteOLsOfTender(TL, TL.TenderSeqNo);  //so OLs become part of UnInvoicedOLsToPay
-      end;
-
-      PaymentOnSelectedItems := False;
-      AmountSplitingStarted := False;
-      FSelectedItemsNotPaidFull := False;
-
-      if (not FUseItemDiscounts) then
-      begin
-        LogMessage(ltPaymentTrace, '390' + #9);
-        ApplyPreviousNonAppliedDiscount;
-      end;
-
-      LogMessage(ltPaymentTrace, '391' + #9);
-      CalculateAccTypeItemDiscount(UnInvoicedOlsToPay);
-
-      LogMessage(ltPaymentTrace, '392' + #9);
-      LoadUnInvoicedOlsToGrid(UnInvoicedOlsToPay, 0, FToPay);
-
-      LogMessage(ltPaymentTrace, '393' + #9);
-      UpdateUnInvoicedListComboDetails;
-
-      LogMessage(ltPaymentTrace, '394' + #9);
-      UpdateScreenAfterCalculateDiscount;
-
-      LogMessage(ltPaymentTrace, '395' + #9);
-      AddAllOrderLines;
-
-      if PromptLoyalty and (GlbAccount.AccountInactive = accActive)  then
-      begin
-        LogMessage(ltPaymentTrace, '396' + #9);
-        DoLoyalty(True);
-        LogMessage(ltPaymentTrace, '397' + #9);
-      end;
-
-      LogMessage(ltPaymentTrace, '398' + #9);
-      GetAllSelectedOLs(tmpList);
-
-      LogMessage(ltPaymentTrace, '399' + #9);
-      CalculateAccTypeItemDiscount(tmpList);
-
-      LogMessage(ltPaymentTrace, '400' + #9);
-      UpdateScreenAfterCalculateDiscount;
-
-      //do separately to keep same TL order in TLList
-      for i := 0 to tmpTLList.Count - 1 do
-      begin
-        TL := tmpTLList.Items[i];
-        LogMessage(ltPaymentTrace, '33' + #9);
-        AddTenderLine(TL.TLType, 0, TL);
-        LogMessage(ltPaymentTrace, '34' + #9);
-      end;
-      for i := tmpTLList.Count - 1 downto 0 do
-      begin
-        tmpTLList.Delete(i);  //do so when freeing tmpTLList we dont free the TL objects just added to TLList
-      end;
-      tmpTLList.Free;
-
-      FSelectedItemsNotPaidFull := False;
-    end
-    else
-    begin
-      LogMessage(ltPaymentTrace, '401' + #9);
-      UpdateUnInvoicedListComboDetails;
-
-      if PromptLoyalty and (GlbAccount.AccountInactive = accActive)  then
-      begin
-        LogMessage(ltPaymentTrace, '402' + #9);
-        DoLoyalty(True);
-        LogMessage(ltPaymentTrace, '403' + #9);
-      end;
-    end;
-
-    AccountChange := False;
-    RecalculateDiscount := False;
-
-    //if Goody discount account, don't allow discount to be changed
-    if GlbAccount.AccountID = AppDetails.GoodyDiscountAccountID then
-    begin
-      cmdDiscountPercent.Enabled := False;
-      cmdDiscountAmount.Enabled := False;
-    end
-    //if have priv to change discount then enable
-    else if ((VerifyPriv(13) or (ManagerAuthorise.Authorise and ManagerAuthorise.AuthorisePriv13))) then
-    begin
-      LogMessage(ltPaymentTrace, '404' + #9);
-      cmdDiscountPercent.Enabled := True;
-      cmdDiscountAmount.Enabled := True;
-    end
-    else
-    begin
-      cmdDiscountPercent.Enabled := False;
-      cmdDiscountAmount.Enabled := False;
-    end;
-
-    if (AShowAcctScanned and (GlbAccount.SwipedAccountNo > 0)) then
-    begin
-      LogMessage(ltPaymentTrace, '405' + #9);
-      if (AppDetails.AccountDetailScan >= 0) then
-        ShowAccountScanned(AppDetails.AccountDetailScan)
-      else
-        ShowQuickMsg(Format(sCustAcctScanned, [GlbAccount.AccountName]));
-    end;
-    Result := True;
-    LogMessage(ltPaymentTrace, '406' + #9);
-  finally
-    txtDiscountPercent.Text := FormatFloat(PRICEFORMAT, FDiscountPercent);
-    txtDiscountAmount.Text := FormatFloat(PRICEFORMAT, FDiscountAmount);
-
-    tmpList.Clear;
-    tmpList.Free;
-    LogMessage(ltPaymentTrace, '407' + #9);
-  end;
-end;
-
-procedure TformPaymentTable.DoLoyalty(Prompt: Boolean);
-var
-  tmpList: TList;
-  i, j: Integer;
-  aOL, SOL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '356' + #9 + 'Prompt=' + BoolToStr(Prompt, True));
-  //if AppDetails.wiGroupEnabled then
-  //  wiGroupPOSSrv.CheckWarnLoyaltyDiscNotAllowed;
-
-  tmpList := TList.Create;
-  try
-    FLoyaltyDiscount := 0;
-
-    if IsNormalLoyalty then
-    begin
-      LogMessage(ltPaymentTrace, '357' + #9);
-      OldLoyaltyRewardOffer := LoyaltyReward.RewardOffer;
-      if (not CheckLoyaltyReward(Prompt)) then
-      begin
-        LogMessage(ltPaymentTrace, '358' + #9);
-        Exit;     //user pressed cancel in select rewards screen, no need to alter anything
-      end;
-
-      AccountChange := True;
-
-      LogMessage(ltPaymentTrace, '359' + #9);
-      GetAllSelectedOLs(tmpList);
-
-      LogMessage(ltPaymentTrace, '360' + #9);
-      ApplyLoyalty(tmpList);
-
-      LogMessage(ltPaymentTrace, '361' + #9);
-      CalculateAccTypeItemDiscount(UnInvoicedOlsToPay);
-
-      LogMessage(ltPaymentTrace, '362' + #9);
-      UpdateScreenAfterCalculateDiscount;
-
-      FOrigDiscountPercent := GlbAccount.AccountDiscount; //Reset discount % back to account default
-      if (GlbTable.AccountID = GlbAccount.AccountID) then
-      begin
-        LogMessage(ltPaymentTrace, '363' + #9);
-        if GlbTable.DiscountRate > 0 then
-        begin
-          FDiscountPercent := GlbTable.DiscountRate;
-          FOrigDiscountPercent := FDiscountPercent;    //Jon 17-12-2002
-          FUseItemDiscounts := False;
-          FUseDiscountAmount := False;
-          LogMessage(ltPaymentTrace, '364' + #9 + 'FDiscountPercent=' + FloatToStr(FDiscountPercent));
-          txtDiscountPercent.Text := FormatFloat('####0', FDiscountPercent);
+      if (cmbOutlets.ItemIndex = 0) then begin
+        if ((chkOutletBreakdown.Checked) and (chkOutletBreakdown.Enabled)) then begin
+          ParamByName('poutletid').AsInteger := -1;
         end
-        else if GlbTable.TabDiscountAmt > 0 then
-        begin
-          FUseDiscountAmount := True;
-          FUseItemDiscounts := False;
-          if ((GlbTable.TabDiscountAmt- GlbTable.ILDiscount) > FToPay) then
-            FDiscountAmount := FToPay
-          else
-            FDiscountAmount := GlbTable.TabDiscountAmt-GlbTable.ILDiscount;
-
-          if FDiscountAmount < 0 then
-            FDiscountAmount := 0;
-
-          LogMessage(ltPaymentTrace, '365' + #9 + 'FDiscountAmount=' + FloatToStr(FDiscountAmount));
-          txtDiscountAmount.Text := FormatFloat(PRICEFORMAT, FDiscountAmount);
+        else begin
+          ParamByName('poutletid').AsInteger := -2;
         end;
-      end;
-      RecalculateDiscount := True;
-
-      LogMessage(ltPaymentTrace, '366' + #9);
-      CalculateToPay;
-      LogMessage(ltPaymentTrace, '367' + #9);
-
-      RecalculateDiscount := False;
-
-      //apply this loyalty discount to source list too
-      for I := 0 to tmpList.Count-1 do
-      begin
-        aOL := tmpList.Items[I];
-        LogMessage(ltPaymentTrace, '368' + #9 + 'aOL.OrderLineID=' + IntToStr(aOL.OrderLineID));
-
-        for j := 0 to UnInvoicedOlsToPay.Count - 1 do
-        begin
-          SOL := UnInvoicedOlsToPay.Items[j];
-          if aOL.OrderLineID = SOL.OrderLineID then
-          begin
-            SOL.LoyaltyItemID := aOL.LoyaltyItemID;
-            SOL.LoyaltyFreeQty := aOL.LoyaltyFreeQty;
-            SOL.LoyaltyFreeDiscount := aOL.LoyaltyFreeDiscount;
-            if SOL.ComboID <= 0 then
-              SOL.AllowedDiscount := aOL.AllowedDiscount;
-            LogMessage(ltPaymentTrace, '369' + #9 + 'SOL.OrderLineID=' + IntToStr(SOL.OrderLineID) + ', SOL.LoyaltyItemID=' + IntToStr(SOL.LoyaltyItemID) +
-              ', SOL.LoyaltyFreeQty=' + FloatToStr(SOL.LoyaltyFreeQty) + ', SOL.LoyaltyFreeDiscount=' + FloatToStr(SOL.LoyaltyFreeDiscount) +
-              ', SOL.ComboID=' + IntToStr(SOL.ComboID) + ', SOL.AllowedDiscount=' + FloatToStr(SOL.AllowedDiscount));
-            Break;
-          end;
-        end;
-      end;
-    end;
-  finally
-    tmpList.Clear;
-    tmpList.Free;
-  end;
-  LogMessage(ltPaymentTrace, '370' + #9);
-end;
-
-procedure TformPaymentTable.ClearItemLevelDiscounts(AList: TList);
-var
-  i: Integer;
-  OL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '471' + #9);
-  if Assigned(AList) then
-  if AList.Count > 0 then
-  for i := 0 to AList.Count - 1 do
-  begin
-    OL := AList.Items[i];
-
-    OL.ILDiscount := 0;
-    if ((OL.ComboID <= 0) and (OL.ComboGroupID <= 0) and (OL.ComboIndex <= 0)) then
-    begin
-      OL.AllowedDiscount := 0;
-      OL.DiscountSchemeItemPercentage := 0;
-      OL.DiscountSchemeItemAmount := 0;
-      OL.DiscountSchemeID := 0;
-      OL.DiscountedAmount := 0;
-      OL.LoyaltyItemID := 0;
-      OL.LoyaltyFreeQty := 0;
-      OL.LoyaltyFreeDiscount := 0;
-    end;
-  end;
-end;
-
-procedure TformPaymentTable.CalculateComboAndAccountDiscounts(AList:TList);
-begin
-  LogMessage(ltPaymentTrace, '446' + #9);
-  FDiscCalculator.DoingTabPayment := True; // so dont build combos on the fly.
-
-  FDiscCalculator.CalculateDiscountAgain := RecalculateDiscount;
-  //if ((not FUseDiscountAmount)) then // and (LoyaltyReward.LoyaltyRewardID > 0) and (LoyaltyReward.RewardOffer <> roNone)) then
-  if (not FUseDiscountAmount) and (not (LoyaltyReward.RewardOffer in [roDiscount])) then
-    FDiscCalculator.CalculateDiscountAgain := True;
-
-  FDiscCalculator.DiscountAmount := FDiscountAmount;
-  FDiscCalculator.DiscountPercent := FDiscountPercent;
-  FDiscCalculator.GroupID := GlbTable.GroupID;
-
-  FDiscCalculator.UseDiscountAmount := FUseDiscountAmount;
-  FDiscCalculator.UseItemDiscounts := FUseItemDiscounts;
-  FDiscCalculator.UseDiscountPeriods := FUseDiscountPeriods;
-
-  FDiscCalculator.Account := GlbAccount;
-  FDiscCalculator.AccountID := GlbAccount.AccountID;
-  FDiscCalculator.OnAccount := OnAccount;
-  FDiscCalculator.StillDue := 0;
-  FDiscCalculator.MaxDiscount := GlbAccount.MaxDiscount;
-
-  FDiscCalculator.LoyaltyReward := LoyaltyReward;
-  FDiscCalculator.LoyaltyDiscount := FLoyaltyDiscount;
-  FDiscCalculator.OrigDiscountPercent := FOrigDiscountPercent;
-  FDiscCalculator.OrigDiscountAmount := FOrigDiscountAmount;
-
-  //FDiscCalculator.CalculateDiscountAgain := True;
-  FDiscCalculator.ShowMessageForOneTime := False;
-  FDiscCalculator.ChangeDiscRateManually := False;
-  FDiscCalculator.ChangeDiscAmtManually := False;
-  FDiscCalculator.SplitTabPayment := ItemsSelectedManually or AmountSplitingStarted;
-
-  FDiscCalculator.CalculateAccountDiscountOnly := False;
-  if ((FOrigDiscountPercent = 100) and (not FUseDiscountAmount) and (not FUseItemDiscounts) and (not FUseDiscountPeriods)) then
-    FDiscCalculator.CalculateAccountDiscountOnly := True;
-
-  ComboFreeItems.Clear;
-  FDiscCalculator.AllCombos := FAllCombos;
-  ComboFreeItems.Clear;
-  txtComboDisc.Text := '';
-
-  FDiscCalculator.CalculateDiscounts(AList, True, False, False, FDiscountPercent, FDiscountAmount, ComboFreeItems);
-
-  LoyaltyReward := FDiscCalculator.LoyaltyReward;
-  FComboDiscount := FDiscCalculator.ComboDiscount;
-
-  if FComboDiscount > 0 then
-    txtComboDisc.Text := FormatFloat(PRICEFORMAT, FComboDiscount);
-
-  txtComboDisc.Visible := (FComboDiscount > 0);
-  lblComboDisc.Visible := (FComboDiscount > 0);
-
-  txtDiscountPercent.Text := FormatFloat(PRICEFORMAT, FDiscountPercent);
-  txtDiscountAmount.Text := FormatFloat(PRICEFORMAT, FDiscountAmount);
-end;
-
-function TformPaymentTable.CheckForUnFinishedCombos(aList: TList; var aCombo: string; var aComboIndex: Integer): Boolean;
-var
-  i, j, k: Integer;
-  aOL, OL: TOrderLine;
-  iPos: Integer;
-  Qty: Double;
-  tmpCheckList: TStringList;
-  lCombo: string;
-  lComboID, lComboIndex: Integer;
-  PartialComboFound: Boolean;
-begin
-  LogMessage(ltPaymentTrace, '615' + #9);
-  aCombo := '';
-  aComboIndex := 0;
-  Result := False; // AList has the selected items with selected qty
-  tmpCheckList := TStringList.Create;
-  tmpCheckList.Sorted := True;
-  tmpCheckList.Duplicates := dupIgnore;
-  try
-    if ItemsSelectedManually or FSelectedItemsNotPaidFull then
-    begin
-      for i := 0 to AList.Count-1 do
-      begin
-        OL := AList.Items[i];
-        if ((OL.ComboID > 0) and (OL.ComboIndex > 0)) then
-          tmpCheckList.Add(IntToStr(OL.ComboID) + '-' + IntToStr(OL.ComboIndex));
-      end;
-      if tmpCheckList.Count > 0 then
-      begin
-        for i := 0 to tmpCheckList.Count - 1 do
-        begin
-          lCombo := Trim(tmpCheckList.Strings[i]);
-          iPos := Pos('-', lCombo);
-          lComboID := StrToIntDef(Copy(lCombo, 1, iPos-1), 0);
-          lComboIndex := StrToIntDef(Copy(lCombo, iPos+1, Length(lCombo)), 0);
-          PartialComboFound := False;
-          for j := 0 to UnInvoicedOlsToPay.Count - 1 do
-          begin
-            aOL := UnInvoicedOlsToPay.Items[j];
-            Qty := 0;
-            if ((DM.qrOLsToPay.Locate('orderlineid', aOL.OrderLineID, [])) and (not dm.qrOLsToPay.Fields[0].IsNull) and
-                (DM.qrOLsToPay.FieldByName('unitprice').AsCurrency > 0) and (DM.qrOLsToPay.FieldByName('comboid').AsInteger > 0) and
-                (DM.qrOLsToPay.FieldByName('comboid').AsInteger = lComboID) and (DM.qrOLsToPay.FieldByName('comboindex').AsInteger = lComboIndex)) then
-            begin
-              for k := 0 to AList.Count - 1 do
-              begin
-                OL := AList.Items[k];
-                if ((OL.ComboID > 0) and (OL.ComboIndex > 0) and (OL.ComboID = lComboID) and (OL.ComboIndex = lComboIndex) and (DM.qrOLsToPay.FieldByName('orderlineid').AsInteger = OL.OrderLineID)) then
-                  Qty := Qty + OL.Qty;
-              end;
-              if (aOL.OLQty <> Qty) then
-              begin
-                PartialComboFound := True;
-                aCombo := aOL.ComboName;
-                aComboIndex := aOL.ComboIndex;
-                Break;
-              end;
-            end;
-          end;
-          if PartialComboFound then
-          begin
-            Result := True;
-            Exit;
-          end;
-        end;
-      end;
-    end;
-  finally
-    tmpCheckList.Free;
-  end;
-end;
-
-procedure TformPaymentTable.grdToPayDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect; State: TGridDrawState);
-var
-  aOL: TOrderLine;
-  FontColour: TColor;
-  aAlignment: TAlignment;
-
-begin
-  inherited;
-  FontColour := clBlack;
-  if (((OLToPayList.Count) >= ARow) and (ARow > 0)) then
-  begin
-    aOL := OLToPayList.Items[ARow - 1];
-
-    if (aOL.ComboID > 0) then
-    begin
-      FontColour := aOL.ComboColour;
-    end;
-  end;
-  aAlignment := taLeftJustify;
-  if (aCol in [3, 4]) then
-  begin
-    aAlignment := taRightJustify;
-  end;
-  Skin.ApplySkinOnStringGridDraw(TStringGrid(Sender), ARow, ACol, Rect, State, FontColour, False, False, aAlignment);
-end;
-
-procedure TformPaymentTable.grdToPayEnter(Sender: TObject);
-begin
-  inherited;
-  grdItemManualClick := True;
-end;
-
-procedure TformPaymentTable.grdToPayExit(Sender: TObject);
-begin
-  inherited;
-  grdItemManualClick := False;
-end;
-
-procedure TformPaymentTable.grdToPayKeyDown(Sender: TObject; var Key: Word;
-  Shift: TShiftState);
-begin
-  inherited;
-  if (key = VK_UP) or (Key = VK_Down) or (key = VK_LEFT) or (key = VK_RIGHT) or (key = VK_PRIOR) or (key = VK_NEXT)then
-   grdItemAutoClick := True;
-
-  if ((grdToPay.Row = 1) and (key = VK_UP)) or ((grdToPay.Row = 1) and (key = VK_LEFT)) or ((grdToPay.Row = 1) and (key = VK_PRIOR)) then
-    grdToPayClick(nil);
-  if (((grdToPay.RowCount - 1) = grdToPay.Row) and (key = VK_DOWN)) or (((grdToPay.RowCount - 1) = grdToPay.Row) and (key = VK_RIGHT)) or (((grdToPay.RowCount - 1) = grdToPay.Row) and (key = VK_NEXT)) then
-    grdToPayClick(nil);
-
-end;
-
-procedure TformPaymentTable.grdToPayMouseWheelDown(Sender: TObject;
-  Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
-begin
-  inherited;
-  grdItemAutoClick := True;
-end;
-
-procedure TformPaymentTable.grdToPayMouseWheelUp(Sender: TObject;
-  Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
-begin
-  inherited;
-  grdItemAutoClick := True;
-end;
-
-function TformPaymentTable.GetOriginalOL(aOrderLineID: Integer; var aSrcIndex: Integer): TOrderLine;
-var
-  i: Integer;
-  aOL: TOrderLine;
-  
-begin
-  Result := nil;
-  for i := 0 to UnInvoicedOlsToPay.Count - 1 do
-  begin
-    aOL := UnInvoicedOlsToPay.Items[i];
-    if aOrderLineID = aOL.OrderLineID then
-    begin
-      Result := aOL;
-      ASrcIndex := i;
-      Exit;
-    end;
-  end;
-end;
-
-procedure TformPaymentTable.grdUnInvoicedListDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect; State: TGridDrawState);
-var
-  aOL: TOrderLine;
-  Italic, Bold: Boolean;
-  iOrdLineID, iSrcIndex: Integer;
-  FontColour: TColor;
-  aAlignment: TAlignment;
-begin
-  inherited;
-  if (((UnInvoicedOlsToPay.Count) >= ARow) and (ARow > 0)) then
-  begin
-    iOrdLineID := Integer(grdUnInvoicedList.Objects[0, ARow]);
-    aOL := GetOriginalOL(iOrdLineID, iSrcIndex);
-
-    Italic := False;
-    Bold := False;
-    FontColour := clBlack;
-
-    if (Assigned(aOL) and (aOL.ComboID > 0)) then
-    begin
-      FontColour := aOL.ComboColour;
-    end;
-  end
-  else
-  begin
-    Italic := False;
-    Bold := False;
-    FontColour := clBlack;
-  end;
-  aAlignment := taLeftJustify;
-  if (aCol in [2, 3, 6, 7]) then
-  begin
-    aAlignment := taRightJustify;
-  end;
-  Skin.ApplySkinOnStringGridDraw(TStringGrid(Sender), ARow, ACol, Rect, State, FontColour, Italic, Bold, aAlignment);
-end;
-
-procedure TformPaymentTable.SetComboColourIndex(AList:TList);
-var
-  j, iMax, i: Integer;
-  OL, SecOL: TOrderLine;
-begin
-  iMax := 1;
-  cmdComboIndex.Enabled := False;
-  if Assigned(AList) then
-  for i := 0 to (AList.Count - 1) do
-  begin
-    OL := AList.Items[i];
-    if (Assigned(OL) and (OL.ComboID > 0)) then
-    begin
-      OL.ComboColourIndex := -1;
-    end;
-  end;
-
-  for i := 0 to (AList.Count - 1) do
-  begin
-    OL := AList.Items[i];
-    if (Assigned(OL) and (OL.ComboID > 0) and (OL.ComboColourIndex = -1)) then
-    begin
-      cmdComboIndex.Enabled := True;
-      OL.ComboColourIndex := iMax;
-      for j := i + 1 to AList.Count -1 do
-      begin
-        SecOL := AList.Items[j];
-
-        if (Assigned(SecOL) and (SecOL.ComboID = OL.ComboID) and (SecOL.ComboIndex = OL.ComboIndex)) then
-          SecOL.ComboColourIndex := iMax;
-      end;
-      Inc(iMax);
-    end;
-  end;
-end;
-
-function TformPaymentTable.CheckPrinterFunctions: Boolean;
-var
-  ExitQS, DateNotMoved: Boolean;
-  iDate, iErr: Integer;
-begin
-  Result := True;
-  SetStatus(sFiscalPrinterChecking);
-  try
-    Screen.Cursor := crHourGlass;
-    //SupressFiscalErrorMessage := True;
-    NFManual := False;
-    NFEMode := False;
-
-    //if not FiscalPrinterEnabled then
-    begin
-      ExitQS := True;
-      if  NFManual then
-        ExitQS := False;
-
-      DateNotMoved := False;
-      Val(SWBEncryption.AuxiliaryData.FiscalDateMovement, iDate, iErr);
-
-      SFiscalPrinting.GetMovementDate;
-  //    cmdManualModeSkin.Visible := False;
- //     cmdManualModeSkin.Enabled := False;
-      //ShowManualSelection := (AppDetails.FiscalManualMode in [0, 1]);
-      if (iDate = 0) then
-        DateNotMoved := True ;
-
-      (*if ((AppDetails.FiscalPrinterType in [fpBematech, fpBematechNFC]) and (AuxiliaryData.FiscalDateMovement = '000000') and (iDate = 0)) then //no date movement
-        DateNotMoved := True
-      else if ((AppDetails.FiscalPrinterType = fpDaruma) and (AuxiliaryData.FiscalDateMovement = '01012000') {and (iDate = 0)}) then
-        DateNotMoved := True; *)
-
-      if (ExitQS and DateNotMoved {and (ShowConf(FiscalErrorMessage + sManualModeEntryConf) = mrYes)}) then
-      begin
-        ExitQS := False;
-        if ((not GlbPrivs[11].AvoidPINCheck) and (GlbLogin.LoginPIN = 0) and (not VerifyPinNo)) then
-          ExitQS := True;
-        ShowManualSelection := (AppDetails.FiscalManualMode = 0);
-        //cmdManualModeSkin.Visible := (AppDetails.FiscalManualMode = 0);
-        //cmdManualModeSkin.Enabled := (AppDetails.FiscalManualMode = 0);
-
-        (*if not FiscalPrinterEnabled then
-        begin
-
-          ShowQuickMsg(sManualModeEntry);
-        end; *)
+        Title2 := sAllOutlets + Title2;
       end
-      else if SFiscalPrinting.FiscalPrinterEnabled then
-        ExitQS := False;
+      else begin
+        ParamByName('poutletid').AsInteger := Glbs.OutletID;
+        Title2 := Glbs.OutletName + Title2;
+      end;
 
-      if ExitQS then
-      begin
-        SFiscalPrinting.SupressFiscalErrorMessage := False;
-        ClearStatus;
-        ClearStatusPage;
-        Result := False;
-        if FormActivated then
-          cmdHideClick(Self)
-        else
-          PostMessage(self.handle, WM_CLOSE, 0, 0);
-        Exit;
+      if (cmbRemoteLocations.ItemIndex = 0) then begin
+        if ((chkRemoteLocationBreakdown.Checked) and (chkRemoteLocationBreakdown.Enabled)) then begin
+          ParamByName('premotelocationid').AsInteger := -1;
+        end
+        else begin
+          ParamByName('premotelocationid').AsInteger := -2;
+        end;
       end
-      else
-      begin
-        ClearStatus;
-        ClearStatusPage;
-        if NFManual then
-          SetStatusPage(sTabPaymentINManualNFMode);
+      else begin
+        ParamByName('premotelocationid').AsInteger := Glbs.RemoteLocationID;
+      end;
+
+      if (radSectionAll.Checked) then begin
+        ParamByName('psectionid').AsInteger := -1;
+        Title1 := Title1 + ', ' + sAllSections;
+      end
+      else begin
+        ParamByName('psectionid').AsInteger := Glbs.SectionsSectionID;
+        Title1 := Title1 + ', ' + Glbs.SectionsSection;
+      end;
+
+      ParamByName('fromtime').AsDateTime := FFromTime;
+      ParamByName('totime').AsDateTime := FToTime;
+
+      Open;
+    end;
+
+    if (chkExportFile.Checked) then begin
+      SaveDialog.Title := sSectionDlgTitle;
+      SaveDialog.FileName := 'SectionSales' + FormatDateTime('yyyymmddhhnn',Now) + '.csv';
+      if (SaveDialog.Execute) then begin
+        formQRSectionSales.WBCSV.FileName := SaveDialog.FileName;
+        formQRSectionSales.WBCSV.OpenToWrite;
       end;
     end;
 
-    if not NFManual then
-    begin
-      if ((not SFiscalPrinting.GetFiscalPrinterDetails) or (GlbFiscal.ManufactureNo = '')) then
-      begin
-        ClearStatus;
-        ClearStatusPage;
-
-        PostMessage(self.handle, WM_CLOSE, 0, 0);
-        Result := False;
-        Exit;
-      end;
-
-      if not SFiscalPrinting.GetFiscalPrinterConfigurations then
-      begin
-        ClearStatus;
-        ClearStatusPage;
-
-        //ShowQuickMsg(sPrinterSystemDateMismatch);
-        PostMessage(self.handle, WM_CLOSE, 0, 0);
-        Result := False;
-        Exit;
-      end;
-    end;
-    ClearStatusPage;
-    if NFManual then
-      SetStatus(sTabPaymentINManualNFMode, False, NFManual)
-    else if NFEMode then
-      SetStatus(sTabPaymentINNFEMode, False, NFManual)
-    else
-      SetStatus(sTabPayment, False, NFManual);
+    formQRSectionSales.QRSectionSales.ReportTitle := sSectionRepTitle;
+    formQRSectionSales.QRSectionSales.Preview;
   finally
-    SFiscalPrinting.SupressFiscalErrorMessage := False;
-    Screen.Cursor := crDefault;
+    formQRSectionSales.Free;
   end;
 end;
 
-procedure TformPaymentTable.LoadAllComboItems(aComboID: Integer; aComboIndex: Integer);
-var
-  i, iSrcIndex: Integer;
-  aOL: TOrderLine;
+procedure TformReports.DBGridSectionsCellClick(Column: TColumn);
 begin
-  for i := 0 to UnInvoicedOlsToPay.Count - 1 do
-  begin
-    aOL := UnInvoicedOlsToPay.Items[i];
-
-    if ((aOL.ComboID = aComboID) and (aOL.ComboIndex = aComboIndex)) then
-    begin
-      iSrcIndex := i;
-      if ((dm.qrOLsToPay.Locate('orderlineid', aOL.OrderLineID, []) and (not dm.qrOLsToPay.Fields[0].IsNull))) then
-      begin
-        AddOrderLine(UnInvoicedOlsToPay, iSrcIndex);
-      end;
-    end;
-  end;
+  radSectionSelected.Checked := True;
+  radComboSelected.Checked := True; 
 end;
 
-procedure TformPaymentTable.LoadFromUnInvoicedList(aOrderLineID: Integer);
-var
-  aOL: TOrderLine;
-  iOrdLineID, iSrcIndex: Integer;
+procedure TformReports.radSecCurrentClick(Sender: TObject);
 begin
-  LogMessage(ltPaymentTrace, '417' + #9);
-  iOrdLineID := AOrderLineID;
-  aOL := GetOriginalOL(iOrdLineID, iSrcIndex);
-
-  if ((dm.qrOLsToPay.Locate('orderlineid', aOL.OrderLineID, [])) and (not dm.qrOLsToPay.Fields[0].IsNull)) then
-  begin
-    LogMessage(ltPaymentTrace, '418' + #9);
-    AddOrderLine(UnInvoicedOlsToPay, iSrcIndex);
-
-    if ((aOL.ComboID > 0) and (aOL.ComboIndex > 0)) then
-    begin
-      LogMessage(ltPaymentTrace, '419' + #9);
-      LoadAllComboItems(aOL.ComboID, aOL.ComboIndex)
-    end;
-  end;
-  LogMessage(ltPaymentTrace, '420' + #9);
-  CalculateToPay(True);
-  grdItemAutoClick := True;
-  LogMessage(ltPaymentTrace, '506' + #9);
-  grdToPayClick(nil);
-  LogMessage(ltPaymentTrace, '507' + #9);
-
-  BroadcastCDAMessage;
+  dm.SectionsCurrent := (TRadioButton(Sender).Tag = 0);
 end;
 
-procedure TformPaymentTable.grdUnInvoicedListClick(Sender: TObject);
-var
-  iOrdLineID: Integer;
+initialization
 begin
-  LogMessage(ltPaymentTrace, '588' + #9);
-  if (not Assigned(UnInvoicedOlsToPay)) then
-    Exit;
-
-  if UnInvoicedOlsToPay.Count = 0 then
-    Exit;
-
-  iOrdLineID := Integer(grdUnInvoicedList.Objects[0, grdUnInvoicedList.Row]);
-  LogMessage(ltPaymentTrace, '589' + #9 + 'grdUnInvoicedList.Row=' + IntToStr(grdUnInvoicedList.Row) + ', iOrdLineID=' + IntToStr(iOrdLineID));
-
-  LoadFromUnInvoicedList(iOrdLineID);
-  LogMessage(ltPaymentTrace, '590' + #9);
+  ApplicationInitialization;
 end;
 
-procedure TformPaymentTable.cmdComboIndexDesClick(Sender: TObject);
-var
-  frmComboColours: TFormCombosInSale;
-begin
-  frmComboColours := TFormCombosInSale.Create(Nil);
-  try
-    frmComboColours.OLList := UnInvoicedOlsToPay;
-    frmComboColours.AllCombos := FAllCombos;
-    frmComboColours.LoadComboColours;
-    frmComboColours.ShowModal;
-  finally
-    frmComboColours.Free;
-  end;
-end;
 
-procedure TformPaymentTable.UpdateUnInvoicedListComboDetails;
-var
-  i: Integer;
-  aOL: TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '451' + #9);
-  for i := 0 to UnInvoicedOlsToPay.Count - 1 do
-  begin
-    aOL := UnInvoicedOlsToPay.Items[i];
-
-    if (dm.qrOLsToPay.Locate('orderlineid', aOL.OrderLineID, []) and (not dm.qrOLsToPay.Fields[0].IsNull)) then
-    begin
-      if (aOL.ComboID <= 0) then // reset for account discounts
-      begin
-        aOL.ComboID := 0;
-        aOL.ComboGroupID := 0;
-        aOL.ComboIndex := 0;
-        aOL.ComboName := '';
-        aOL.ComboQty := 0;
-        aOL.ComboGroupOrder := 0;
-        aOL.ComboDiscount := 0;
-        aOL.AllowedDiscount := 0;
-        aOL.ILDiscount := 0;
-      end;
-      if ((DM.qrOLsToPay.FieldByName('comboid').IsNotNull) and (DM.qrOLsToPay.FieldByName('comboid').AsInteger > 0)) then
-      begin
-        aOL.ComboID := DM.qrOLsToPay.FieldByName('comboid').AsInteger;
-        aOL.ComboGroupID := DM.qrOLsToPay.FieldByName('combogroup').AsInteger;
-        aOL.ComboIndex := DM.qrOLsToPay.FieldByName('comboindex').AsInteger;
-        aOL.ComboName := DM.qrOLsToPay.FieldByName('comboname').AsString;
-        aOL.ComboQty := DM.qrOLsToPay.FieldByName('comboqty').AsDouble;
-        aOL.AllowedDiscount := DM.qrOLsToPay.FieldByName('oldiscount').AsCurrency;
-        aOL.ComboDiscount := aOL.AllowedDiscount;
-      end;
-    end;
-  end;
-  for i := 0 to OLToPayList.Count - 1 do
-  begin
-    aOL := OLToPayList.Items[i];
-
-    if DM.qrOLsToPay.Locate('orderlineid', aOL.OrderLineID, []) then
-    if ((not dm.qrOLsToPay.Fields[0].IsNull)) then
-    begin
-      if aOL.ComboID <= 0 then // reset for account discounts
-      begin
-        aOL.ComboID := 0;
-        aOL.ComboGroupID := 0;
-        aOL.ComboIndex := 0;
-        aOL.ComboName := '';
-        aOL.ComboQty := 0;
-        aOL.ComboGroupOrder := 0;
-        aOL.ComboDiscount := 0;
-        aOL.AllowedDiscount := 0;
-        aOL.ILDiscount := 0;
-      end;
-      if ((DM.qrOLsToPay.FieldByName('comboid').IsNotNull) and (DM.qrOLsToPay.FieldByName('comboid').AsInteger > 0)) then
-      begin
-        aOL.ComboID := DM.qrOLsToPay.FieldByName('comboid').AsInteger;
-        aOL.ComboGroupID := DM.qrOLsToPay.FieldByName('combogroup').AsInteger;
-        aOL.ComboIndex := DM.qrOLsToPay.FieldByName('comboindex').AsInteger;
-        aOL.ComboName := DM.qrOLsToPay.FieldByName('comboname').AsString;
-        aOL.ComboQty := DM.qrOLsToPay.FieldByName('comboqty').AsDouble;
-        aOL.AllowedDiscount := DM.qrOLsToPay.FieldByName('oldiscount').AsCurrency;
-        aOL.ComboDiscount := aOL.AllowedDiscount;
-      end;
-    end;
-  end;
-end;
-
-procedure TformPaymentTable.BroadcastCDAMessage;
-var
-  fOnetapFunction: ToneTapFunction;
-begin
-  if CDAServer.Connected then
-  begin
-    fOnetapFunction := CDAServer.CDAData.onetapFunction;
-
-    if not (fOnetapFunction in [ofTablePaymentByItem, ofShowChange]) then
-      fOnetapFunction := ofTablePayment;
-
-    CDAServer.ProvideCDAData(fOnetapFunction, GlbTable.Destination, FDiscountPercent, FDiscountAmount, FComboDiscount, FSalesTax, FToPay, FSurcharge,
-                             StrToFloatDef(StripCommas(txtBalDue.Text),0), FStillDue, FChange, 0{FFoodTotal},
-                             0{FBevTotal}, FTender,
-                             OLToPayList, SurchargeList, TLList);
-  end;
-end;
-
-procedure TformPaymentTable.ClearCDAMessage;
-begin
-  if CDAServer.Connected then
-  begin
-    CDAServer.ClearCDAMessage;
-  end;
-end;
-
-procedure TformPaymentTable.grdTLsDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect; State: TGridDrawState);
-var
-  aAlignment: TAlignment;
-
-begin
-  inherited;
-  aAlignment := taLeftJustify;
-  if (aCol in [2, 3, 4, 5]) then
-  begin
-    aAlignment := taRightJustify;
-  end;
-  Skin.ApplySkinOnStringGridDraw(TStringGrid(Sender), ARow, ACol, Rect, State, clBlack, False, False, aAlignment);
-end;
-
-procedure TformPaymentTable.cmdEventDesClick(Sender: TObject);
-begin
-  inherited;
-
-  if AppDetails.wiGroupEnabled and wiGroupPOSSrv.CheckInformCompletePaymentFirst then
-    Exit;
-
-  if (GlbEvent.EventID = 0) then // if no event is selected currently
-  begin
-    if InGoodySale then
-    begin
-      TfcCustomImageBtn(Sender).Down := False;
-      ShowMsg(sNoEventForGoodyScan);
-      Exit;
-    end;
-
-    //CurrentHostSpend is unknown until we select Event, thus any checks against SpendLimit need to be done after Event selection
-    if (not SelectEvent) then
-    begin
-      Exit;
-    end;
-
-    if (GlbEvent.AccountID > 0) and (not ApplySubsidyOnItems) then
-      DeselectEvent;
-
-    FForceUnSelectAccount := False;
-    FOneBill := True;
-  end
-  else  // an event is selected and button is down
-  begin
-    DeselectEvent;
-  end;
-  lblTitle.Caption := sTabPayment;
-end;
-
-procedure TformPaymentTable.DeselectEvent;
-begin
-  GlbEvent.Clear;
-  SubsidyCalc.EventID := 0;
-  SubsidyCalc.AccountID := 0;
-  SubsidyCalc.SubsidyOverrided := False;
-  SubsidyCalc.SubsidyID := 0;
-  SubsidyCalc.ClearSubsidyDetails;
-  ClearItemLevelSubsidy(UnInvoicedOlsToPay);
-  ClearItemLevelSubsidy(TempItemList);
-  ClearItemLevelSubsidy(OLToPayList);
-  DeselectAccount; // to deselect event account
-  FForceUnSelectAccount := False;
-  SubsidyCalc.IsHostTransaction := (GlbEvent.EventID >0) and
-                                  (GlbEvent.AccountID > 0) and
-                                  (OnAccount) and (GlbEvent.SubsidyID > 0);
-
-  LogMessage(ltPaymentTrace, '439' + #9);
-  CalculateToPay;
-  LogMessage(ltPaymentTrace, '529' + #9);
-  FOneBill := AppDetails.OneBill;
-end;
-
-procedure TformPaymentTable.ClearItemLevelSubsidy(var AOLList: TList);
-var
-  i: Integer;
-  OL: TOrderLine;
-begin
-  if (Assigned(AOLList) and (AOLList.Count > 0)) then
-  begin
-    for i := 0 to AOLList.Count - 1 do
-    begin
-      OL := TOrderLine(AOlList.Items[i]);
-      OL.SubsidyAllowed := 0.00;
-    end;
-  end;
-end;
-
-procedure TformPaymentTable.CalculateSubsidy(AList : TList;LoadAllowedDisc, DisplayDiscount:Boolean);
-var
-  i : Integer;
-  aOL : TOrderLine;
-begin
-  LogMessage(ltPaymentTrace, '447' + #9);
-  FHostSubsidy := 0.00;
-  FGuestSubsidy := 0.00;
-  FTotalSubsidyAllowed := 0.00;
-
-  // calculate subsidy
-  if Assigned(AList) then
-  begin
-    if ((GlbEvent.EventID > 0) and (GlbEvent.AccountID > 0) and (GlbEvent.SubsidyID > 0)) then
-    begin
-      SubsidyCalc.CalculateEventSubsidy(AList);
-      CalculateAccTypeItemDiscount(AList);
-
-      FHostSubsidy := 0.00;
-      FGuestSubsidy := 0.00;
-      FTotalSubsidyAllowed := 0.00;
-
-      for i := 0 to (AList.Count - 1) do
-      begin
-        aOL := AList.Items[I];
-        if (aOL.ItemID > 0) then
-        begin
-          FHostSubsidy := FHostSubsidy + aOL.HostSubsidy;
-          FGuestSubsidy := FGuestSubsidy + aOL.GuestSubsidy;
-
-          FTotalSubsidyAllowed := FTotalSubsidyAllowed + aOL.SubsidyAllowed;
-        end;
-      end;
-      GetRoundedUpDown(FTotalSubsidyAllowed, AppDetails.DecimalPlaces);
-
-    end;
-  end;
-end;
-
-function TformPaymentTable.ApplySubsidyOnItems: Boolean;
-var
-  prevAccountID: Integer;
-begin
-  LogMessage(ltPaymentTrace, '413' + #9);
-  FForceUnSelectAccount := True;
-  prevAccountID := GlbAccount.AccountID;
-  Result := GetSelectedAccount(GlbEvent.AccountID, False, True, prevAccountID, True);
-
-  if (not Result) then
-    Exit;
-
-  cmdOnAccount.Down := False;
-  OnAccount := False;
-  SubsidyCalc.EventID := GlbEvent.EventID;
-  SubsidyCalc.AccountID := GlbEvent.AccountID;
-  SubsidyCalc.SubsidyOverrided := GlbEvent.SubsidyOverrided;
-  SubsidyCalc.SubsidyID := GlbEvent.SubsidyID;
-
-  SubsidyCalc.IsHostTransaction := (GlbEvent.EventID >0) and
-                              (GlbEvent.AccountID > 0) and
-                              (OnAccount) and (GlbEvent.SubsidyID > 0);
-  cmdOnAccount.Down := False;
-  OnAccount := False;
-  LogMessage(ltPaymentTrace, '440' + #9);
-  CalculateToPay;
-  LogMessage(ltPaymentTrace, '530' + #9);
-  RecalculateTotals;
-  FForceUnSelectAccount := False;
-end;
-
-procedure  TformPaymentTable.SetGuestCount;
-var
-  NewGuestCount: Integer;
-  InTrans: Boolean;
-begin
-  NewGuestCount := GlbTable.Guests;
-  InTrans := dm.tr.InTransaction;
-  if (GetNewGuests(NewGuestCount)) then
-  begin
-    try
-      if (not InTrans) then
-      begin
-        dm.TRStartTest
-      end;
-
-      with dm.sp do
-      begin
-        SetStoredProcName('EDITGUESTCOUNT');  //editguestcount
-        ParamByName('groupid').AsInteger := GlbTable.GroupID;
-        ParamByName('newguest').AsInteger := NewGuestCount;
-        ParamByName('newchildren').AsInteger := GlbTable.Children;
-        ExecProc;
-      end;
-
-      if (not InTrans) then
-      begin
-        dm.tr.Commit;
-      end;
-    except on e: exception do begin
-      if (not InTrans) then
-      begin
-        dm.tr.Rollback;   //Jon 10-07-2003
-      end;
-      ShowMessage(e.message);
-    end; end;
-
-  end;
-end;
-
-{******************************************************************************}
-procedure TformPaymentTable.ShowExternalAccounts(TL: TTL = nil);
-var
-  tmpRecordType: TRecType;
-  tmpGetAllItems: Boolean;
-  tmpList: Tlist;
-
-begin
-  tmpGetAllItems := FGetAllItems;
-  tmpRecordType := FRecordType;
-  tmpList := TList.Create;
-  try
-    FRecordType := rtBoth;
-    FGetAllItems := True;
-    GetAllSelectedOLs(tmpList);
-    CombineSameOls(tmpList);       //copies of OLs now in tmpList so need to free them
-
-    sExternalAccountIntegration.SetOrderChanged(csCleanSent);
-    SelectExternalAccount(GetDue(False), tmpList, False, TL, -1);
-  finally
-    FRecordType := tmpRecordType;
-    FGetAllItems := tmpGetAllItems;
-    ClearListObjects(tmpList, True);
-  end;
-
-end;
-
-{******************************************************************************}
-procedure TformPaymentTable.CloseExternalAccounts;
-begin
-  if (Assigned(formSelectExternalAccount)) and (formSelectExternalAccount.Showing) then
-    formSelectExternalAccount.cmdCancelClick(nil);
-end;
-
-{******************************************************************************}
-procedure TformPaymentTable.UpdateTLListExternalAccounts;
-begin
-  DeleteCurrentExternalTenders;
-  AddExternalTenders;
-end;
-          
-{******************************************************************************}
-procedure TformPaymentTable.DeleteCurrentExternalTenders;
-var
-  i, iCount: Integer;
-  TL: TTL;
-  tmpRecordType: TRecType;
-
-begin
-  iCount := TLList.Count;
-
-  for i := TLList.Count-1 downto 0 do
-  begin
-    TL := TTL(TLList.Items[i]);
-    if (tl.TLType = TLTExternalProviders) and (not tl.isProtected) then
-    begin
-      DeleteOLsOfTender(TL, TL.TenderSeqNo);
-      TLList.DisposeTL(i);
-    end;
-  end;
-  tmpRecordType := FRecordType;
-  FRecordType := rtBoth;
-  LogMessage(ltPaymentTrace, '441' + #9);
-  CalculateToPay;
-  LogMessage(ltPaymentTrace, '531' + #9);
-  FRecordType := tmpRecordType;
-  if (iCount <> TLList.Count) then
-  begin
-    LoadUnInvoicedOlsToGrid(UnInvoicedOlsToPay, 0, FToPay);
-    if PaymentOnSelectedItems or AmountSplitingStarted then
-    begin
-      ClearTempItemList;
-      CopyItemSToTempList;
-      LoadSelectedToPayList;
-    end
-    else
-    begin
-      ClearTempItemList;
-      ClearAllOrderLines;
-      AddAllOrderLines;
-    end;
-
-    LoadTLs(LADelete);
-    CalculateAmountForUntenderedItems;
-  end;
-end;
-
-{******************************************************************************}
-procedure TformPaymentTable.AddExternalTenders;
-var
-  i, j, k: Integer;
-  CurrentProvider: TExternalProvider;
-
-begin
-  for i := 0 to sExternalAccountIntegration.FExternalProviders.Count-1 do
-  begin
-    CurrentProvider := TExternalProvider(sExternalAccountIntegration.FExternalProviders.Items[i]);
-    with CurrentProvider do
-    begin
-      for j := 0 to FSchemeTypes.Count-1 do
-      begin
-        FCurrentScheme := TSchemeType(FSchemeTypes.Items[j]);
-        with FCurrentScheme do
-        begin
-          for k:=0 to FListAccountDetails.Count-1 do
-          begin
-            FCurrentAccountDetails := TExternalAccount(FListAccountDetails.Items[k]);
-            with FCurrentAccountDetails do
-            begin
-              if (Assigned(FTenderLineCredit) and (FTenderLineCredit.TLTender > 0) and (TLList.IndexOf(FTenderLineCredit) = -1)) then
-              begin
-                LogMessage(ltPaymentTrace, '35' + #9);
-                AddTenderLine(FTenderLineCredit.TLType, 0, FTenderLineCredit);
-                LogMessage(ltPaymentTrace, '36' + #9);
-                FTenderLineCredit.AddedToTLList := True;
-              end;
-              if (Assigned(FTenderLineLoyalty) and (FTenderLineLoyalty.TLTender > 0) and (TLList.IndexOf(FTenderLineLoyalty) = -1)) then
-              begin
-                LogMessage(ltPaymentTrace, '37' + #9);
-                AddTenderLine(FTenderLineLoyalty.TLType, 0, FTenderLineLoyalty);
-                LogMessage(ltPaymentTrace, '38' + #9);
-                FTenderLineLoyalty.AddedToTLList := True;
-              end;
-            end;
-          end;
-        end;
-      end;
-    end;
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdExternalAccLookupDesClick(Sender: TObject);
-begin
-  DoExternalAccountButtonClick;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdExternalAccRIPDesClick(Sender: TObject);
-begin
-  DoExternalAccountButtonClick(True);
-end;
-{******************************************************************************}
-procedure TformPaymentTable.DoExternalAccountButtonClick(RIPButtonClicked: Boolean = False);
-var
-  tmpRecordType: TRecType;
-  tmpGetAllItems: Boolean;
-  tmpList: Tlist;
-begin
-  if not sExternalAccountIntegration.AllowExternalAccounts(RIPButtonClicked) then
-    Exit;
-
-  if AppDetails.wiGroupEnabled and wiGroupPOSSrv.CheckInformExtAcctNotAllowed(True, True) then
-    Exit;
-
-  if (not RIPButtonClicked) and (sExternalAccountIntegration.ProviderCardsPresent > 0) then
-  begin
-    ShowExternalAccounts;
-    Exit;
-  end;
-
-  tmpGetAllItems := FGetAllItems;
-  tmpRecordType := FRecordType;
-  tmpList := TList.Create;
-  try
-    FRecordType := rtBoth;
-    FGetAllItems := True;
-    GetAllSelectedOLs(tmpList);
-    CombineSameOls(tmpList);       //copies of OLs now in tmpList so need to free them
-
-    ExternalAccountLookup(tmpList, RIPButtonClicked);
-  finally
-    FRecordType := tmpRecordType;
-    FGetAllItems := tmpGetAllItems;
-    ClearListObjects(tmpList, True);   //copies of OLs now in tmpOLList so need to free them
-  end;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.cmdTaxCoreBuyerDetailDesClick(Sender: TObject);
-begin
-  inherited;
-  GetTaxCoreBuyerDetail;
-end;
-{******************************************************************************}
-procedure TformPaymentTable.SetGoodyAccountDiscountAmount;
-var
-  i, j: Integer;
-  SOL, OL: TOrderLine;
-begin
-  FDiscountAmount := GlbGoody.TotalDiscount;
-
-  //Code from TformPaymentTable.cmdDiscountAmountClick, after call to GetDiscountAmount
-  FOrigDiscountAmount := FDiscountAmount;
-  FUseDiscountAmount := True;
-  FUseItemDiscounts := False;
-  RecalculateDiscount := True;
-  LogMessage(ltPaymentTrace, '592' + #9);
-  lblAllowItemLevelDiscount.Caption := sEditedDiscountApplied;
-  ClearItemLevelDiscounts(UnInvoicedOlsToPay);
-  if OLToPayList.Count = 0 then
-  begin
-    CalculateAccTypeItemDiscount(UnInvoicedOlsToPay);
-    UpdateScreenAfterCalculateDiscount;
-  end;
-
-  FDiscCalculator.OneBillDiscountAmount := FDiscountAmount;
-  if (AppDetails.OneBill) then
-    ApplyItemLevelOneBillDiscountAmount;
-
-  LogMessage(ltPaymentTrace, '442' + #9);
-  CalculateToPay;
-  LogMessage(ltPaymentTrace, '532' + #9);
-  RecalculateDiscount := False;
-
-  if (not AppDetails.OneBill) then
-  begin
-    for i:= 0 to OLToPayList.Count-1 do
-    begin
-      SOL := TOrderLine(OLToPayList.Items[i]);
-      for j:= 0 to UnInvoicedOlsToPay.Count-1 do
-      begin
-        OL := TOrderLine(UnInvoicedOlsToPay.Items[j]);
-        if (SOL.OrderLineID = OL.OrderLineID) then
-        begin
-          OL.AllowedDiscount := SOL.AllowedDiscount;
-          break;
-        end;
-      end;
-    end;
-  end;
-end;
-{****************************************************************************}
-procedure TformPaymentTable.RefreshGoodyAccountDiscountAmount;
-begin
-  //NB: FDiscountAmount auto-changes as items are added / removed, (because
-  //discount is allocated to the selected OLs to pay, top down), and it never
-  //resets OL to pay discount amounts to match the specified discount amount.
-  //In an attempt to always represent the actual Goody scanned discount amount in
-  //the account discount amount field, we call this procedure on the grdToPayClick
-  //event, which appears to be called whenever something on it changes (+ / - OLs,
-  //change qty), and the cmdTenderClick event, to reset the incorrectly set
-  //discount amount back to the scanned amount.
-  //We also call it during the validation process, to ensure it IS the same.
-  if UseGoody and (GlbGoody.DiscountAmounts.Count > 0) then
-    SetGoodyAccountDiscountAmount;
-end;
-{******************************************************************************}
-function TformPaymentTable.TryAddGoodyDiscountAmount(ScannedAmount: string): Boolean;
-var
-  JustLoadedGoodyDiscAcc: Boolean;
-  GoodyDiscountAmount, GoodyAccMaxDisc: Currency;
-  PrevAccountID: Integer;
-begin
-  LogMessage(ltPaymentTrace, '414' + #9);
-  //NB: Code around loading an account was originally copied from OpenArchButtonClick where qsbaAccount and OpenArchButton.AssociatedItem2 <= 0.
-
-  Result := False;
-  JustLoadedGoodyDiscAcc := False;
-  GoodyDiscountAmount := 0;
-  GoodyAccMaxDisc := 0;
-
-  if DoingTablePayment then
-    Exit;
-
-  //Code from cmdDiscountAmountClick
-  if (AppDetails.OneBill and (TLList.Count > 0)) then
-  begin
-    //TO DO: put message to explain
-    Exit;  //for now, don't allow discount to be manually changed after the first tender is made
-  end;
-
-  if ((AppDetails.EnableFiscalPrinting) and (not (NFManual or NFEMode))) then
-  begin
-    if TLList.Count > 0 then
-      //TO DO: put message to explain
-      Exit;
-  end;
-
-  //Check don't have an Event selected
-  if GlbEvent.EventID <> 0 then
-  begin
-    ShowMsg(sNoEventForGoodyScan);
-    Exit;
-  end;
-
-  //check Goody Customer ID has been scanned
-  if GlbGoody.CustomerID = EmptyStr then
-  begin
-    ShowMsg(sScanGoodyCustomerIDBeforeDisc);
-    Exit;
-  end;
-
-  //check valid format: up to 7 chars, which should be sufficient for very large discounts
-  if Length(ScannedAmount) > 7 then
-  begin
-    ShowMsg(sTooLongGoodyDiscountAmount);
-    Exit;
-  end;
-
-  //check discount amount is valid, is up to 2 decimal places and is greater than zero
-  try
-    GoodyDiscountAmount := StrToFloat(ScannedAmount);
-
-    //check just up to 2dp: compare scanned string to amount rounded to 2dp
-    if FloatToStr(GoodyDiscountAmount) <> FloatToStr(Trunc(GoodyDiscountAmount*100)/100) then
-    begin
-      ShowMsg(sGoodyDiscScannedNotValid);
-      Exit;
-    end;
-
-    //check greater than zero
-    if GoodyDiscountAmount <= 0 then
-    begin
-      ShowMsg(sGoodyDiscScannedNotValid);
-      Exit;
-    end;
-  except
-    on Exception: EConvertError do
-    begin
-      ShowMsg(sGoodyDiscScannedNotValid);
-      Exit;
-    end;
-  end;
-
-  //check if an account that differs from the Goody discount account is loaded, and if so, confirm ok to continue to load Goody discount account
-  if (GlbAccount.AccountID > 0) and (GlbAccount.AccountID <> AppDetails.GoodyDiscountAccountID) then
-  begin
-    if (ShowConf(sGoodyDiscAcctReplaceSelAcct) <> mrYes) then
-      Exit;
-  end;
-
-  //check if Goody discount account needs to be loaded, and if so try load now
-  if (GlbAccount.AccountID <> AppDetails.GoodyDiscountAccountID) then
-  begin
-    if not CanSelectAccount then
-    begin
-      ShowMsg(sGoodyDiscNotAppliedAcctNotLoaded);
-      Exit;
-    end;
-
-    //NB: GetSelectedAccount ensures account is active and user has privilege to Edit Invoice Discount (13)
-    PrevAccountID := GlbAccount.AccountID;
-    GlbAccount.LookupAccountID := AppDetails.GoodyDiscountAccountID;
-    if not GetSelectedAccount(GlbAccount.LookupAccountID, False, False, PrevAccountID, True, True) then
-    begin
-      //DeselectAccount; //PrevAccountID should be reloaded above (in GetSelectedAccount)
-      ShowMsg(sGoodyDiscNotAppliedAcctNotLoaded);
-      Exit;
-    end;
-
-    //exit if account wasn't successfully loaded for some reason, e.g. DisplayAccount deselected the account as it was inactive
-    if GlbAccount.AccountID = 0 then
-    begin
-      DeselectAccount;
-      ShowMsg(sGoodyDiscNotAppliedAcctNotLoaded);
-      Exit;
-    end;
-
-    //exit if account is active for gaining points only
-    if (GlbAccount.AccountInactive = accPointsOnly) then
-    begin
-      DeselectAccount;
-      ShowMsg(sGoodyDiscNotAppliedAcctActivePointsOnly);
-      Exit;
-    end;
-
-    JustLoadedGoodyDiscAcc := True;
-  end;
-
-  //check total discount doesn't exceed maximum amount (if limited)
-  if FLimitMaximum and ((FDiscountAmount + GoodyDiscountAmount) > GlbAccount.MaxDiscount) then
-  begin
-    GoodyAccMaxDisc := GlbAccount.MaxDiscount; //remember amount for message, as account may be deselected first
-    if JustLoadedGoodyDiscAcc then
-      DeselectAccount;
-    ShowMsg(Format(sGoodyDiscWouldExceedAcctLimit, [FormatCurrencySign(GoodyAccMaxDisc)]));
-    Exit;
-  end;
-
-  GlbGoody.AddDiscount(GoodyDiscountAmount);
-
-  Result := True;
-  ShowQuickMsg(Format(sGoodyDiscApplied, [FormatCurrencySign(GoodyDiscountAmount)]));
-end;
-{******************************************************************************}
-procedure TformPaymentTable.DeselectGoodyAccount;
-begin
-  //if Goody discount account loaded, deselect now
-  if GlbAccount.AccountID = AppDetails.GoodyDiscountAccountID then
-    InitialiseAccountInfo(False, True, False);
-end;
-{******************************************************************************}
 end.
 
 
-unit USelectCashSale;
-{******************************************************************************}
+
+=========================================================================================
+
+
+
+
+unit UQRPeople;
+{*****************************************************************************}
 interface
-{******************************************************************************}
+{*****************************************************************************}
 uses
-  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms,
-  Dialogs, ImgList, Grids, IB_Grid, Buttons, ExtCtrls, StdCtrls, fcImgBtn, fcShapeBtn,
-  USkin, FFrameReceipt, UIntegerList{,IvDictio, IvMulti}, UEmailReceipt, pngimage, System.IOUtils;
+  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
+  quickrpt, Qrctrls, ExtCtrls,
+  UTypesConstants, UWBCSV{, IvDictio, IvMulti};
+{*****************************************************************************}
+type
+  TFieldDataType = (FDTString, FDTInteger, FDTDate, FDTDateTime);
+
+  (**
+    Report that Shows the People/Customers that are entered in the system.
+    This is often used with the Export feature to do a Mail Merge.
+  *)
+  TformQRPeople = class(TForm)
+    QRPeople: TQuickRep;
+    bndTitle: TQRBand;
+    lblTitle1: TQRLabel;
+    lblTitle2: TQRLabel;
+    QRShape: TQRShape;
+    lblTime: TQRLabel;
+    QRLabel10: TQRLabel;
+    QRLabel11: TQRLabel;
+    QRLabel12: TQRLabel;
+    QRSysData1: TQRSysData;
+    lblTitle3: TQRLabel;
+    DetailBand: TQRBand;
+    QRExprName: TQRExpr;
+    lblName: TQRLabel;
+    QRExprAddress: TQRExpr;
+    txtItemSuburb: TQRDBText;
+    txtItemCity: TQRDBText;
+    QRExprPhone: TQRExpr;
+    lblAddress: TQRLabel;
+    lblSuburb: TQRLabel;
+    lblCity: TQRLabel;
+    lblPhone: TQRLabel;
+    QRDBText1: TQRDBText;
+    QRBSummary: TQRBand;
+    lblTitle4: TQRLabel;
+    lblTitle5: TQRLabel;
+    lblTitle6: TQRLabel;
+//    IvTranslator1: TIvTranslator;
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure QRPeopleBeforePrint(Sender: TCustomQuickRep; var PrintReport: Boolean);
+    procedure bndTitleBeforePrint(Sender: TQRCustomBand; var PrintBand: Boolean);
+    procedure DetailBandBeforePrint(Sender: TQRCustomBand; var PrintBand: Boolean);
+    procedure QRBSummaryBeforePrint(Sender: TQRCustomBand; var PrintBand: Boolean);
+  private
+    TheTime : TDateTime;
+    { Private declarations }
+    function FieldDataToString(FieldName: String; FieldDataType: TFieldDataType): String;
+  public
+    WBCSV: TWBCSV;
+    { Public declarations }
+  end;
+{*****************************************************************************}
+var
+  formQRPeople: TformQRPeople;
+{*****************************************************************************}
+implementation
+{$R *.DFM}
+{*****************************************************************************}
+uses
+  UDM, UReports,
+  uResources {sinu};
+{*****************************************************************************}
+procedure TformQRPeople.FormCreate(Sender: TObject);
+begin
+  WBCSV:= TWBCSV.Create;
+end;
 {******************************************************************************}
-function SelectCashSale(var InvoiceID: Integer; var InvoiceType: string): Boolean;
-function SelectTabInvoices(var InvoiceID: Integer; var InvoiceType: string; const aLastReceipt: Boolean = False): Boolean;
-function SelectLastCashSale(var InvoiceID: Integer; var InvoiceType: string; const aQuickHide: Boolean = False): Boolean;
+procedure TformQRPeople.FormDestroy(Sender: TObject);
+begin
+  WBCSV.Free;
+end;
+{******************************************************************************}
+procedure TformQRPeople.QRPeopleBeforePrint(Sender: TCustomQuickRep; var PrintReport: Boolean);
+begin
+  TheTime := Now;
+
+  with (WBCSV) do begin
+    if (Active) then begin
+      DateFormat:= 'dd-mmm-yyyy';
+      SendString(sSurname);
+      SendString(sRepFirstName);
+      SendString(sMidlleName);
+      SendString(sTitle);
+      SendString(sSalutation);
+      SendString(sDOB);
+      SendString(sBirthDay);
+      SendString(sBirthMonth);
+      SendString(sWeddingDate);
+      SendString(sAnniversaryDay);
+      SendString(sAnniversaryMonth);
+      SendString(sAddress1);
+      SendString(sAddress2);
+      SendString(sAddress3);
+      SendString(sPostCode);
+      SendString(sCountry);
+      SendString(sPOAddress1);
+      SendString(sPOAddress2);
+      SendString(sPOAddress3);
+      SendString(sPOPostCode);
+      SendString(sPOCountry);
+      SendString(sEmail);
+      SendString(sPhHomeNo);
+      SendString(sPhMobileNo);
+      SendString(sPhWorkNo);
+      SendString(sFaxNo);
+      SendString(sCustomer);
+
+      SendString(sVIP);
+      SendString(sPersonID);
+      SendString(sWhenUpd);
+      SendString(sRepWhenDeleted);
+      SendString(sGender);
+      SendString(sHobbies);
+      SendString(sSports);
+      SendString(sMusic);
+      SendString(sFavoriteItem);
+      SendString(sOccupation);
+      SendString(sNationality);
+      SendString(sLastWhenInvoiced);
+      SendString(sOptOut);
+      SendString(sGo2Mobile);
+      SendString(sAccountID);
+      SendString(sAccountName);
+      SendString(sAccountNo);
+      SendString(sLinkCode);
+      SendString(sCardcode);
+      WriteLine;
+    end;
+  end;
+
+  with formReports do begin
+{    QRGGroup.Enabled:= ((ckbGroupGroup.Checked) and (radGroup.Checked) and (radAllItems.Checked));
+    QRBGroupFooter.Enabled:= ((ckbGroupGroup.Checked) and (radGroup.Checked) and (radAllItems.Checked));
+
+    QRGForB.Enabled:= ((ckbGroupForB.Checked) and (radFAndB.Checked) and (radGroup.Checked) and (radAllItems.Checked));
+    QRBForBFooter.Enabled:= ((ckbGroupForB.Checked) and (radFAndB.Checked) and (radGroup.Checked) and (radAllItems.Checked));
+
+    QRGOutlet.Enabled:= ((ckbGroupOutlet.Checked) and (radAllOutlets.Checked) and (radGroup.Checked));
+    QRBOutletFooter.Enabled:= ((ckbGroupOutlet.Checked) and (radAllOutlets.Checked) and (radGroup.Checked));
+}  end;
+end;
+{*****************************************************************************}
+procedure TformQRPeople.bndTitleBeforePrint(Sender: TQRCustomBand; var PrintBand: Boolean);
+var
+  I: Integer;
+begin
+  lblTitle1.Caption:= Title1;
+  lblTitle2.Caption:= Title2;
+  lblTitle3.Caption:= Title3;
+
+  lblTitle3.Enabled:= False;
+  lblTitle4.Enabled:= False;
+  lblTitle5.Enabled:= False;
+  lblTitle6.Enabled:= False;
+
+  if (Title3ArrayCount <=1) then begin
+    I:= 0;
+  end
+  else begin
+    I:= 27 * (Title3ArrayCount - 1);
+  end;
+  lblName.Top:= 120 + I;
+  lblAddress.Top:= 120 + I;
+  lblSuburb.Top:= 120 + I;
+  lblCity.Top:= 120 + I;
+  lblPhone.Top:= 120 + I;
+  QRShape.Top:= 144 + I;
+  bndTitle.Height:= 150 + I;
+
+  I:= 0;
+  while ((I < 4) and (I < Title3ArrayCount)) do begin
+    case I of
+      0: begin
+        lblTitle3.Enabled:= True;
+        lblTitle3.Caption:= Title3Array[I];
+        lblTitle3.Top:= 84;
+      end;
+      1: begin
+        lblTitle4.Enabled:= True;
+        lblTitle4.Caption:= Title3Array[I];
+        lblTitle4.Top:= 111;
+      end;
+      2: begin
+        lblTitle5.Enabled:= True;
+        lblTitle5.Caption:= Title3Array[I];
+        lblTitle5.Top:= 138;
+      end;
+      3: begin
+        lblTitle6.Enabled:= True;
+        lblTitle6.Caption:= Title3Array[I];
+        lblTitle6.Top:= 165;
+      end;
+    end;
+    Inc(I);
+  end;
+
+  lblTime.Caption := Format(sPrinted,[FormatDateTime('ddd dd mmm yy hh:mm AM/PM',TheTime)]);
+end;
+{*****************************************************************************}
+procedure TformQRPeople.DetailBandBeforePrint(Sender: TQRCustomBand; var PrintBand: Boolean);
+var
+  MobileStr: String;
+  MobileCur: String;
+  I, Len: Integer;
+  DoneZeroes: Boolean;
+
+begin
+  with (WBCSV) do begin
+    if (Active) then begin
+      with DM.qrPeople do begin
+        SendString(FieldDataToString('surname', FDTString));
+        SendString(FieldDataToString('firstname', FDTString));
+        SendString(FieldDataToString('middlename', FDTString));
+        SendString(FieldDataToString('title', FDTString));
+        SendString(FieldDataToString('salutation', FDTString));
+        SendString(FieldDataToString('dob', FDTDate));
+        SendString(FieldDataToString('birthday', FDTInteger));
+        SendString(FieldDataToString('birthmonth', FDTInteger));
+        SendString(FieldDataToString('anniversary', FDTDate));
+        SendString(FieldDataToString('anniversaryday', FDTInteger));
+        SendString(FieldDataToString('anniversarymonth', FDTInteger));
+        SendString(FieldDataToString('address1', FDTString));
+        SendString(FieldDataToString('address2', FDTString));
+        SendString(FieldDataToString('address3', FDTString));
+        SendString(FieldDataToString('postcode', FDTString));
+        SendString(FieldDataToString('country', FDTString));
+        SendString(FieldDataToString('poaddress1', FDTString));
+        SendString(FieldDataToString('poaddress2', FDTString));
+        SendString(FieldDataToString('poaddress3', FDTString));
+        SendString(FieldDataToString('popostcode', FDTString));
+        SendString(FieldDataToString('pocountry', FDTString));
+        SendString(FieldDataToString('email', FDTString));
+        SendString(FieldDataToString('homeno', FDTString));
+        SendString(FieldDataToString('mobileno', FDTString));
+        SendString(FieldDataToString('workno', FDTString));
+        SendString(FieldDataToString('faxno', FDTString));
+        SendString(FieldDataToString('customer', FDTInteger));
+        SendString(FieldDataToString('vip', FDTInteger));
+        SendString(FieldDataToString('perorgid', FDTInteger));
+        SendString(FieldDataToString('whenupd', FDTDateTime));
+        SendString(FieldDataToString('whendeleted', FDTDateTime));
+
+        SendString(FieldDataToString('gender', FDTString));
+        SendString(FieldDataToString('hobbies', FDTString));
+        SendString(FieldDataToString('sports', FDTString));
+        SendString(FieldDataToString('music', FDTString));
+        SendString(FieldDataToString('favoriteitem', FDTString));
+        SendString(FieldDataToString('occupation', FDTString));
+        SendString(FieldDataToString('nationality', FDTString));
+        SendString(FieldDataToString('lastwheninvoiced', FDTDateTime));
+        SendString(FieldDataToString('optout', FDTInteger));
+
+        MobileStr:= '';
+        MobileCur:= FieldAsString(FieldByName('mobileno'), '');
+        Len:= Length(MobileCur);
+        DoneZeroes:= False;
+        for I:= 1 to Len do begin
+          if ((MobileCur[I] in ['1'..'9']) or
+              ((MobileCur[I] = '0') and (DoneZeroes))) then begin
+            MobileStr:= MobileStr + MobileCur[I];
+            DoneZeroes:= True;
+          end;
+        end;
+        if (MobileStr <> '') then begin
+          SendString(MobileStr + '@go2mobile.com');
+        end
+        else begin
+          SendEmpty(1);
+        end;
+        SendString(FieldDataToString('accountid', FDTInteger));
+        SendString(FieldDataToString('accountname', FDTString));
+        SendString(FieldDataToString('accountno', FDTInteger));
+        SendString(FieldDataToString('linkcode', FDTString));
+        SendString(FieldDataToString('cardcode', FDTString));
+        WriteLine;
+      end;
+    end;
+  end;
+end;
+{*****************************************************************************}
+procedure TformQRPeople.QRBSummaryBeforePrint(Sender: TQRCustomBand; var PrintBand: Boolean);
+begin
+  with (WBCSV) do begin
+    if (Active) then begin
+      //Close File cos we're done with it now
+      CloseFile;
+    end;
+  end;
+end;
+{*****************************************************************************}
+function TformQRPeople.FieldDataToString(FieldName: String; FieldDataType: TFieldDataType): String;
+begin
+  result:= '';
+  with DM.qrPeople do begin
+    if (not FieldByName(FieldName).IsNull) then begin
+      case FieldDataType of
+        FDTString: Result:= FieldByName(FieldName).AsString;
+        FDTInteger: Result:= IntToStr(FieldByName(FieldName).AsInteger);
+        FDTDate: Result:= FormatDateTime('dd-mmm-yyyy', FieldByName(FieldName).AsDateTime);
+        FDTDateTime: Result:= FormatDateTime('dd-mmm-yyyy  h:nn AM/PM', FieldByName(FieldName).AsDateTime);
+      end;
+    end;
+  end;
+end;
+{*****************************************************************************}
+
+end.
+
+
+
+
+==========================================================================================================
+
+
+
+
+unit UDM;
+{*****************************************************************************}
+interface
+{*****************************************************************************}
+uses
+  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
+  IBODataset, IB_Components, IB_Access, DB;
+{*****************************************************************************}
+procedure StringAsParam(Param: TParam; S: String);
+procedure IntegerAsParam(Param: TParam; I: Integer);
+procedure BoolAsParam(Param: TParam; B: Boolean);
+function  FieldAsString(Field: TField; const DefaultS: String): String;
+function  FieldAsInt(Field: TField; const DefaultI: Integer): Integer;
+function  FieldAsBool(Field: TField): Boolean;
 {******************************************************************************}
 type
   (**
-    Displays a list of todays Cash Sales for the user to select.
-    This is used by the Print Invoice button in the Cash Sales screen.
+    Datamodule for the reports program.
+    The Database, Query, and Datasource Components live here.
   *)
-  TformSelectCashSale = class(Tform)
-    pnlForm: TPanel;
-    pnlInner: TPanel;
-    pnlTitle: TPanel;
-    lblTitle: TLabel;
-    pnlTitleIcon: TPanel;
-    imgTitle: TImage;
-    lstCashSales: TIB_LookupList;
-    pnlButtonsRight: TPanel;
-    cmdCancelDes: TSpeedButton;
-    cmdPrintReceipt: TSpeedButton;
-    pnlButtonsFooter: TPanel;
-    cmdSelectStaff: TSpeedButton;
-    chkStaff: TCheckBox;
-    chkTerminal: TCheckBox;
-    cmdSelectTerminal: TSpeedButton;
-    pnlGrid: TPanel;
-    pnlGridInner: TPanel;
-    pnlGridControls: TPanel;
-    pnlControls: TPanel;
-    cmdDownDes: TSpeedButton;
-    cmdUpDes: TSpeedButton;
-    pnlReceipt: TPanel;
-    pnlReceiptInner: TPanel;
-    Receipt: TframeReceipt;
-    pnlReceiptControls: TPanel;
-    pnlReceiptPrint: TPanel;
-    pnlReceiptUpDown: TPanel;
-    cmdReceiptDownDes: TSpeedButton;
-    cmdReceiptUpDes: TSpeedButton;
-    pnlReceiptSpacer: TPanel;
-    pnlReceiptOuter: TPanel;
-    // LanguageTranslator: TIvTranslator;  //Multilizer 12/2022
-    cmdInvoiceNoSaleDes: TSpeedButton;
-    procedure FormCreate(Sender: TObject);
-    procedure lstCashSalesCellClick(Sender: TObject; ACol, ARow: Integer; AButton: TMouseButton; AShift: TShiftState);
-    procedure cmdCancelClick(Sender: TObject);
-    procedure cmdUpClick(Sender: TObject);
-    procedure cmdDownClick(Sender: TObject);
-    procedure FormShow(Sender: TObject);
-    procedure cmdPrintReceiptClick(Sender: TObject);
-    procedure cmbStaffChange(Sender: TObject);
-    procedure cmbTerminalChange(Sender: TObject);
-    procedure cmdReceiptUpClick(Sender: TObject);
-    procedure cmdReceiptDownClick(Sender: TObject);
-    procedure chkStaffClick(Sender: TObject);
-    procedure cmdInvoiceNoSaleDesClick(Sender: TObject);
-  private
-    FReceiptWidth: Integer;
-    FReceiptActive: Boolean;
-    FGridWidth: Integer;
-    FGridActive: Boolean;
-    FInvoiceID: Integer;
-    FInvoiceType: string;
-    FStaffID: Integer;
-    FTerminalID: Integer;
-    FTabInvoices: Boolean;
-    FLastCashSale: Boolean;
-    FLastReceipt: Boolean;
-    FQuickHide: Boolean;
-    FShowingInvoices: Boolean;
+  Tdm = class(TDataModule)
+    TheDB: TIBODatabase;
+    qrSales: TIBOQuery;
+    dsSales: TDataSource;
+    dsItemGroups: TDataSource;
+    qrOutlets: TIBOQuery;
+    dsOutlets: TDataSource;
+    qrAccounts: TIBOQuery;
+    dsAccounts: TDataSource;
+    qrAccountSales: TIBOQuery;
+    dsAccountSales: TDataSource;
+    qrAccountPEs: TIBOQuery;
+    dsAccountPEs: TDataSource;
+    qrAccountsACCOUNTID: TIntegerField;
+    qrAccountsACCOUNTTYPE: TStringField;
+    qrAccountsACCOUNTNAME: TStringField;
+    qrAccountsWHENCLOSED: TDateTimeField;
+    qrAccountSalesITEMGROUPID: TSmallintField;
+    qrAccountSalesITEMGROUPABBREV: TStringField;
+    qrAccountSalesITEMID: TIntegerField;
+    qrAccountSalesITEMABBREV: TStringField;
+    qrAccountSalesITEMGROUPORDER: TSmallintField;
+    qrAccountSalesITEMORDER: TSmallintField;
+    qrAccountSalesFORB: TStringField;
+    qrStaff: TIBOQuery;
+    dsStaff: TDataSource;
+    qrStaffSTAFFID: TSmallintField;
+    qrStaffSTAFFNAME: TStringField;
+    qrStaffWHENEND: TDateTimeField;
+    qrStaffWHENBEGIN: TDateTimeField;
+    qrStaffSURNAME: TStringField;
+    qrStaffFIRSTNAME: TStringField;
+    qrAccountSalesOUTLETNAME: TStringField;
+    qrOrders: TIBOQuery;
+    dsOrders: TDataSource;
+    qrOrdersOutlet: TStringField;
+    qrVoidLines: TIBOQuery;
+    dsVoidLines: TDataSource;
+    qrAccountSalesWHENDELETED: TDateTimeField;
+    qrAllStaffOrders: TIBOQuery;
+    dsAllStaffOrders: TDataSource;
+    qrAllStaffOrdersOUTLETNAME: TStringField;
+    qrAllStaffOrdersSTAFFID: TIntegerField;
+    qrAllStaffOrdersSTAFFNAME: TStringField;
+    qrAllStaffOrdersFORB: TStringField;
+    qrAllStaffOrdersITEMGROUPID: TSmallintField;
+    qrAllStaffOrdersITEMGROUPABBREV: TStringField;
+    qrAllStaffOrdersITEMID: TIntegerField;
+    qrAllStaffOrdersITEMABBREV: TStringField;
+    qrAllStaffOrdersITEMGROUPORDER: TSmallintField;
+    qrAllStaffOrdersITEMORDER: TSmallintField;
+    qrAccountSalesOutlet: TStringField;
+    qrAccountSalesACCOUNTID: TIntegerField;
+    qrAccountSalesACCOUNTNAME: TStringField;
+    qrTerminalSales: TIBOQuery;
+    dsTerminalSales: TDataSource;
+    qrTerminals: TIBOQuery;
+    dsTerminals: TDataSource;
+    qrTerminalsTERMINALID: TSmallintField;
+    qrTerminalsTERMINALNAME: TStringField;
+    qrTerminalsWANAME: TStringField;
+    qrTerminalsOUTLETNAME: TStringField;
+    qrTerminalsWHENDELETED: TDateTimeField;
+    qrMenuItems: TIBOQuery;
+    dsMenuItems: TDataSource;
+    qrMenuItemsITEMID: TIntegerField;
+    qrMenuItemsOUTLETID: TIntegerField;
+    qrMenuItemsOUTLETNAME: TStringField;
+    qrMenuItemsITEMABBREV: TStringField;
+    qrMenuItemsITEMGROUPNAME: TStringField;
+    qrMenuItemsITEMGROUPABBREV: TStringField;
+    qrMenuItemsFORB: TStringField;
+    dsPeople: TDataSource;
+    qrPeople: TIBOQuery;
+    qrPeoplePERORGID: TIntegerField;
+    qrModifiers: TIBOQuery;
+    dsModifiers: TDataSource;
+    qrModifiersMODIFIERID: TSmallintField;
+    qrModifiersOUTLETID: TSmallintField;
+    qrModifiersFORB: TStringField;
+    qrModifiersMODIFIERORDER: TSmallintField;
+    qrModifiersMODIFIER: TStringField;
+    qrModifiersOUTLETNAME: TStringField;
+    qrSalesHistory: TIBOQuery;
+    dsSalesHistory: TDataSource;
+    qrStaffSales: TIBOQuery;
+    dsStaffSales: TDataSource;
+    qrStaffSalesITEMID: TIntegerField;
+    qrStaffSalesITEMABBREV: TStringField;
+    qrStaffSalesWHENDELETED: TDateTimeField;
+    qrStaffSalesITEMORDER: TSmallintField;
+    qrStaffSalesFORB: TStringField;
+    qrStaffSalesITEMGROUPID: TSmallintField;
+    qrStaffSalesITEMGROUPABBREV: TStringField;
+    qrStaffSalesITEMGROUPORDER: TSmallintField;
+    qrStaffSalesOUTLETNAME: TStringField;
+    qrStaffSalesSTAFFID: TSmallintField;
+    qrStaffSalesSTAFFNAME: TStringField;
+    qrSaleCategorySales: TIBOQuery;
+    dsSaleCategorySales: TDataSource;
+    qrSaleCategorySalesITEMID: TIntegerField;
+    qrSaleCategorySalesITEMABBREV: TStringField;
+    qrSaleCategorySalesWHENDELETED: TDateTimeField;
+    qrSaleCategorySalesITEMORDER: TSmallintField;
+    qrSaleCategorySalesFORB: TStringField;
+    qrSaleCategorySalesITEMGROUPID: TSmallintField;
+    qrSaleCategorySalesITEMGROUPABBREV: TStringField;
+    qrSaleCategorySalesITEMGROUPORDER: TSmallintField;
+    qrSaleCategorySalesOUTLETNAME: TStringField;
+    qrSaleCategorySalesSALECATEGORYID: TIntegerField;
+    qrSaleCategorySalesSALECATEGORY: TStringField;
+    qrSectionSales: TIBOQuery;
+    dsSectionSales: TDataSource;                 
+    qrSectionSalesITEMID: TIntegerField;
+    qrSectionSalesITEMABBREV: TStringField;
+    qrSectionSalesWHENDELETED: TDateTimeField;
+    qrSectionSalesITEMORDER: TSmallintField;
+    qrSectionSalesFORB: TStringField;
+    qrSectionSalesITEMGROUPID: TSmallintField;
+    qrSectionSalesITEMGROUPABBREV: TStringField;
+    qrSectionSalesITEMGROUPORDER: TSmallintField;
+    qrSectionSalesOUTLETNAME: TStringField;
+    qrSectionSalesSECTIONID: TIntegerField;
+    qrSectionSalesSECTION: TStringField;
+    qrSaleCategories: TIBOQuery;
+    dsSaleCategories: TDataSource;
+    qrSaleCategoriesSALECATEGORY: TStringField;
+    qrSaleCategoriesWHENDELETED: TDateTimeField;
+    qrSaleCategoriesSALECATEGORYID: TSmallintField;
+    qrCashTotals: TIBOQuery;
+    dsCashTotals: TDataSource;
+    qrCashTotalsCASHUPID: TIntegerField;
+    qrCashTotalsOUTLETID: TSmallintField;
+    qrCashTotalsOUTLETNAME: TStringField;
+    qrCashTotalsTILLID: TSmallintField;
+    qrCashTotalsTILLNAME: TStringField;
+    qrCashTotalsWHENFROM: TDateTimeField;
+    qrCashTotalsWHENCASHEDUP: TDateTimeField;
+    qrCashTotalsTENDERLINETYPEID: TSmallintField;
+    qrCashTotalsTENDERLINETYPE: TStringField;
+    qrCashTotalsTENDERLINETYPEORDER: TSmallintField;
+    qrCashTotalsONACCOUNT: TIBOFloatField;
+    qrAccountSalesSUPERITEMGROUPID: TSmallintField;
+    qrAccountSalesSUPERITEMGROUP: TStringField;
+    qrAccountSalesSUPERITEMGROUPABBREV: TStringField;
+    qrAccountSalesSUPERITEMGROUPORDER: TSmallintField;
+    qrAccountSalesHIDEFORB: TSmallintField;
+    qrTerminalSalesITEMID: TIntegerField;
+    qrTerminalSalesITEMABBREV: TStringField;
+    qrTerminalSalesWHENDELETED: TDateTimeField;
+    qrTerminalSalesITEMORDER: TSmallintField;
+    qrTerminalSalesFORB: TStringField;
+    qrTerminalSalesITEMGROUPID: TSmallintField;
+    qrTerminalSalesITEMGROUPABBREV: TStringField;
+    qrTerminalSalesITEMGROUPORDER: TSmallintField;
+    qrTerminalSalesOUTLETNAME: TStringField;
+    qrTerminalSalesTERMINALID: TIntegerField;
+    qrTerminalSalesTERMINALNAME: TStringField;
+    qrTerminalSalesSUPERITEMGROUPID: TSmallintField;
+    qrTerminalSalesSUPERITEMGROUP: TStringField;
+    qrTerminalSalesSUPERITEMGROUPABBREV: TStringField;
+    qrTerminalSalesSUPERITEMGROUPORDER: TSmallintField;
+    qrTerminalSalesHIDEFORB: TSmallintField;
+    qrStaffSalesSUPERITEMGROUPID: TSmallintField;
+    qrStaffSalesSUPERITEMGROUP: TStringField;
+    qrStaffSalesSUPERITEMGROUPABBREV: TStringField;
+    qrStaffSalesSUPERITEMGROUPORDER: TSmallintField;
+    qrStaffSalesHIDEFORB: TSmallintField;
+    qrSaleCategorySalesSUPERITEMGROUPID: TSmallintField;
+    qrSaleCategorySalesSUPERITEMGROUP: TStringField;
+    qrSaleCategorySalesSUPERITEMGROUPABBREV: TStringField;
+    qrSaleCategorySalesSUPERITEMGROUPORDER: TSmallintField;
+    qrSaleCategorySalesHIDEFORB: TSmallintField; 
+    qrSectionSalesSUPERITEMGROUPID: TSmallintField;
+    qrSectionSalesSUPERITEMGROUP: TStringField;
+    qrSectionSalesSUPERITEMGROUPABBREV: TStringField;
+    qrSectionSalesSUPERITEMGROUPORDER: TSmallintField;
+    qrSectionSalesHIDEFORB: TSmallintField;
+    qrAllStaffOrdersSUPERITEMGROUPID: TSmallintField;
+    qrAllStaffOrdersSUPERITEMGROUP: TStringField;
+    qrAllStaffOrdersSUPERITEMGROUPABBREV: TStringField;
+    qrAllStaffOrdersSUPERITEMGROUPORDER: TSmallintField;
+    qrAllStaffOrdersHIDEFORB: TSmallintField;
+    qrMenuItemsSUPERITEMGROUPID: TSmallintField;
+    qrMenuItemsSUPERITEMGROUP: TStringField;
+    qrMenuItemsSUPERITEMGROUPABBREV: TStringField;
+    qrMenuItemsSUPERITEMGROUPORDER: TSmallintField;
+    qrMenuItemsHIDEFORB: TSmallintField;
+    qrSalesByDate: TIBOQuery;
+    dsSalesByDate: TDataSource;
+    qrSalesByDateSTARTTIME: TDateTimeField;
+    qrSalesByDateENDTIME: TDateTimeField;
+    qrSalesByDateOUTLETNAME: TStringField;
+    qrSalesByDateSUPERITEMGROUPID: TSmallintField;
+    qrSalesByDateSUPERITEMGROUP: TStringField;
+    qrSalesByDateSUPERITEMGROUPABBREV: TStringField;
+    qrSalesByDateSUPERITEMGROUPORDER: TSmallintField;
+    qrSalesByDateHIDEFORB: TSmallintField;
+    qrSalesByDateFORB: TStringField;
+    qrSalesByDatePLEVEL1: TIBOFloatField;
+    qrSalesByDatePLEVEL2: TIBOFloatField;
+    qrSalesByDatePLEVEL3: TIBOFloatField;
+    qrSalesByDatePLEVEL4: TIBOFloatField;
+    qrSalesByDatePLEVEL5: TIBOFloatField;
+    qrSalesByDatePLEVEL6: TIBOFloatField;
+    qrAccountPETrans: TIBOQuery;
+    dsAccountPETrans: TDataSource;
+    qrAccountPETransPERIODENDID: TIntegerField;
+    qrAccountPETransACCOUNTID: TIntegerField;
+    qrAccountPETransACCOUNTNAME: TStringField;
+    qrAccountPETransACCOUNTTYPEID: TSmallintField;
+    qrAccountPETransACCOUNTTYPE: TStringField;
+    qrAccountPETransPERSONNAME: TStringField;
+    qrAccountPETransCOUNTRY: TStringField;
+    qrAccountPETransWHENBEGIN: TDateTimeField;
+    qrAccountPETransWHENEND: TDateTimeField;
+    qrAccountPETransTRANSACTIONDATE: TDateTimeField;
+    qrAccountPETransTRANSTYPE: TStringField;
+    qrAccountPETransTRANSREF: TIntegerField;
+    qrAccountPETransINVOICED: TIBOFloatField;
+    qrAccountPEsPERIODENDID: TIntegerField;
+    qrAccountPEsWHENUPD: TDateTimeField;
+    qrAccountPEsACCOUNTTYPE: TStringField;
+    qrAccountTypes: TIBOQuery;
+    dsAccountTypes: TDataSource;
+    qrAccountTypesACCOUNTTYPEID: TSmallintField;
+    qrAccountTypesACCOUNTTYPE: TStringField;
+    qrClockIns: TIBOQuery;
+    dsClockIns: TDataSource;
+    qrClockInsCLOCKINID: TIntegerField;
+    qrClockInsSTAFFID: TSmallintField;
+    qrClockInsSTAFFNAME: TStringField;
+    qrClockInsLOGINID: TIntegerField;
+    qrClockInsWHENEDITED: TDateTimeField;
+    qrClockInsWHOEDITED: TStringField;
+    qrClockInsWHEREEDITED: TStringField;
+    qrClockInsCLOCKINTIME: TDateTimeField;
+    qrClockInsCLOCKOUTTIME: TDateTimeField;
+    qrClockInsWHENCLOCKINTIME: TDateTimeField;
+    qrClockInsWHOCLOCKIN: TIntegerField;
+    qrClockInsWHOCLOCKINSTAFF: TStringField;
+    qrClockInsWHERECLOCKINSTAFF: TStringField;
+    qrClockInsWHENCLOCKOUTTIME: TDateTimeField;
+    qrClockInsWHOCLOCKOUT: TIntegerField;
+    qrClockInsWHOCLOCKOUTSTAFF: TStringField;
+    qrClockInsWHERECLOCKOUTSTAFF: TStringField;
+    qrClockInsSTAFFPIN: TSmallintField;
+    qrVoidLinesOutlet: TStringField;
+    qrCourses: TIBOQuery;
+    dsCourses: TDataSource;
+    qrCoursesCOURSEID: TSmallintField;
+    qrCoursesCOURSE: TStringField;
+    qrCoursesWHENDELETED: TDateTimeField;
+    qrCourseSales: TIBOQuery;
+    dsCourseSales: TDataSource;
+    qrCourseSalesITEMID: TIntegerField;
+    qrCourseSalesITEMABBREV: TStringField;
+    qrCourseSalesWHENDELETED: TDateTimeField;
+    qrCourseSalesITEMORDER: TSmallintField;
+    qrCourseSalesFORB: TStringField;
+    qrCourseSalesITEMGROUPID: TSmallintField;
+    qrCourseSalesITEMGROUPABBREV: TStringField;
+    qrCourseSalesITEMGROUPORDER: TSmallintField;
+    qrCourseSalesOUTLETNAME: TStringField;
+    qrCourseSalesCOURSEID: TSmallintField;
+    qrCourseSalesCOURSE: TStringField;
+    qrCourseSalesSUPERITEMGROUPID: TSmallintField;
+    qrCourseSalesSUPERITEMGROUP: TStringField;
+    qrCourseSalesSUPERITEMGROUPABBREV: TStringField;
+    qrCourseSalesSUPERITEMGROUPORDER: TSmallintField;
+    qrCourseSalesHIDEFORB: TSmallintField;
+    qrModifiersLINKCODE: TStringField;
+    qrMenuItemsLINKCODE: TStringField;
+    qrStaffTips: TIBOQuery;
+    dsStaffTips: TDataSource;
+    qrNoSales: TIBOQuery;
+    dsNoSales: TDataSource;
+    qrNoSalesTENDERID: TIntegerField;
+    qrNoSalesTENDERNO: TIntegerField;
+    qrNoSalesOUTLETID: TSmallintField;
+    qrNoSalesOUTLETNAME: TStringField;
+    qrNoSalesSTAFFID: TSmallintField;
+    qrNoSalesSTAFFNAME: TStringField;
+    qrNoSalesWHENTENDERED: TDateTimeField;
+    qrNoSalesTILLID: TSmallintField;
+    qrNoSalesTILLNAME: TStringField;
+    qrNoSalesTERMINALID: TSmallintField;
+    qrNoSalesTERMINALNAME: TStringField;
+    qrNoSalesNOSALETYPEID: TSmallintField;
+    qrNoSalesNOSALETYPE: TStringField;
+    qrNoSalesNOSALENOTES: TStringField;
+    qrNoSalesCASHUPID: TSmallintField;
+    qrNoSalesACCOUNTID: TIntegerField;
+    qrNoSalesACCOUNTNAME: TStringField;
+    qrTerminalSalesSALESTAX: TIBOFloatField;
+    qrClockInsLINKCODE: TStringField;
+    qrStaffTipsTENDERID: TIntegerField;
+    qrStaffTipsWHENTENDERED: TDateTimeField;
+    qrStaffTipsTENDERLINEID: TIntegerField;
+    qrStaffTipsTENDERLINETYPEID: TSmallintField;
+    qrStaffTipsTENDERLINETYPE: TStringField;
+    qrStaffTipsOUTLETID: TSmallintField;
+    qrStaffTipsOUTLETNAME: TStringField;
+    qrStaffTipsSTAFFID: TSmallintField;
+    qrStaffTipsSTAFFNAME: TStringField;
+    qrStaffTipsSTAFFNO: TSmallintField;
+    qrStaffTipsGROUPID: TIntegerField;
+    qrStaffTipsGROUPNAME: TStringField;
+    qrStaffTipsTABLENO: TSmallintField;
+    qrStaffTipsTILLID: TSmallintField;
+    qrStaffTipsTILLNAME: TStringField;
+    qrClockInsPERSONNAME: TStringField;
+    qrRemoteLocations: TIBOQuery;
+    qrRemoteLocationsREMOTELOCATIONID: TSmallintField;
+    qrRemoteLocationsREMOTELOCATIONNAME: TStringField;
+    qrCourseSalesOUTLETID: TSmallintField;
+    qrSaleCategorySalesOUTLETID: TSmallintField;
+    qrSectionSalesOUTLETID: TSmallintField;
+    qrStaffSalesOUTLETID: TSmallintField;
+    qrTerminalSalesOUTLETID: TSmallintField;
+    qrSalesByDateOUTLETID: TSmallintField;
+    qrAllStaffOrdersOUTLETID: TSmallintField;
+    qrAccountsForPeriod: TIBOQuery;
+    qrInvocesForAccount: TIBOQuery;
+    qrItemTotalForAccountDay: TIBOQuery;
+    dsAccountsForPeriod: TDataSource;
+    qrAccountSalesOUTLETID: TSmallintField;
+    qrAccountSalesREMOTELOCATIONID: TSmallintField;
+    qrAccountSalesREMOTELOCATIONNAME: TStringField;
+    qrTerminalSalesREMOTELOCATIONID: TSmallintField;
+    qrTerminalSalesREMOTELOCATIONNAME: TStringField;
+    qrTills: TIBOQuery;
+    dsTills: TDataSource;
+    qrTillsTILLID: TSmallintField;
+    qrTillsTILLNAME: TStringField;
+    qrTillsWANAME: TStringField;
+    qrTillsOUTLETNAME: TStringField;
+    qrTillsWHENDELETED: TDateTimeField;
+    qrTillSales: TIBOQuery;
+    dsTillSales: TDataSource;
+    qrTillSalesITEMID: TIntegerField;
+    qrTillSalesITEMABBREV: TStringField;
+    qrTillSalesWHENDELETED: TDateTimeField;
+    qrTillSalesITEMORDER: TSmallintField;
+    qrTillSalesFORB: TStringField;
+    qrTillSalesITEMGROUPID: TSmallintField;
+    qrTillSalesITEMGROUPABBREV: TStringField;
+    qrTillSalesITEMGROUPORDER: TSmallintField;
+    qrTillSalesOUTLETID: TSmallintField;
+    qrTillSalesOUTLETNAME: TStringField;
+    qrTillSalesTILLID: TIntegerField;
+    qrTillSalesTILLNAME: TStringField;
+    qrTillSalesSUPERITEMGROUPID: TSmallintField;
+    qrTillSalesSUPERITEMGROUP: TStringField;
+    qrTillSalesSUPERITEMGROUPABBREV: TStringField;
+    qrTillSalesSUPERITEMGROUPORDER: TSmallintField;
+    qrTillSalesHIDEFORB: TSmallintField;
+    qrTillSalesREMOTELOCATIONID: TSmallintField;
+    qrTillSalesREMOTELOCATIONNAME: TStringField;
+    qrDiscountSchemes: TIBOQuery;
+    dsDiscountSchemes: TDataSource;
+    qrDiscountSchemesDISCOUNTSCHEMEID: TSmallintField;
+    qrDiscountSchemesDISCOUNTSCHEMENAME: TStringField;
+    qrDiscountSchemesWHENDELETED: TDateTimeField;
+    qrDiscountSchemeSales: TIBOQuery;
+    dsDiscountSchemeSales: TDataSource;
+    qrDiscountSchemeSalesITEMID: TIntegerField;
+    qrDiscountSchemeSalesITEMABBREV: TStringField;
+    qrDiscountSchemeSalesWHENDELETED: TDateTimeField;
+    qrDiscountSchemeSalesITEMORDER: TSmallintField;
+    qrDiscountSchemeSalesFORB: TStringField;
+    qrDiscountSchemeSalesITEMGROUPID: TSmallintField;
+    qrDiscountSchemeSalesITEMGROUPABBREV: TStringField;
+    qrDiscountSchemeSalesITEMGROUPORDER: TSmallintField;
+    qrDiscountSchemeSalesOUTLETID: TSmallintField;
+    qrDiscountSchemeSalesOUTLETNAME: TStringField;
+    qrDiscountSchemeSalesDISCOUNTSCHEMEID: TSmallintField;
+    qrDiscountSchemeSalesDISCOUNTSCHEMENAME: TStringField;
+    qrDiscountSchemeSalesSUPERITEMGROUPID: TSmallintField;
+    qrDiscountSchemeSalesSUPERITEMGROUP: TStringField;
+    qrDiscountSchemeSalesSUPERITEMGROUPABBREV: TStringField;
+    qrDiscountSchemeSalesSUPERITEMGROUPORDER: TSmallintField;
+    qrDiscountSchemeSalesHIDEFORB: TSmallintField;
+    qrDiscountSchemeSalesREMOTELOCATIONID: TSmallintField;
+    qrDiscountSchemeSalesREMOTELOCATIONNAME: TStringField;
+    qrCourseSalesREMOTELOCATIONID: TSmallintField;
+    qrCourseSalesREMOTELOCATIONNAME: TStringField;
+    qrSaleCategorySalesREMOTELOCATIONID: TSmallintField;
+    qrSaleCategorySalesREMOTELOCATIONNAME: TStringField;
+    qrSectionSalesREMOTELOCATIONID: TSmallintField;
+    qrSectionSalesREMOTELOCATIONNAME: TStringField;
+    qrStaffSalesREMOTELOCATIONID: TSmallintField;
+    qrStaffSalesREMOTELOCATIONNAME: TStringField;
+    qrSalesByDateREMOTELOCATIONID: TSmallintField;
+    qrSalesByDateREMOTELOCATIONNAME: TStringField;
+    qrCashTotalsREMOTELOCATIONID: TSmallintField;
+    qrCashTotalsREMOTELOCATIONNAME: TStringField;
+    qrClockInsREMOTELOCATIONID: TSmallintField;
+    qrClockInsREMOTELOCATIONNAME: TStringField;
+    dsItemModSales: TDataSource;
+    qrItemModSales: TIBOQuery;
+    qrItemModSalesITEMID: TIntegerField;
+    qrItemModSalesITEMABBREV: TStringField;
+    qrItemModSalesWHENDELETED: TDateTimeField;
+    qrItemModSalesITEMORDER: TSmallintField;
+    qrItemModSalesFORB: TStringField;
+    qrItemModSalesITEMGROUPID: TSmallintField;
+    qrItemModSalesITEMGROUPABBREV: TStringField;
+    qrItemModSalesITEMGROUPORDER: TSmallintField;
+    qrItemModSalesOUTLETID: TSmallintField;
+    qrItemModSalesOUTLETNAME: TStringField;
+    qrItemModSalesMODIFIERID: TSmallintField;
+    qrItemModSalesMODIFIER: TStringField;
+    qrItemModSalesSUPERITEMGROUPID: TSmallintField;
+    qrItemModSalesSUPERITEMGROUP: TStringField;
+    qrItemModSalesSUPERITEMGROUPABBREV: TStringField;
+    qrItemModSalesSUPERITEMGROUPORDER: TSmallintField;
+    qrItemModSalesHIDEFORB: TSmallintField;
+    qrItemModSalesREMOTELOCATIONID: TSmallintField;
+    qrItemModSalesREMOTELOCATIONNAME: TStringField;
+    qrModGroups: TIBOQuery;
+    dsModGroups: TDataSource;
+    qrModGroupsMODGROUPID: TSmallintField;
+    qrModGroupsMODGROUP: TStringField;
+    qrModGroupsFORB: TStringField;
+    qrModGroupsOUTLETNAME: TStringField;
+    qrModGroupsWHENDELETED: TDateTimeField;
+    qrItemModSalesMODGROUPID: TSmallintField;
+    qrItemModSalesMODGROUP: TStringField;
+    qrModifiersREMOTELOCATIONID: TSmallintField;
+    qrModifiersREMOTELOCATIONNAME: TStringField;
+    qrNoSalesREMOTELOCATIONID: TSmallintField;
+    qrNoSalesREMOTELOCATIONNAME: TStringField;
+    qrStaffTipsREMOTELOCATIONID: TSmallintField;
+    qrStaffTipsREMOTELOCATIONNAME: TStringField;
+    qrStaffTipsTENDERLINEAMOUNT: TIBOFloatField;
+    qrStaffTipsTENDERLINETIP: TIBOFloatField;
+    qrAllStaffOrdersREMOTELOCATIONID: TSmallintField;
+    qrAllStaffOrdersREMOTELOCATIONNAME: TStringField;
+    qrModItems: TIBOQuery;
+    dsModItems: TDataSource;
+    qrModItemsMODIFIERID: TSmallintField;
+    qrModItemsITEMID: TSmallintField;
+    qrModItemsITEMGROUPID: TSmallintField;
+    qrModItemsOUTLETID: TSmallintField;
+    qrModItemsREMOTELOCATIONID: TSmallintField;
+    qrModItemsFORB: TStringField;
+    qrModItemsMODIFIERORDER: TSmallintField;
+    qrModItemsMODIFIER: TStringField;
+    qrModItemsITEMORDER: TSmallintField;
+    qrModItemsITEMABBREV: TStringField;
+    qrModItemsITEMGROUPORDER: TSmallintField;
+    qrModItemsITEMGROUPABBREV: TStringField;
+    qrModItemsOUTLETNAME: TStringField;
+    qrModItemsREMOTELOCATIONNAME: TStringField;
+    qrModItemsLINKCODE: TStringField;
+    qrSys: TIBOQuery;
+    qrSysCURRENCYTYPE: TStringField;
+    qrOrdersbumped: TIBOQuery;
+    qrOrdersbumpedOUTLETID: TSmallintField;
+    qrOrdersbumpedOUTLETNAME: TStringField;
+    qrOrdersbumpedORDERID: TIntegerField;
+    qrOrdersbumpedORDERLINEID: TIntegerField;
+    qrOrdersbumpedFORB: TStringField;
+    qrOrdersbumpedITEMGROUPID: TSmallintField;
+    qrOrdersbumpedITEMGROUPABBREV: TStringField;
+    qrOrdersbumpedITEMID: TIntegerField;
+    qrOrdersbumpedCOURSEID: TSmallintField;
+    qrOrdersbumpedITEMABBREV: TStringField;
+    qrOrdersbumpedITEMGROUPORDER: TSmallintField;
+    qrOrdersbumpedITEMORDER: TSmallintField;
+    qrOrdersbumpedSUPERITEMGROUPID: TSmallintField;
+    qrOrdersbumpedSUPERITEMGROUP: TStringField;
+    qrOrdersbumpedSUPERITEMGROUPABBREV: TStringField;
+    qrOrdersbumpedSUPERITEMGROUPORDER: TSmallintField;
+    qrOrdersbumpedSUPERITEMGRPHIDEFORB: TSmallintField;
+    qrOrdersbumpedWHENORDERED: TDateTimeField;
+    qrOrdersbumpedWHENSTARTED: TDateTimeField;
+    qrOrdersbumpedWHENBUMPED: TDateTimeField;
+    qrOrdersbumpedSTOCK: TSmallintField;
+    qrOrdersbumpedCOURSE: TStringField;
+    qrPeopleSURNAME: TStringField;
+    qrPeopleFIRSTNAME: TStringField;
+    qrPeopleMIDDLENAME: TStringField;
+    qrPeopleTITLE: TStringField;
+    qrPeopleSALUTATION: TStringField;
+    qrPeopleTAXNUMBER: TStringField;
+    qrPeopleWHENUPD: TDateTimeField;
+    qrPeopleWHENDELETED: TDateTimeField;
+    qrPeopleSTAFFNAME: TStringField;
+    qrPeopleTERMINALNAME: TStringField;
+    qrPeopleADDRESS1: TStringField;
+    qrPeopleADDRESS2: TStringField;
+    qrPeopleADDRESS3: TStringField;
+    qrPeoplePOSTCODE: TStringField;
+    qrPeopleCOUNTRY: TStringField;
+    qrPeoplePOADDRESS1: TStringField;
+    qrPeoplePOADDRESS2: TStringField;
+    qrPeoplePOADDRESS3: TStringField;
+    qrPeoplePOPOSTCODE: TStringField;
+    qrPeoplePOCOUNTRY: TStringField;
+    qrPeopleWORKNO: TStringField;
+    qrPeopleFAXNO: TStringField;
+    qrPeopleEMAIL: TStringField;
+    qrPeopleNOTES: TMemoField;
+    qrPeopleDOB: TDateTimeField;
+    qrPeopleBIRTHDAY: TSmallintField;
+    qrPeopleBIRTHMONTH: TSmallintField;
+    qrPeopleHOMENO: TStringField;
+    qrPeopleMOBILENO: TStringField;
+    qrPeopleANNIVERSARY: TDateTimeField;
+    qrPeopleANNIVERSARYDAY: TSmallintField;
+    qrPeopleANNIVERSARYMONTH: TSmallintField;
+    qrPeopleVIP: TSmallintField;
+    qrPeopleVIPSTR: TStringField;
+    qrPeopleCUSTOMER: TSmallintField;
+    qrPeopleCUSTOMERSTR: TStringField;
+    qrPeopleGENDER: TStringField;
+    qrPeopleHOBBIES: TStringField;
+    qrPeopleSPORTS: TStringField;
+    qrPeopleMUSIC: TStringField;
+    qrPeopleFAVORITEITEM: TStringField;
+    qrPeopleOCCUPATION: TStringField;
+    qrPeopleNATIONALITY: TStringField;
+    qrPeopleOPTOUT: TSmallintField;
+    qrPeopleLASTWHENINVOICED: TDateTimeField;
+    qrPeopleACCOUNTID: TIntegerField;
+    qrPeopleACCOUNTNAME: TStringField;
+    qrPeopleACCOUNTNO: TIntegerField;
+    qrPeopleACCOUNTTYPEID: TSmallintField;
+    qrPeopleLINKCODE: TStringField;
+    qrAccountPETransADDRESS1: TStringField;
+    qrAccountPETransADDRESS2: TStringField;
+    qrAccountPETransADDRESS3: TStringField;
+    qrAccountPETransPOSTCODE: TStringField;
+    qrSysSTARTHOUR: TSmallintField;
+    qrSalePeriodSales: TIBOQuery;
+    dsSalePeriodSales: TDataSource;
+    qrSalePeriods: TIBOQuery;
+    dsSalePeriods: TDataSource;
+    qrSalePeriodsTIMEPERIODID: TSmallintField;
+    qrSalePeriodsTIMEPERIODNAME: TStringField;
+    qrOutletsOUTLETID: TSmallintField;
+    qrOutletsOUTLETNAME: TStringField;
+    qrOutletsOUTLETADDRESS: TStringField;
+    qrOutletsOUTLETPHONE: TStringField;
+    qrOutletsOUTLETFAX: TStringField;
+    qrOutletsTAXNUMBER: TStringField;
+    qrOutletsTAXNUMBERNAME: TStringField;
+    qrSalesITEMID: TIntegerField;
+    qrSalesAMOUNTSOLD: TIBOFloatField;
+    qrSalesGROSSSOLD: TIBOFloatField;
+    qrSalesSALESTAX: TIBOFloatField;
+    qrSalesDISCOUNT: TIBOFloatField;
+    qrSalesAVERAGEUNITPRICE: TIBOFloatField;
+    qrSalesNETTSOLD: TIBOFloatField;
+    qrSalesITEMABBREV: TStringField;
+    qrSalesWHENDELETED: TDateTimeField;
+    qrSalesITEMORDER: TSmallintField;
+    qrSalesFORB: TStringField;
+    qrSalesITEMGROUPID: TSmallintField;
+    qrSalesITEMGROUPABBREV: TStringField;
+    qrSalesITEMGROUPORDER: TSmallintField;
+    qrSalesOUTLETID: TSmallintField;
+    qrSalesOUTLETNAME: TStringField;
+    qrSalesPLEVEL1: TIBOFloatField;
+    qrSalesPLEVEL2: TIBOFloatField;
+    qrSalesPLEVEL3: TIBOFloatField;
+    qrSalesPLEVEL4: TIBOFloatField;
+    qrSalesPLEVEL5: TIBOFloatField;
+    qrSalesPLEVEL6: TIBOFloatField;
+    qrSalesSUPERITEMGROUPID: TSmallintField;
+    qrSalesSUPERITEMGROUP: TStringField;
+    qrSalesSUPERITEMGROUPABBREV: TStringField;
+    qrSalesSUPERITEMGROUPORDER: TSmallintField;
+    qrSalesHIDEFORB: TSmallintField;
+    qrSalesREMOTELOCATIONID: TSmallintField;
+    qrSalesREMOTELOCATIONNAME: TStringField;
+    qrOrdersOUTLETID: TSmallintField;
+    qrOrdersOUTLETNAME: TStringField;
+    qrOrdersREMOTELOCATIONID: TSmallintField;
+    qrOrdersREMOTELOCATIONNAME: TStringField;
+    qrOrdersFORB: TStringField;
+    qrOrdersITEMGROUPID: TSmallintField;
+    qrOrdersITEMGROUPABBREV: TStringField;
+    qrOrdersITEMID: TIntegerField;
+    qrOrdersITEMABBREV: TStringField;
+    qrOrdersITEMGROUPORDER: TSmallintField;
+    qrOrdersITEMORDER: TSmallintField;
+    qrOrdersLINKCODE: TStringField;
+    qrOrdersSUPERITEMGROUPID: TSmallintField;
+    qrOrdersSUPERITEMGROUP: TStringField;
+    qrOrdersSUPERITEMGROUPABBREV: TStringField;
+    qrOrdersSUPERITEMGROUPORDER: TSmallintField;
+    qrOrdersHIDEFORB: TSmallintField;
+    qrVoidLinesOUTLETID: TSmallintField;
+    qrVoidLinesOUTLETNAME: TStringField;
+    qrVoidLinesREMOTELOCATIONID: TSmallintField;
+    qrVoidLinesREMOTELOCATIONNAME: TStringField;
+    qrVoidLinesFORB: TStringField;
+    qrVoidLinesITEMGROUPID: TSmallintField;
+    qrVoidLinesITEMGROUPABBREV: TStringField;
+    qrVoidLinesITEMID: TIntegerField;
+    qrVoidLinesITEMABBREV: TStringField;
+    qrVoidLinesITEMGROUPORDER: TSmallintField;
+    qrVoidLinesITEMORDER: TSmallintField;
+    qrVoidLinesVOIDLINEID: TIntegerField;
+    qrVoidLinesWHOVOID: TStringField;
+    qrVoidLinesWHENVOID: TDateTimeField;
+    qrVoidLinesQTY: TIBOFloatField;
+    qrVoidLinesQTYVOIDED: TIBOFloatField;
+    qrVoidLinesQTYWASTED: TIBOFloatField;
+    qrVoidLinesUNITPRICE: TIBOFloatField;
+    qrVoidLinesNETT: TIBOFloatField;
+    qrVoidLinesNETTVOIDED: TIBOFloatField;
+    qrVoidLinesNETTWASTED: TIBOFloatField;
+    qrVoidLinesCOST: TIBOFloatField;
+    qrVoidLinesCOSTVOIDED: TIBOFloatField;
+    qrVoidLinesCOSTWASTED: TIBOFloatField;
+    qrVoidLinesVOIDREASON: TStringField;
+    qrVoidLinesFIXEDVOIDREASONID: TSmallintField;
+    qrVoidLinesVOIDEXPLANATION1: TStringField;
+    qrVoidLinesVOIDEXPLANATION2: TStringField;
+    qrVoidLinesGROUPNAME: TStringField;
+    qrVoidLinesTABLENO: TSmallintField;
+    qrVoidLinesSUPERITEMGROUPID: TSmallintField;
+    qrVoidLinesSUPERITEMGROUP: TStringField;
+    qrVoidLinesSUPERITEMGROUPABBREV: TStringField;
+    qrVoidLinesSUPERITEMGROUPORDER: TSmallintField;
+    qrVoidLinesHIDEFORB: TSmallintField;
+    qrItemGroups: TIBOQuery;
+    qrItemGroupsOUTLETNAME: TStringField;
+    qrItemGroupsITEMGROUPID: TSmallintField;
+    qrItemGroupsITEMGROUPABBREV: TStringField;
+    qrItemGroupsWHENDELETED: TDateTimeField;
+    qrItemGroupsITEMGROUPNAME: TStringField;
+    qrAllStaffOrdersNETTQTY: TIBOFloatField;
+    qrAllStaffOrdersAVPRICE: TIBOFloatField;
+    qrAllStaffOrdersNETT: TIBOFloatField;
+    qrOrdersQTYSTOCK: TIBOFloatField;
+    qrOrdersQTYWASTED: TIBOFloatField;
+    qrOrdersNETTQTY: TIBOFloatField;
+    qrOrdersAVPRICE: TIBOFloatField;
+    qrOrdersNETT: TIBOFloatField;
+    qrAccountSalesAMOUNTSOLD: TIBOFloatField;
+    qrAccountSalesGROSSSOLD: TIBOFloatField;
+    qrAccountSalesSALESTAX: TIBOFloatField;
+    qrAccountSalesDISCOUNT: TIBOFloatField;
+    qrAccountSalesAVERAGEUNITPRICE: TIBOFloatField;
+    qrAccountSalesNETTSOLD: TIBOFloatField;
+    qrTerminalSalesAMOUNTSOLD: TIBOFloatField;
+    qrTerminalSalesGROSSSOLD: TIBOFloatField;
+    qrTerminalSalesDISCOUNT: TIBOFloatField;
+    qrTerminalSalesAVERAGEUNITPRICE: TIBOFloatField;
+    qrTerminalSalesNETTSOLD: TIBOFloatField;
+    qrCourseSalesAMOUNTSOLD: TIBOFloatField;
+    qrCourseSalesGROSSSOLD: TIBOFloatField;
+    qrCourseSalesSALESTAX: TIBOFloatField;
+    qrCourseSalesDISCOUNT: TIBOFloatField;
+    qrCourseSalesAVERAGEUNITPRICE: TIBOFloatField;
+    qrCourseSalesNETTSOLD: TIBOFloatField;
+    qrMenuItemsITEMPRICE: TIBOFloatField;
+    qrMenuItemsITEMPRICE2: TIBOFloatField;
+    qrMenuItemsITEMPRICE3: TIBOFloatField;
+    qrMenuItemsITEMPRICE4: TIBOFloatField;
+    qrMenuItemsITEMPRICE5: TIBOFloatField;
+    qrMenuItemsITEMPRICE6: TIBOFloatField;
+    qrMenuItemsNONSTOCKPRICE: TIBOFloatField;
+    qrMenuItemsBARCODE: TStringField;
+    qrMenuItemsAVAILQTY: TIBOFloatField;
+    qrModifiersMODPRICE: TIBOFloatField;
+    qrModifiersNETTQTY: TIBOFloatField;
+    qrModifiersNETT: TIBOFloatField;
+    qrModifiersQTYWASTED: TIBOFloatField;
+    qrModifiersQTYSTOCK: TIBOFloatField;
+    qrStaffSalesAMOUNTSOLD: TIBOFloatField;
+    qrStaffSalesGROSSSOLD: TIBOFloatField;
+    qrStaffSalesSALESTAX: TIBOFloatField;
+    qrStaffSalesDISCOUNT: TIBOFloatField;
+    qrStaffSalesAVERAGEUNITPRICE: TIBOFloatField;
+    qrStaffSalesNETTSOLD: TIBOFloatField;
+    qrSaleCategorySalesAMOUNTSOLD: TIBOFloatField;
+    qrSaleCategorySalesGROSSSOLD: TIBOFloatField;
+    qrSaleCategorySalesSALESTAX: TIBOFloatField;
+    qrSaleCategorySalesDISCOUNT: TIBOFloatField;
+    qrSaleCategorySalesAVERAGEUNITPRICE: TIBOFloatField;
+    qrSaleCategorySalesNETTSOLD: TIBOFloatField;
+    qrSectionSalesAMOUNTSOLD: TIBOFloatField;
+    qrSectionSalesGROSSSOLD: TIBOFloatField;
+    qrSectionSalesSALESTAX: TIBOFloatField;
+    qrSectionSalesDISCOUNT: TIBOFloatField;
+    qrSectionSalesAVERAGEUNITPRICE: TIBOFloatField;
+    qrSectionSalesNETTSOLD: TIBOFloatField;
+    qrItemModSalesMODGROUPORDER: TSmallintField;
+    qrItemModSalesMODORDER: TSmallintField;
+    qrItemModSalesAMOUNTSOLD: TIBOFloatField;
+    qrItemModSalesGROSSSOLD: TIBOFloatField;
+    qrItemModSalesSALESTAX: TIBOFloatField;
+    qrItemModSalesDISCOUNT: TIBOFloatField;
+    qrItemModSalesAVERAGEUNITPRICE: TIBOFloatField;
+    qrItemModSalesNETTSOLD: TIBOFloatField;
+    qrModItemsMODPRICE: TIBOFloatField;
+    qrModItemsNETTQTY: TIBOFloatField;
+    qrModItemsNETT: TIBOFloatField;
+    qrModItemsQTYWASTED: TIBOFloatField;
+    qrModItemsQTYSTOCK: TIBOFloatField;
+    qrCashTotalsSYSTEMAMOUNT: TIBOFloatField;
+    qrCashTotalsDISCREPANCY: TIBOFloatField;
+    qrCashTotalsACTUALAMOUNT: TIBOFloatField;
+    qrCashTotalsPAID: TIBOFloatField;
+    qrCashTotalsOUTSTANDING: TIBOFloatField;
+    qrSalesByDateAMOUNTSOLD: TIBOFloatField;
+    qrSalesByDateGROSSSOLD: TIBOFloatField;
+    qrSalesByDateSALESTAX: TIBOFloatField;
+    qrSalesByDateDISCOUNT: TIBOFloatField;
+    qrSalesByDateNETTSOLD: TIBOFloatField;
+    qrAccountPETransOPENINGBALANCE: TIBOFloatField;
+    qrAccountPETransCLOSINGBALANCE: TIBOFloatField;
+    qrAccountPETransPAID: TIBOFloatField;
+    qrClockInsHOURLYRATE: TIBOFloatField;
+    qrClockInsOUTLETID: TSmallintField;
+    qrNoSalesINCOMINGAMOUNT: TIBOFloatField;
+    qrNoSalesOUTGOINGAMOUNT: TIBOFloatField;
+    qrNoSalesAMOUNT: TIBOFloatField;
+    qrTillSalesAMOUNTSOLD: TIBOFloatField;
+    qrTillSalesGROSSSOLD: TIBOFloatField;
+    qrTillSalesSALESTAX: TIBOFloatField;
+    qrTillSalesDISCOUNT: TIBOFloatField;
+    qrTillSalesAVERAGEUNITPRICE: TIBOFloatField;
+    qrTillSalesNETTSOLD: TIBOFloatField;
+    qrDiscountSchemeSalesAMOUNTSOLD: TIBOFloatField;
+    qrDiscountSchemeSalesGROSSSOLD: TIBOFloatField;
+    qrDiscountSchemeSalesSALESTAX: TIBOFloatField;
+    qrDiscountSchemeSalesDISCOUNT: TIBOFloatField;
+    qrDiscountSchemeSalesAVERAGEUNITPRICE: TIBOFloatField;
+    qrDiscountSchemeSalesNETTSOLD: TIBOFloatField;
+    qrRemoteGroups: TIBOQuery;
+    qrRemoteGroupsREMOTEOVERRIDEGROUPID: TSmallintField;
+    qrRemoteGroupsREMOTEOVERRIDEGROUPNAME: TStringField;
+    dsRemoteGroups: TDataSource;
+    qrStaffREMOTEOVERRIDEGROUPID: TIntegerField;
+    qrStaffREMOTEOVERRIDEGROUPNAME: TStringField;
+    qrAccountsREMOTEOVERRIDEGROUPNAME: TStringField;
+    qrAccountTypesREMOTEOVERRIDEGROUPNAME: TStringField;
+    dsAccountTransaction: TDataSource;
+    qrAccountTransaction: TIBOQuery;
+    qrAccountTransactionOUTLETNAME: TStringField;
+    qrAccountTransactionACCOUNTID: TIntegerField;
+    qrAccountTransactionACCOUNTNAME: TStringField;
+    qrAccountTransactionOUTLETID: TSmallintField;
+    qrAccountTransactionREMOTELOCATIONID: TSmallintField;
+    qrAccountTransactionREMOTELOCATIONNAME: TStringField;
+    qrAccountTransactionACCOUNTTYPEID: TSmallintField;
+    qrAccountTransactionACCOUNTTYPE: TStringField;
+    qrAccountTransactionACCOUNTNO: TIntegerField;
+    qrAccountTransactionLASTTRANSACTION: TDateTimeField;
+    qrAccountTransactionCURRENTBALANCECHANGE: TCurrencyField;
+    qrAccountTransactionLOYALTYPOINTS1CHANGE: TIntegerField;
+    qrAccountTransactionLOYALTYPOINTS2CHANGE: TIntegerField;
+    qrAccountTransactionTRANSACTIONTYPE: TStringField;
+    qrAccountTransactionLOYALTYREWARD: TStringField;
+    qrAccountTransactionINVOICENO: TIntegerField;
+    qrAccountTransactionREMINVOICENO: TIntegerField;
+    qrAccountTransactionTENDERNO: TIntegerField;
+    qrAccountTransactionREMTENDERNO: TIntegerField;
+    qrAccountTransactionWHOTRANSACTION: TStringField;
+    qrAccountTransactionWHENTRANSACTION: TDateTimeField;
+    qrAccountTransactionLASTTRANSRECEIVED: TDateTimeField;
+    qrCombosSales: TIBOQuery;
+    dsCombosSales: TDataSource;
+    qrCombos: TIBOQuery;
+    dsCombos: TDataSource;
+    qrCombosCOMBONAME: TStringField;
+    qrCombosWHENDELETED: TDateTimeField;
+    qrCombosCOMBOID: TIntegerField;
+    qrSalePeriodSalesITEMID: TIntegerField;
+    qrSalePeriodSalesAMOUNTSOLD: TIBOFloatField;
+    qrSalePeriodSalesGROSSSOLD: TIBOFloatField;
+    qrSalePeriodSalesSALESTAX: TIBOFloatField;
+    qrSalePeriodSalesDISCOUNT: TIBOFloatField;
+    qrSalePeriodSalesAVERAGEUNITPRICE: TIBOFloatField;
+    qrSalePeriodSalesNETTSOLD: TIBOFloatField;
+    qrSalePeriodSalesITEMABBREV: TStringField;
+    qrSalePeriodSalesWHENDELETED: TDateTimeField;
+    qrSalePeriodSalesITEMORDER: TSmallintField;
+    qrSalePeriodSalesFORB: TStringField;
+    qrSalePeriodSalesITEMGROUPID: TSmallintField;
+    qrSalePeriodSalesITEMGROUPABBREV: TStringField;
+    qrSalePeriodSalesITEMGROUPORDER: TSmallintField;
+    qrSalePeriodSalesOUTLETID: TSmallintField;
+    qrSalePeriodSalesOUTLETNAME: TStringField;
+    qrSalePeriodSalesSUPERITEMGROUPID: TSmallintField;
+    qrSalePeriodSalesSUPERITEMGROUP: TStringField;
+    qrSalePeriodSalesSUPERITEMGROUPABBREV: TStringField;
+    qrSalePeriodSalesSUPERITEMGROUPORDER: TSmallintField;
+    qrSalePeriodSalesHIDEFORB: TSmallintField;
+    qrSalePeriodSalesREMOTELOCATIONID: TSmallintField;
+    qrSalePeriodSalesREMOTELOCATIONNAME: TStringField;
+    qrSalePeriodSalesTIMEPERIODNAME: TStringField;
+    qrSalePeriodSalesSALECATEGORYPERIOD: TSmallintField;
+    qrCashupStats: TIBOQuery;
+    dsCashupStats: TDataSource;
+    qrCashupStatsINVOICES: TIBOFloatField;
+    qrCashupStatsINVOICECOUNT: TIntegerField;
+    qrCashupStatsCREDITNOTES: TIBOFloatField;
+    qrCashupStatsCREDITNOTECOUNT: TIntegerField;
+    qrCashupStatsCREDITNOTESGROSS: TIBOFloatField;
+    qrCashupStatsPAYMENTS: TIBOFloatField;
+    qrCashupStatsPAYMENTTIPS: TIBOFloatField;
+    qrCashupStatsREFUNDS: TIBOFloatField;
+    qrCashupStatsREFUNDTIPS: TIBOFloatField;
+    qrCashupStatsNOSALETHRUACCOUNT: TIBOFloatField;
+    qrCashupStatsNOSALENOACCOUNT: TIBOFloatField;
+    qrCashupStatsVOUCHERSSOLD: TIBOFloatField;
+    qrCashupStatsVOUCHERSREDEEMED: TIBOFloatField;
+    qrCashupStatsROUNDING: TIBOFloatField;
+    qrCashupStatsFSALES: TIBOFloatField;
+    qrCashupStatsBSALES: TIBOFloatField;
+    qrCashupStatsFGROSS: TIBOFloatField;
+    qrCashupStatsBGROSS: TIBOFloatField;
+    qrCashupStatsFDISCOUNT: TIBOFloatField;
+    qrCashupStatsBDISCOUNT: TIBOFloatField;
+    qrCashupStatsFCREDITNOTESGROSS: TIBOFloatField;
+    qrCashupStatsBCREDITNOTESGROSS: TIBOFloatField;
+    qrCashupStatsSALESTAX: TIBOFloatField;
+    qrCashupStatsEFTPOSCASHOUT: TIBOFloatField;
+    qrCashupStatsEFTPOSCHANGE: TIBOFloatField;
+    qrClockInsSTAFFROLEID: TSmallintField;
+    qrClockInsSTAFFROLENAME: TStringField;
+    qrOrdersSalesVoids: TIBOQuery;
+    dsOrdersSalesVoids: TDataSource;
+    qrOrdersSalesVoidsOUTLETID: TSmallintField;
+    qrOrdersSalesVoidsOUTLETNAME: TStringField;
+    qrOrdersSalesVoidsREMOTELOCATIONID: TSmallintField;
+    qrOrdersSalesVoidsREMOTELOCATIONNAME: TStringField;
+    qrOrdersSalesVoidsFORB: TStringField;
+    qrOrdersSalesVoidsSUPERITEMGROUPID: TSmallintField;
+    qrOrdersSalesVoidsSUPERITEMGROUP: TStringField;
+    qrOrdersSalesVoidsSUPERITEMGROUPABBREV: TStringField;
+    qrOrdersSalesVoidsSUPERITEMGROUPORDER: TSmallintField;
+    qrOrdersSalesVoidsHIDEFORB: TSmallintField;
+    qrOrdersSalesVoidsITEMGROUPID: TSmallintField;
+    qrOrdersSalesVoidsITEMGROUPABBREV: TStringField;
+    qrOrdersSalesVoidsITEMGROUPORDER: TSmallintField;
+    qrOrdersSalesVoidsITEMID: TIntegerField;
+    qrOrdersSalesVoidsITEMABBREV: TStringField;
+    qrOrdersSalesVoidsITEMORDER: TSmallintField;
+    qrOrdersSalesVoidsORDERSQTY: TIBOFloatField;
+    qrOrdersSalesVoidsORDERSVALUE: TIBOFloatField;
+    qrOrdersSalesVoidsSALESQTY: TIBOFloatField;
+    qrOrdersSalesVoidsSALESVALUE: TIBOFloatField;
+    qrOrdersSalesVoidsVOIDEDQTY: TIBOFloatField;
+    qrOrdersSalesVoidsVOIDEDVALUE: TIBOFloatField;
+    qrOrdersSalesVoidsVARIANCEQTY: TIBOFloatField;
+    qrOrdersSalesVoidsVARIANCEVALUE: TIBOFloatField;
+    qrAccountTabSales: TIBOQuery;
+    dsAccountTabSales: TDataSource;
+    qrAccountTabSalesOUTLETID: TSmallintField;
+    qrAccountTabSalesOUTLETNAME: TStringField;
+    qrAccountTabSalesREMOTELOCATIONID: TSmallintField;
+    qrAccountTabSalesREMOTELOCATIONNAME: TStringField;
+    qrAccountTabSalesACCOUNTID: TIntegerField;
+    qrAccountTabSalesACCOUNTNAME: TStringField;
+    qrAccountTabSalesACCOUNTTYPEID: TSmallintField;
+    qrAccountTabSalesACCOUNTTYPE: TStringField;
+    qrAccountTabSalesFOODDISC: TIBOFloatField;
+    qrAccountTabSalesFOODONACCOUNT: TIBOFloatField;
+    qrAccountTabSalesFOODTENDERED: TIBOFloatField;
+    qrAccountTabSalesFOODPRORATA: TIBOFloatField;
+    qrAccountTabSalesFOODNOTACCOUNT: TIBOFloatField;
+    qrAccountTabSalesFOODTOTAL: TIBOFloatField;
+    qrAccountTabSalesBEVDISC: TIBOFloatField;
+    qrAccountTabSalesBEVONACCOUNT: TIBOFloatField;
+    qrAccountTabSalesBEVTENDERED: TIBOFloatField;
+    qrAccountTabSalesBEVPRORATA: TIBOFloatField;
+    qrAccountTabSalesBEVNOTACCOUNT: TIBOFloatField;
+    qrAccountTabSalesBEVTOTAL: TIBOFloatField;
+    qrAccountTabSalesALLDISC: TIBOFloatField;
+    qrAccountTabSalesALLONACCOUNT: TIBOFloatField;
+    qrAccountTabSalesALLTENDERED: TIBOFloatField;
+    qrAccountTabSalesALLPRORATA: TIBOFloatField;
+    qrAccountTabSalesALLNOTACCOUNT: TIBOFloatField;
+    qrAccountTabSalesALLTOTAL: TIBOFloatField;
+    qrOpenTablesOLsToPay: TIBOQuery;
+    qrOpenTablesOLsToPayOUTLETID: TSmallintField;
+    qrOpenTablesOLsToPayOUTLETNAME: TStringField;
+    qrOpenTablesOLsToPayREMOTELOCATIONID: TSmallintField;
+    qrOpenTablesOLsToPayREMOTELOCATIONNAME: TStringField;
+    qrOpenTablesOLsToPaySALECATEGORYID: TSmallintField;
+    qrOpenTablesOLsToPaySALECATEGORY: TStringField;
+    qrOpenTablesOLsToPaySECTIONID: TSmallintField;
+    qrOpenTablesOLsToPaySECTION: TStringField;
+    qrOpenTablesOLsToPayTABLENO: TSmallintField;
+    qrOpenTablesOLsToPayTABLENOCAPTION: TStringField;
+    qrOpenTablesOLsToPayGROUPID: TIntegerField;
+    qrOpenTablesOLsToPayGROUPNAME: TStringField;
+    qrOpenTablesOLsToPayGUESTS: TSmallintField;
+    qrOpenTablesOLsToPayORDERID: TIntegerField;
+    qrOpenTablesOLsToPayORDERLINEID: TIntegerField;
+    qrOpenTablesOLsToPayITEMID: TIntegerField;
+    qrOpenTablesOLsToPayCOURSE: TStringField;
+    qrOpenTablesOLsToPayFORB: TStringField;
+    qrOpenTablesOLsToPayUNITPRICE: TIBOFloatField;
+    qrOpenTablesOLsToPayITEMABBREV: TStringField;
+    qrOpenTablesOLsToPayPOSITIONS: TStringField;
+    qrOpenTablesOLsToPayQTY: TIBOFloatField;
+    qrOpenTablesOLsToPayORDERED: TIBOFloatField;
+    qrOpenTablesOLsToPayQTYVOIDED: TIBOFloatField;
+    qrOpenTablesOLsToPayVOIDED: TIBOFloatField;
+    qrOpenTablesOLsToPayTHEQTY: TIBOFloatField;
+    qrOpenTablesOLsToPayDISCOUNTINCL: TIBOFloatField;
+    qrOpenTablesOLsToPayINVOICED: TIBOFloatField;
+    qrOpenTablesOLsToPayUNINVOICED: TIBOFloatField;
+    qrOpenTablesOLsToPayQTYLEFT: TIBOFloatField;
+    qrAccountTabSalesTABCOUNT: TIntegerField;
+    qrTabs: TIBOQuery;
+    qrTabsGROUPID: TIntegerField;
+    qrTabsGROUPTYPE: TStringField;
+    qrTabsGROUPNAME: TStringField;
+    qrTabsTABLENO: TSmallintField;
+    qrTabsGUESTS: TSmallintField;
+    qrTabsCHILDREN: TSmallintField;
+    qrTabsORDERED: TIBOFloatField;
+    qrTabsVOIDED: TIBOFloatField;
+    qrTabsINVOICED: TIBOFloatField;
+    qrTabsUNINVOICED: TIBOFloatField;
+    qrTabsWHENOPENED: TDateTimeField;
+    qrTabsWHOOPENEDSTAFFNAME: TStringField;
+    qrTabsWHENCLOSED: TDateTimeField;
+    qrTabsWHOCLOSEDSTAFFNAME: TStringField;
+    qrTabsWHOBOOKEDSTAFFNAME: TStringField;
+    qrTabsWHOCANCELLEDSTAFFNAME: TStringField;
+    qrTabsSALECATEGORYID: TSmallintField;
+    qrTabsSALECATEGORY: TStringField;
+    qrTabsTABLENOCAPTION: TStringField;
+    qrTabsSECTIONID: TSmallintField;
+    qrTabsSECTION: TStringField;
+    qrTabsOUTLETID: TSmallintField;
+    qrTabsOUTLETNAME: TStringField;
+    qrTabsREMOTELOCATIONID: TSmallintField;
+    qrTabsREMOTELOCATIONNAME: TStringField;
+    qrTabSummaryOLs: TIBOQuery;
+    qrTabSummaryOLsFORB: TStringField;
+    qrTabSummaryOLsITEMABBREV: TStringField;
+    qrTabSummaryOLsUNITPRICE: TIBOFloatField;
+    qrTabSummaryOLsITEMID: TSmallintField;
+    qrTabSummaryOLsITEMGROUPORDER: TSmallintField;
+    qrTabSummaryOLsITEMORDER: TSmallintField;
+    qrTabSummaryOLsENTERQTY: TIBOFloatField;
+    qrTabSummaryOLsWEIGHEDITEM: TSmallintField;
+    qrTabSummaryOLsNOTES: TMemoField;
+    qrTabSummaryOLsFROMTABNO: TSmallintField;
+    qrTabSummaryOLsQTY: TIBOFloatField;
+    qrTabSummaryOLsILQTY: TIBOFloatField;
+    qrTabSummaryOLsDISCOUNTAMOUNT: TIBOFloatField;
+    qrTabSummaryOLsPAID: TIBOFloatField;
+    qrTabSummaryOLsDUE: TIBOFloatField;
+    qrTabSummaryOLsSALESTAX: TIBOFloatField;
+    qrTabSummaryOLsSALESTAXPAID: TIBOFloatField;
+    qrTabSummaryOLsQTYVOIDED: TIBOFloatField;
+    qrTabSummaryOLsQTYWASTED: TIBOFloatField;
+    qrTabSummaryOLsILDISC: TIBOFloatField;
+    qrTabSummaryOLsOLDISC: TIBOFloatField;
+    qrTabSummaryOLsQTYLEFT: TIBOFloatField;
+    qrTabSummaryOLsORDERED: TIBOFloatField;
+    qrTabSummaryAccounts: TIBOQuery;
+    qrTabSummaryAccountsACCOUNTID: TIntegerField;
+    qrTabSummaryAccountsACCOUNTNAME: TStringField;
+    qrTabSummaryAccountsQTY: TIBOFloatField;
+    qrTabSummaryAccountsILAMOUNT: TIBOFloatField;
+    qrTabSummaryAccountsDISCOUNTAMOUNT: TIBOFloatField;
+    qrTabSummaryAccountsTENDERED: TIBOFloatField;
+    qrTabSummaryAccountsCHARGED: TIBOFloatField;
+    qrAccountPETransLOYALTY1NAME: TStringField;
+    qrAccountPETransLOYALTY2NAME: TStringField;
+    qrAccountPETransEXPIREDP1THISPE: TIntegerField;
+    qrAccountPETransEXPIREDP2THISPE: TIntegerField;
+    qrAccountPETransEXPIREDCRTHISPE: TIBOFloatField;
+    qrAccountPETransNEXTEXPIRYAT: TDateTimeField;
+    qrAccountPETransEXPIREDP1NEXTPE: TIntegerField;
+    qrAccountPETransEXPIREDP2NEXTPE: TIntegerField;
+    qrAccountPETransEXPIREDCRNEXTPE: TIBOFloatField;
+    qrAccountPETransLOYALTYPOINTS1BAL: TIntegerField;
+    qrAccountPETransLOYALTYPOINTS2BAL: TIntegerField;
+    qrStaffOpenPrice: TIBOQuery;
+    dsStaffOpenPrice: TDataSource;
+    qrStaffOpenPriceOUTLETID: TSmallintField;
+    qrStaffOpenPriceOUTLETNAME: TStringField;
+    qrStaffOpenPriceREMOTELOCATIONID: TSmallintField;
+    qrStaffOpenPriceREMOTELOCATIONNAME: TStringField;
+    qrStaffOpenPriceSTAFFID: TIntegerField;
+    qrStaffOpenPriceSTAFFNAME: TStringField;
+    qrStaffOpenPriceFORB: TStringField;
+    qrStaffOpenPriceWHENORDERED: TDateTimeField;
+    qrStaffOpenPriceITEMGROUPID: TSmallintField;
+    qrStaffOpenPriceITEMGROUPABBREV: TStringField;
+    qrStaffOpenPriceITEMID: TIntegerField;
+    qrStaffOpenPriceITEMABBREV: TStringField;
+    qrStaffOpenPriceOPENITEMABBREV: TStringField;
+    qrStaffOpenPriceOPENPRICE: TIBOFloatField;
+    qrStaffOpenPriceQTY: TIBOFloatField;
+    qrStaffOpenPriceNETT: TIBOFloatField;
+    qrStaffOpenPriceWHENORDEREDDATE: TDateField;
+    qrEventSales: TIBOQuery;
+    qrEventSalesItemGroupID: TSmallintField;
+    qrEventSalesOutlet: TStringField;
+    qrEventSalesOutletName: TStringField;
+    qrEventSalesFORB: TStringField;
+    qrEventSalesItemGroupAbbrev: TStringField;
+    qrEventSalesItemID: TIntegerField;
+    qrEventSalesItemAbbrev: TStringField;
+    qrEventSalesItemGroupOrder: TSmallintField;
+    qrEventSalesItemOrder: TSmallintField;
+    qrEventSalesWhenDeleted: TDateTimeField;
+    qrEventSalesAccountID: TIntegerField;
+    qrEventSalesAccountName: TStringField;
+    qrEventSalesSuperItemGroupID: TSmallintField;
+    qrEventSalesSuperItemGroup: TStringField;
+    qrEventSalesSuperItemGroupAbbrev: TStringField;
+    qrEventSalesSuperItemGroupOrder: TSmallintField;
+    qrEventSalesHideForB: TSmallintField;
+    qrEventSalesOutletID: TSmallintField;
+    qrEventSalesRemoteLocationID: TSmallintField;
+    qrEventSalesRemoteLocationName: TStringField;
+    qrEventSalesAmountSold: TIBOFloatField;
+    qrEventSalesGrossSold: TIBOFloatField;
+    qrEventSalesSalesTax: TIBOFloatField;
+    qrEventSalesDiscount: TIBOFloatField;
+    qrEventSalesAverageUnitPrice: TIBOFloatField;
+    qrEventSalesNettSold: TIBOFloatField;
+    dsEventSales: TDataSource;
+    qrEventSalesEventID: TIntegerField;
+    qrEventSalesEventName: TStringField;
+    qrEventSalesEventStartTime: TDateTimeField;
+    qrEventSalesEventEndTime: TDateTimeField;
+    qrEvents: TIBOQuery;
+    qrEventsEventID: TIntegerField;
+    qrEventsEventName: TStringField;
+    qrEventsWhenDeleted: TDateTimeField;
+    dsEvents: TDataSource;
+    qrSalesSIZENAME: TStringField;
+    dsTransList: TDataSource;
+    qrTransList: TIBOQuery;
+    qrTransListOUTLETID: TSmallintField;
+    qrTransListOUTLETNAME: TStringField;
+    qrTransListREMOTELOCATIONID: TSmallintField;
+    qrTransListREMOTELOCATIONNAME: TStringField;
+    qrTransListTILLID: TSmallintField;
+    qrTransListTILLNAME: TStringField;
+    qrTransListSTAFFID: TSmallintField;
+    qrTransListSTAFFNAME: TStringField;
+    qrTransListCASHUPID: TIntegerField;
+    qrTransListWHENCASHEDUP: TDateTimeField;
+    qrTransListCLOCKINID: TIntegerField;
+    qrTransListCLOCKINTIME: TDateTimeField;
+    qrTransListCLOCKOUTTIME: TDateTimeField;
+    qrTransListTENDERID: TIntegerField;
+    qrTransListTENDERNO: TIntegerField;
+    qrTransListTENDERTYPE: TStringField;
+    qrTransListINVOICEID: TIntegerField;
+    qrTransListINVOICENO: TIntegerField;
+    qrTransListNOSALETYPEID: TSmallintField;
+    qrTransListNOSALETYPE: TStringField;
+    qrTransListTENDERLINETYPEID: TSmallintField;
+    qrTransListTENDERLINETYPE: TStringField;
+    qrTransListTENDERLINETYPEORDER: TSmallintField;
+    qrTransListTENDERLINENOTES: TStringField;
+    qrTransListTENDERLINEAMOUNT: TIBOFloatField;
+    qrTransListTENDERLINETIP: TIBOFloatField;
+    qrTransListTENDERLINEID: TIntegerField;
+    qrTransListTENDERLINECHANGE: TIBOFloatField;
+    qrTransListWHENTENDERED: TDateTimeField;
+    qrTransListTENDERCOO: TStringField;
+    qrTransListINVOICETOTAL: TIBOFloatField;
+    qrCashTotalsTENLINETYPEPROVIDERID: TSmallintField;
+    qrCashTotalsTENLINETYPEPROVIDER: TStringField;
+    qrCashTotalsTENLINETYPEPROVIDERORDER: TSmallintField;
+    qrSysAVOIDPINCHECK: TSmallintField;
+    sp: TIB_StoredProc;
+    qrPeopleCARDCODE: TStringField;
+    qrMenuItemsWHENUPD: TDateTimeField;
+    qrAccountTypeMovements: TIBOQuery;
+    dsAccountTypeMovements: TDataSource;
+    qrAccountTypeMovementsACCOUNTTYPEID: TSmallintField;
+    qrAccountTypeMovementsACCOUNTTYPE: TStringField;
+    qrAccountTypeMovementsINVOICETYPE: TStringField;
+    qrAccountTypeMovementsTENDERTYPE: TStringField;
+    qrAccountTypeMovementsOUTLETID: TSmallintField;
+    qrAccountTypeMovementsOUTLETNAME: TStringField;
+    qrAccountTypeMovementsREMOTELOCATIONID: TSmallintField;
+    qrAccountTypeMovementsREMOTELOCATIONNAME: TStringField;
+    qrAccountTypeMovementsLOYALTYREWARDID: TSmallintField;
+    qrAccountTypeMovementsLOYALTYREWARD: TStringField;
+    qrAccountTypeMovementsNOSALETYPEID: TSmallintField;
+    qrAccountTypeMovementsNOSALETYPE: TStringField;
+    qrAccountTypeMovementsACCOUNTCHARGED: TIBOBCDField;
+    qrAccountTypeMovementsACCOUNTPAID: TIBOBCDField;
+    qrAccountTypeMovementsLOYALTYPOINTS1ISSUED: TIntegerField;
+    qrAccountTypeMovementsLOYALTYPOINTS1REDEEMED: TIntegerField;
+    qrAccountTypeMovementsLOYALTYPOINTS2ISSUED: TIntegerField;
+    qrAccountTypeMovementsLOYALTYPOINTS2REDEEMED: TIntegerField;
+    qrMenuItemsITEMGROUPID: TSmallintField;
+    qrTenderedDiscount: TIBOQuery;
+    qrTenderedDiscountDISCOUNT: TIBOFloatField;
+    qrTenderedDiscountTENLINETYPEPROVIDER: TStringField;
+    dsTenderedDiscount: TDataSource;
+    qrTenderedDiscountTENDERLINETYPE: TStringField;
+    qrTenderedDiscountTENDERLINETYPEID: TSmallintField;
+    qrOutletsTAXRATE: TIBOBCDField;
+    qrSalesLASTROSSTRANSACTIONSYNC: TDateTimeField;
+    qrCashTotalsREFERENCE: TStringField;
+    qrCashTotalsNOTES: TMemoField;
+    qrTransListREFERENCE: TStringField;
+    qrTransListNOTES: TMemoField;
+    qrSections: TIBOQuery;
+    qrSectionsSECTION: TStringField;
+    qrSectionsWHENDELETED: TDateTimeField;
+    qrSectionsSECTIONID: TSmallintField;
+    dsSections: TDataSource;
+    qrStaffDetails: TIBOQuery;
+    dsStaffDetails: TDataSource;
+    procedure dmCreate(Sender: TObject);
+    procedure dsAccountsDataChange(Sender: TObject; Field: TField);
+    procedure dsAccountPEsDataChange(Sender: TObject; Field: TField);
+    procedure dsStaffDataChange(Sender: TObject; Field: TField);
+    procedure dsItemGroupsDataChange(Sender: TObject; Field: TField);
 
-    cmdUp: TfcCustomImageBtn;
-    cmdDown: TfcCustomImageBtn;
-    cmdCancel: TfcCustomImageBtn;
-    cmdPrint: TfcCustomImageBtn;
-    cmdStaff: TfcCustomImageBtn;
-    cmdTerminal: TfcCustomImageBtn;
-    cmdReceiptUp: TfcCustomImageBtn;
-    cmdReceiptDown: TfcCustomImageBtn;
-    cmdInvoiceNoSale: TfcCustomImageBtn;
-    procedure Initialise;
-    procedure DisplayReceipt;
-    function TryPrintReceipt: Boolean;
-    procedure RefreshReceipts;
-  public
-    property TabInvoices: Boolean read FTabInvoices write FTabInvoices;
-    property LastCashSale: Boolean read FLastCashSale write FLastCashSale;
-    property LastReceipt: Boolean read FLastReceipt write FLastReceipt;
-    property QuickHide: Boolean read FQuickHide write FQuickHide;
-    procedure FormMessage(var Msg: TMsg; var Handled: Boolean);
-  end;
-{******************************************************************************}
-var
-  formSelectCashSale: TformSelectCashSale;
-  ReceiptText: String;
-{******************************************************************************}
-implementation
-{******************************************************************************}
-{$R *.DFM}
-{******************************************************************************}
-uses
-  LServiceQueries, LMain, DM_WBWaiter, LWBQuery, UQuickMessage, USelectStaff,
-  USelectTerminal, UResources, UAlphaBlend, UGlobalMenuList, UAppDetails, UTaxCoreTransaction;
-{******************************************************************************}
-function SelectCashSale(var InvoiceID: Integer; var InvoiceType: String): Boolean;
-var
-  ShowingAlphaBlend: Boolean;
-begin
-  ShowingAlphaBlend := FormAlphaBlend.Showing;
-  if (not ShowingAlphaBlend) then FormAlphaBlend.ShowAlphaBlend;
-  formSelectCashSale := TformSelectCashSale.Create(Application);
-  Result := False;
-  try
-    with formSelectCashSale do begin
-      TabInvoices := False;
-      Initialise;
-      pnlReceiptControls.Visible := True;
-      if (lstCashSales.DataSource.Eof) then begin
-        Result := True;
-        InvoiceID := -1;
-        Exit;
-      end;
-      ShowModal;
-      if (ModalResult = mrOk) then begin
-        Result := True;
-        InvoiceID := FInvoiceID;
-        InvoiceType := FInvoiceType;
-      end;
-    end;
-  finally
-    FreeAndNil(formSelectCashSale);
-    if (not ShowingAlphaBlend) then FormAlphaBlend.HideAlphaBlend;
-  end;
-end;
-
-{******************************************************************************}
-function SelectTabInvoices(var InvoiceID: Integer; var InvoiceType: string; const aLastReceipt: Boolean = False): Boolean;
-var
-  ShowingAlphaBlend: Boolean;
-begin
-  ShowingAlphaBlend := FormAlphaBlend.Showing;
-  if (not ShowingAlphaBlend) then FormAlphaBlend.ShowAlphaBlend;
-  formSelectCashSale := TformSelectCashSale.Create(Application);
-  Result := False;
-  try
-    with formSelectCashSale do begin
-      TabInvoices := True;
-      LastReceipt := aLastReceipt;
-      lstCashSales.DataSource := dm.dsInvoices;
-      Initialise;
-      pnlReceiptControls.Visible := True;
-      cmdInvoiceNoSale.Visible := True;
-      if (dm.qrInvoices.Eof) and (dm.qrNoSales.Eof) then
-      begin
-        Result := True;
-        InvoiceID := -1;
-        Exit;
-      end;
-      if (LastReceipt) then
-      begin
-        if (dm.qrInvoices.Eof) then
-          cmdInvoiceNoSale.Click;
-        cmdPrintReceiptClick(nil);
-      end
-      else
-        ShowModal;
-      if (ModalResult = mrOk) then
-      begin
-        Result := True;
-        InvoiceID := FInvoiceID;
-        InvoiceType := FInvoiceType;
-      end;
-    end;
-  finally
-    FreeAndNil(formSelectCashSale);
-    if (not ShowingAlphaBlend) then FormAlphaBlend.HideAlphaBlend;
-  end;
-end;
-{******************************************************************************}
-function SelectLastCashSale(var InvoiceID: Integer; var InvoiceType: string; const aQuickHide: Boolean = False): Boolean;
-var
-  ShowingAlphaBlend: Boolean;
-begin
-  ShowingAlphaBlend := FormAlphaBlend.Showing;
-  if (not ShowingAlphaBlend) then FormAlphaBlend.ShowAlphaBlend;
-  formSelectCashSale := TformSelectCashSale.Create(Application);
-  Result := False;
-  try
-    with formSelectCashSale do
-    begin
-      LastCashSale := True;
-      LastReceipt := True;
-      Initialise;
-      QuickHide := aQuickHide;
-      pnlReceiptControls.Visible := True;
-      if (lstCashSales.DataSource.Eof) then begin
-        Result := True;
-        InvoiceID := -1;
-        Exit;
-      end;
-      ShowModal;
-      ReceiptText := formSelectCashSale.Receipt.mmoReceipt.Lines.Text;
-      if (ModalResult = mrOk) then begin
-        Result := True;
-        InvoiceID := FInvoiceID;
-        InvoiceType := FInvoiceType;
-      end;
-    end;
-  finally
-    FreeAndNil(formSelectCashSale);
-    if (not ShowingAlphaBlend) then FormAlphaBlend.HideAlphaBlend;
-  end;
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.FormCreate(Sender: TObject);
-var
-  StaffName: String;
-begin
-  lstCashSales.DefaultRowHeight := AppDetails.DefaultRowHeight;    //Jon 28-10-2003
-  lstCashSales.DataSource := dm.dsCashSales;
-  FShowingInvoices := True;
-  inherited;
-  FReceiptWidth := 340;   //Exc Boarder
-  FGridWidth := 600; //Inc Boarder
-
-  FReceiptActive := True;
-  FGridActive := False;
-
-  FTabInvoices := False;
-  FLastCashSale := False;
-  FLastReceipt := False;
-  FQuickHide := False;
-
-  //Here we setup the form as if only showing receipt, Proc Initialise will change if required
-  Width := 600; // This if receipt only Includes spacing
-  pnlReceiptOuter.Align := alClient;
-  pnlGrid.Visible := FGridActive;
-  pnlReceiptOuter.Visible := FReceiptActive;
-  pnlReceiptSpacer.Visible := ((FGridActive) and (FReceiptActive));
-  pnlReceiptControls.Visible := False;
-
-  FStaffID := GlbLogin.StaffID;
-  StaffName := GlbLogin.StaffName;
-
-  cmdSelectStaff.Caption := StaffName;
-  cmdSelectTerminal.Caption := AppDetails.TerminalName;
-  FTerminalid := AppDetails.TerminalID;
-
-  if (Screen.Height > 600) then
-    Height := (Screen.Height - 100) else Height := (Screen.Height - 20);
-
-  if (Skin.FormWindowBorder >= 0) then begin
-    pnlForm.BorderWidth := Skin.FormWindowBorder;
-    pnlForm.BorderStyle := bsNone;
-    pnlForm.BevelOuter := bvNone;
-    pnlInner.BorderStyle := bsNone;
-    pnlInner.BevelOuter := bvNone;
-    if (Skin.FormWindowBorder = 0) then begin
-      Height := Height - 16;
-      Width := Width - 16;
-    end
-    else begin
-      Height := Height - (2 * (8 - Skin.FormWindowBorder));
-      Width := Width - (2 * (8 - Skin.FormWindowBorder));
-    end;
-  end;
-
-  if (Skin.FormWindowBorderColour <> -1) then begin
-    Color := Skin.FormWindowBorderColour;
-  end;
-
-  if (Skin.FormWindowColour <> -1) then begin
-    pnlInner.ParentColor := False;
-    pnlInner.ParentBackground := False;
-    pnlInner.Color := Skin.FormWindowColour;
-  end;
-
-  if (Skin.FormWindowMessageBorderColour <> -1) then begin
-    pnlGrid.ParentColor := False;
-    pnlGrid.ParentBackground := False;
-    pnlGrid.Color := Skin.FormWindowMessageBorderColour;
-    pnlReceipt.ParentColor := False;
-    pnlReceipt.ParentBackground := False;
-    pnlReceipt.Color := Skin.FormWindowMessageBorderColour;
-  end;
-
-  Skin.ApplySkinToGrid(lstCashSales);
-
-  Skin.NewButtonFromOldButton(cmdUp, cmdUpDes, bstUp);
-  Skin.NewButtonFromOldButton(cmdDown, cmdDownDes, bstDown);
-  Skin.NewButtonFromOldButton(cmdReceiptUp, cmdReceiptUpDes, bstUP);
-  Skin.NewButtonFromOldButton(cmdReceiptDown, cmdReceiptDownDes, bstDown);
-  Skin.NewButtonFromOldButton(cmdCancel, cmdCancelDes, bstToolbar, gstClose);
-  Skin.NewButtonFromOldButton(cmdPrint, cmdPrintReceipt, bstGen96, gstPrinter);
-  Skin.NewButtonFromOldButton(cmdStaff, cmdSelectStaff, bstGen72, gstStaff);
-  Skin.NewButtonFromOldButton(cmdTerminal, cmdSelectTerminal, bstGen112, gstCashDrawer);
-  Skin.NewButtonFromOldButton(cmdInvoiceNoSale, cmdInvoiceNoSaleDes, bstGen96, gstNone);
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.Initialise;
-begin
-  if (not FTabInvoices) then begin
-    if ((SelectedStaffID <> FStaffID) or (SelectedTerminalID <> FTerminalID)) then begin
-      SelectedStaffID := FStaffID;
-      SelectedTerminalID := FTerminalID;
-      SetQueryCashSales;
-    end;
-  end;
-
-  //this will open it if closed it when exiting cash sale screen earlier 7Dec99 AM
-  if (not FTabInvoices) then begin
-    if ((Now - WBCashSales.StartTime) > 1) then begin
-      WBCashSales.StartTime := SetQueryToday;
-      SetQueryCashSales;
-    end;
-   if (not dm.qrCashSales.Active) then begin
-      dm.qrCashSales.Open;
-    end
-    else begin
-      RefreshQuery(dm.qrCashSales); //refresh it anyway, else how refresh when in this form and get the event
-    end;
-    WBCashSales.RefreshNeeded := False;
-    dm.qrCashSales.First;
-  end
-  else begin
-    if (not dm.qrInvoices.Active) then begin
-      dm.qrInvoices.Open;
-    end
-    else begin
-      RefreshQuery(dm.qrInvoices); //refresh it anyway, else how refresh when in this form and get the event
-    end;
-    WBInvoices.RefreshNeeded := False;
-    dm.qrInvoices.First;
-
-    if (not dm.qrNoSales.Active) then begin
-      dm.qrNoSales.Open;
-    end
-    else begin
-      RefreshQuery(dm.qrNoSales); //refresh it anyway, else how refresh when in this form and get the event
-    end;
-    WBNoSales.RefreshNeeded := False;
-    dm.qrNoSales.First;
-  end;
-
-  if (not FLastReceipt) then
-  begin
-    FReceiptActive := ((AppDetails.ReceiptsViewReceipts) and (Screen.Width > 800));
-    FGridActive := True;
-
-    pnlReceiptOuter.Align := alRight;
-    pnlReceiptOuter.Width := FReceiptWidth + pnlReceiptSpacer.Width;
-    pnlGrid.Visible := FGridActive;
-    pnlReceiptOuter.Visible := FReceiptActive;
-    pnlReceiptSpacer.Visible := ((FGridActive) and (FReceiptActive));
-
-    if ((FReceiptActive) and (FGridActive)) then
-    begin
-      Width := FGridWidth + FReceiptWidth + pnlReceiptSpacer.Width;
-    end;
-    if (not FTabInvoices) then
-    begin
-      if ((SelectedStaffID <> GlbLogin.StaffID) or (SelectedTerminalID <> AppDetails.TerminalID)) then begin
-        SelectedStaffID := GlbLogin.StaffID;
-        SelectedTerminalID := AppDetails.TerminalID;
-        SetQueryCashSales;
-      end;
-    end;
-  end;
-
-  Position := poScreenCenter;
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.FormShow(Sender: TObject);
-begin
-  Skin.ApplyWindowCurveToPanelAndForm(pnlForm);
-  if (Skin.FormWindowMessageCurve <> -1) then
-  begin
-    Skin.ApplyMessageCurveToInnerAndOuter(pnlGridInner);
-    Skin.ApplyMessageCurveToInnerAndOuter(pnlReceiptInner);
-  end;
-
-  if (FTabInvoices) then
-  begin
-    if (dm.qrInvoices.Eof) then
-    begin
-      cmdInvoiceNoSale.Click;
-    end
-    else if (FLastReceipt) then
-    begin
-      lblTitle.Caption := Format(rsLastTabInvoice, [GlbTable.TableNo, GlbTable.TableName]);
-    end
-    else
-    begin
-      lblTitle.Caption := Format(sSelectTabInvoice, [GlbTable.TableNo, GlbTable.TableName]);
-    end;
-    pnlButtonsFooter.Visible := False;
-  end
-  else if (FLastCashSale) then
-  begin
-    lblTitle.Caption := rsLastCashSale;
-  end;
-  pnlControls.Visible := (lstCashSales.Height < (lstCashSales.DataSource.DataSet.EofRowNum + 1) * (lstCashSales.DefaultRowHeight + lstCashSales.BorderRows));
-  pnlGridControls.Visible := pnlControls.Visible or pnlButtonsFooter.Visible;
-
-  RefreshReceipts;
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.lstCashSalesCellClick(Sender: TObject; ACol, ARow: Integer; AButton: TMouseButton; AShift: TShiftState);
-begin
-  if (not FReceiptActive) then
-  begin
-    if (FShowingInvoices) and (not lstCashSales.DataSource.DataSet.FieldByName('invoiceid').IsNull) then
-    begin
-      FInvoiceID := lstCashSales.DataSource.DataSet.FieldByName('invoiceid').AsInteger;
-      FInvoiceType := lstCashSales.DataSource.DataSet.FieldByName('invoicetype').AsString;
-    end
-    else if (not FShowingInvoices) and (not lstCashSales.DataSource.DataSet.FieldByName('tenderid').IsNull) then
-    begin
-      FInvoiceID := lstCashSales.DataSource.DataSet.FieldByName('tenderid').AsInteger;
-      FInvoiceType := 'N';
-    end;
-    ModalResult := mrOk;
-  end;
-  GlobalMenuList.ListNYHappyHourOL.Clear;
-  DisplayReceipt;
-
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.cmdCancelClick(Sender: TObject);
-begin
-  ModalResult := mrCancel;
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.cmdUpClick(Sender: TObject);
-begin
-  SendMessage(lstCashSales.Handle,WM_VSCROLL,SB_PAGEUP,0);
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.cmdDownClick(Sender: TObject);
-begin
-  SendMessage(lstCashSales.Handle,WM_VSCROLL,SB_PAGEDOWN,0);
-  if lstCashSales.DataSource.DataSet.Fields[1].IsNull then
-    lstCashSales.DataSource.DataSet.Last;
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.DisplayReceipt;
-begin
-  Receipt.Clear;
-  if (lstCashSales.DataSource.DataSet.EOF) then begin
-    Exit;
-  end;
-  with lstCashSales.DataSource.DataSet do begin   
-    Receipt.RemoteLocationName := FieldAsString(FieldByName('remotelocationname'));
-    Receipt.LoyaltyReward := FieldAsString(FieldByName('loyaltyreward'));
-    Receipt.LoyaltyPoints1 := FieldAsInt(FieldByName('loyaltypoints1'));
-    Receipt.LoyaltyPoints2 := FieldAsInt(FieldByName('loyaltypoints2'));
-    Receipt.LoyaltyPoints1Rewarded := FieldAsInt(FieldByName('loyaltypoints1rewarded'));
-    Receipt.LoyaltyPoints2Rewarded := FieldAsInt(FieldByName('loyaltypoints2rewarded'));
-    Receipt.BalanceChanged := FieldAsCurrency(FieldByName('balancechanged'));
-    if (FShowingInvoices) then
-    begin
-      Receipt.InvoiceID := FieldByName('invoiceid').AsInteger;
-      Receipt.TenderID := FieldAsInt(FieldByName('tenderid'));
-      Receipt.AccountName := FieldAsString(FieldByName('accountname'));
-      Receipt.TableNo := FieldAsInt(FieldByName('tableno'));
-      Receipt.Location := FieldAsString(FieldByName('location'));
-      Receipt.GroupName := FieldAsString(FieldByName('groupname'));
-
-      Receipt.InvoiceNo := FieldAsInt(FieldByName('invoiceno'));
-      Receipt.StaffName := FieldAsString(FieldByName('staffname'));
-      Receipt.WhenInvoiced := FieldAsDate(FieldByName('wheninvoiced'));
-      Receipt.EventID := FieldAsInt(FieldByName('eventid'));
-      Receipt.EventName := FieldAsString(FieldByName('eventname'));
-      Receipt.HostSubsidy := FieldAsCurrency(FieldByName('HostSubsidy'));
-      Receipt.GuestSubsidy := FieldAsCurrency(FieldByName('GuestSubsidy'));
-    end
-    else
-    begin
-      Receipt.TenderID := FieldAsInt(FieldByName('tenderid'));
-      Receipt.NoSaleTypeName := FieldAsString(FieldByName('nosaletype'));
-      Receipt.TableNo := FieldAsInt(FieldByName('tableno'));
-      Receipt.RemoteLocationName := FieldAsString(FieldByName('remotelocationname'));
-      Receipt.LoyaltyReward := FieldAsString(FieldByName('loyaltyreward'));
-      Receipt.LoyaltyPoints1 := FieldAsInt(FieldByName('loyaltypoints1'));
-      Receipt.LoyaltyPoints2 := FieldAsInt(FieldByName('loyaltypoints2'));
-      Receipt.LoyaltyPoints1Rewarded := FieldAsInt(FieldByName('loyaltypoints1rewarded'));
-      Receipt.LoyaltyPoints2Rewarded := FieldAsInt(FieldByName('loyaltypoints2rewarded'));
-      Receipt.BalanceChanged := FieldAsCurrency(FieldByName('balancechanged'));
-
-      Receipt.TenderNo := FieldAsInt(FieldByName('tenderno'));
-      Receipt.StaffName := FieldAsString(FieldByName('staffname'));
-      Receipt.WhenInvoiced := FieldAsDate(FieldByName('whentendered'));
-    end;
-  end;
-  Receipt.DisplayReceipt;   
-  cmdReceiptDown.Visible := (Receipt.mmoReceipt.Height < Receipt.Height);
-  cmdReceiptUp.Visible := (Receipt.mmoReceipt.Height < Receipt.Height);
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.cmdPrintReceiptClick(Sender: TObject);
-begin
-  if (FGridActive) then begin
-    TryPrintReceipt;
-  end
-  else
-  begin
-    if ((AppDetails.SpecialNYHappyHour) and (GlobalMenuList.ListNYHappyHourOL.Count > 0)) then begin
-      Receipt.PrintNYReceipt;
-      ModalResult := mrCancel;
-    end
-    else if (FShowingInvoices) and (not lstCashSales.DataSource.DataSet.FieldByName('invoiceid').IsNull) then
-    begin
-      FInvoiceID := lstCashSales.DataSource.DataSet.FieldByName('invoiceid').AsInteger;
-      FInvoiceType := lstCashSales.DataSource.DataSet.FieldByName('invoicetype').AsString;
-      ModalResult := mrOk;
-    end
-    else if (not FShowingInvoices) and (not lstCashSales.DataSource.DataSet.FieldByName('tenderid').IsNull) then
-    begin
-      FInvoiceID := lstCashSales.DataSource.DataSet.FieldByName('tenderid').AsInteger;
-      FInvoiceType := 'N';                                    
-      ModalResult := mrOk;
-    end
-    else
-    begin
-      ModalResult := mrCancel;
-    end;
-  end;
-end;
-{******************************************************************************}
-function TformSelectCashSale.TryPrintReceipt : Boolean;
-begin
-  Result := True;
-  try
-    If (lstCashSales.DataSource.DataSet.Fields[1].IsNull) then
-    begin
-      SendtoBack;
-      ShowQuickMsg(sNoReceiptSelected);
-      BringtoFront;
-    end
-    else if (FShowingInvoices) then
-    begin
-      if ((AppDetails.SpecialNYHappyHour) and (GlobalMenuList.ListNYHappyHourOL.Count > 0)) then
-      begin
-        Receipt.PrintNYReceipt;
-      end
-      else if (lstCashSales.DataSource.DataSet.FieldByName('invoicetype').AsString = 'I') then
-      begin
-        if (AppDetails.FiscalType = fiscalTaxCore) then
-          PrintTaxCoreInvoice(lstCashSales.DataSource.DataSet.FieldByName('invoiceid').AsInteger, True)
-        else
-        begin
-          InsertPrintJob('C Invoice', lstCashSales.DataSource.DataSet.FieldByName('invoiceid').AsInteger, AppDetails.PrinterID);
-          SendtoBack;
-          if (not FTabInvoices) then
-            ShowQuickMsg(sCashSalePrinted)
-          else
-            ShowQuickMsg(sInvPrinted);
-          BringtoFront;
-        end;
-      end
-      else
-      begin
-        InsertPrintJob('C Credit Note', lstCashSales.DataSource.DataSet.FieldByName('invoiceid').AsInteger, AppDetails.PrinterID);
-        SendtoBack;
-        ShowQuickMsg('Credit note printed.', False);
-        BringtoFront;
-      end;
-    end
-    else
-    begin
-      InsertPrintJob('C No Sale', lstCashSales.DataSource.DataSet.FieldByName('tenderid').AsInteger, AppDetails.PrinterID);
-      SendtoBack;
-      ShowQuickMsg(sNoSalePrinted);
-      BringtoFront;
-    end;
-
-  except on e : exception do
-  begin
-    Result := False;
-    ShowMessage(e.message);
-  end; end;
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.cmbStaffChange(Sender: TObject);
-begin
-  inherited;
-  hide;
-  try
-    if (SelectStaff) then begin
-      FStaffID := GlbStaff.StaffID;
-      if (Assigned(cmdSelectStaff)) then begin
-        cmdSelectStaff.Caption := GlbStaff.StaffName;
-      end
-      else begin
-        cmdStaff.Caption := GlbStaff.StaffName;
-      end;
-    end;
-
-    BringToFront;
-
-    SelectedStaffID := FStaffID;
-  finally
-    Show;
-  end;
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.cmbTerminalChange(Sender: TObject);
-begin
-  inherited;
-  Hide;
-  try
-    if (SelectTerminal) then begin
-      FTerminalid := GlbTerminal.TerminalID;
-      if (Assigned(cmdSelectStaff)) then begin
-        cmdSelectTerminal.Caption := GlbTerminal.Terminal
-      end
-      else begin
-        cmdTerminal.Caption := GlbTerminal.Terminal;
-      end;
-    end;
-    SelectedTerminalid := FTerminalid;
-  finally
-    Show;
-  end;
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.cmdReceiptUpClick(Sender: TObject);
-begin
-  Receipt.ScrollUp;
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.cmdReceiptDownClick(Sender: TObject);
-begin
-  Receipt.Scrolldown;
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.chkStaffClick(Sender: TObject);
-begin
-  if (chkStaff.Checked) then
-  begin
-    SelectedStaffID := 0;
-  end
-  else
-  begin
-    SelectedStaffID := FStaffID;
-  end;
-
-  if (chkTerminal.Checked) then
-  begin
-    SelectedTerminalID := 0;
-  end
-  else
-  begin
-    SelectedTerminalID := FTerminalID;
-  end;
-
-  if (Assigned(cmdSelectStaff)) then
-  begin
-    cmdSelectStaff.Enabled := (not chkstaff.Checked);
-    cmdSelectTerminal.Enabled := (not chkTerminal.Checked);
-  end
-  else
-  begin
-    cmdStaff.Enabled := (not chkstaff.Checked);
-    cmdTerminal.Enabled := (not chkTerminal.Checked);
-  end;
-
-  RefreshReceipts;
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.RefreshReceipts;
-begin
-  if (not FTabInvoices) then
-    SetQueryCashSales
-  else
-    SetQueryInvoices(qtTabInvoices);
-  lstCashSales.DataSource.DataSet.first;
-  pnlControls.Visible := (lstCashSales.Height < (lstCashSales.DataSource.DataSet.EofRowNum + 1) * (lstCashSales.DefaultRowHeight + lstCashSales.BorderRows));
-  Receipt.Clear;
-  DisplayReceipt;
-end;
-{******************************************************************************}
-procedure TformSelectCashSale.FormMessage(var Msg: TMsg; var Handled: Boolean);
-var
-  lPoint: TPoint;
-
-begin
-  case Msg.message of
-    WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_RBUTTONDOWN, WM_KEYDOWN:
-      begin
-        if (FQuickHide) then
-        begin
-          //Don't close if button click was within pnlReceiptControls
-          lPoint := pnlReceiptControls.ScreenToClient(Msg.Pt);
-          if ((lPoint.X < 0) or (lPoint.Y < 0) or (lPoint.X >= pnlReceiptControls.Width) or (lPoint.Y >= pnlReceiptControls.Height)) then
-          begin
-            Close;
-          end;
-        end;
-      end;
-  end;
-end;
-{******************************************************************************}
-
-procedure TformSelectCashSale.cmdInvoiceNoSaleDesClick(Sender: TObject);
-begin
-  if (FShowingInvoices) then
-  begin
-    lstCashSales.DataSource := dm.dsNoSales;
-    cmdInvoiceNoSale.Caption := sInvoices;
-    lblTitle.Caption := Format(sSelectTabNoSales, [GlbTable.TableNo, GlbTable.TableName]);
-    FShowingInvoices := False;
-  end
-  else
-  begin
-    lstCashSales.DataSource := dm.dsInvoices;
-    cmdInvoiceNoSale.Caption := sNoSales;   
-    lblTitle.Caption := Format(sSelectTabInvoice, [GlbTable.TableNo, GlbTable.TableName]);
-    FShowingInvoices := True;
-  end;                                     
-  DisplayReceipt;
-end;
-
-end.
-
-
-
-
-unit FFrameReceipt;
-
-{******************************************************************************}
-interface
-{******************************************************************************}
-uses
-  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
-  StdCtrls, ComCtrls;
-{******************************************************************************}
-type
-  TframeReceipt = class(TFrame)
-    mmoReceipt: TRichEdit;
-    procedure FrameResize(Sender: TObject);
+    procedure qrOrdersCalcFields(DataSet: TDataSet);
+    procedure QRAccountSalesCalcFields(DataSet: TDataSet);
+    procedure qrVoidLinesCalcFields(DataSet: TDataSet);
+    procedure dsTerminalsDataChange(Sender: TObject; Field: TField);
+    procedure dsTillsDataChange(Sender: TObject; Field: TField);
+    procedure dsSaleCategoriesDataChange(Sender: TObject; Field: TField);
+    procedure dsAccountTypesDataChange(Sender: TObject; Field: TField);
+    procedure dsCoursesDataChange(Sender: TObject; Field: TField);
+    procedure dsDiscountSchemesDataChange(Sender: TObject; Field: TField);
+    procedure dsModGroupDataChange(Sender: TObject; Field: TField);
+    procedure dsSalePeriodsDataChange(Sender: TObject; Field: TField);
+    procedure dsCombosDataChange(Sender: TObject; Field: TField);
+    procedure dsEventsDataChange(Sender: TObject; Field: TField);
+    procedure qrEventSalesCalcFields(DataSet: TDataSet);
+    procedure dsSectionsDataChange(Sender: TObject; Field: TField);
   private
     { Private declarations }
-    FMarginWidth: Integer;
+  protected
+    FItemGroupsCurrent: Boolean;
+    FAccountsCurrent: Boolean;
+    FStaffCurrent: Boolean;
+    FTerminalsCurrent: Boolean;
+    FTillsCurrent: Boolean;
+    FSaleCategoriesCurrent: Boolean;
+    FSectionsCurrent: Boolean;
 
-    FPageWidth: Integer;
-    FHalfWay: Integer;
-    FSubTotalMargin: Integer;
+    FCoursesCurrent: Boolean;
+    FDiscountSchemesCurrent: Boolean;
+    FCurrentOutletID: Integer;
+    FModGroupCurrent: Boolean;
+    FCombosCurrent: Boolean;
+    FEventsCurrent: Boolean;
 
-    FHeight: Integer;
-
-    //Basic Data for receipt.. Later on might put this in a Gobal variable
-    FInvoiceID: Integer;
-    FTenderID: Integer;
-    FAccountName: string;
-    FTableNo: Integer;
-    FLocation: string;
-    FGroupName: string;
-    FInvoiceNo: Integer;
-    FTenderNo: Integer;
-    FStaffName: string;
-    FWhenInvoiced: TDateTime;
-    FNotes: string;
-    FEventName: string;
-    FHostSubsidy: Currency;
-    FGuestSubsidy: Currency;
-    FEventID: Integer;
-    FBalanceChanged: Currency;
-    FLoyaltyPoints2Rewarded: Integer;
-    FLoyaltyPoints1Rewarded: Integer;
-    FLoyaltyPoints2: Integer;
-    FLoyaltyPoints1: Integer;
-    FRemoteLocationName: string;
-    FNoSaleTypeName: string;
-    FLoyaltyReward: string;
-
-    procedure FSetMarginWidth(I: Integer);
-    procedure SetMargins;
-    procedure SetFont(Name: string; Size: Integer; Style: TFontStyles; Colour: TColor = clBlack);
-
-    procedure BlankLine;
-    procedure DrawLine;
-    procedure WriteTitle(S: string);
-    procedure WriteHeaderDetail(Name: string; Detail: string);
-    procedure WriteItemLine(S: string; C: Currency; FontType: Integer = 0; ComboCount: Integer = 0);
-    procedure WriteItem2Currency(S: string; C1: Currency; C2: Currency);
-    procedure WriteItemQtyPrice(Qty: Double; UnitPrice: Currency; WeighedItem: SmallInt = 0);
-    procedure WriteModLine(S: string);
-    procedure WritewiTrxIdLine(wiTrxId: Integer);
-    procedure WriteSubTotalLine(S: string; C: Currency);
-    procedure WriteTotalLine(S: string; C: Currency);
-    procedure WriteTotalMessage(S: string);
+    procedure FSetItemGroupsCurrent(Value: Boolean);
+    procedure FSetAccountsCurrent(Value: Boolean);
+    procedure FSetStaffCurrent(Value: Boolean);
+    procedure FSetTerminalsCurrent(Value: Boolean);
+    procedure FSetTillsCurrent(Value: Boolean);
+    procedure FSetSaleCategoriesCurrent(Value: Boolean);
+    procedure FSetSectionsCurrent(Value: Boolean);
+    procedure FSetCoursesCurrent(Value: Boolean);
+    procedure FSetDiscountSchemesCurrent(Value: Boolean);
+    procedure FSetCurrentOutletID(Value: Integer);
+    procedure FSetModGroupCurrent(Value: Boolean);
+    procedure SetCombosCurrent(const Value: Boolean);
+    procedure SetEventsCurrent(const Value: Boolean);
   public
-    property MarginWidth: Integer read FMarginWidth write FSetMarginWidth;
-    { Public declarations }
-    procedure Clear;
-    procedure ScrollUp;
-    procedure ScrollDown;
-    procedure DisplayReceipt;
-    procedure PrintNYReceipt;
-    function TestInvoiceLineForModifiers(InvoiceLineID: Integer; var ModPrices: Currency; var ModAmount: Currency): Boolean;
+    property ItemGroupsCurrent: Boolean read FItemGroupsCurrent write FSetItemGroupsCurrent;
+    property AccountsCurrent: Boolean read FAccountsCurrent write FSetAccountsCurrent;
+    property StaffCurrent: Boolean read FStaffCurrent write FSetStaffCurrent;
+    property TerminalsCurrent: Boolean read FTerminalsCurrent write FSetTerminalsCurrent;
+    property TillsCurrent: Boolean read FTillsCurrent write FSetTillsCurrent;
+    property SaleCategoriesCurrent: Boolean read FSaleCategoriesCurrent write FSetSaleCategoriesCurrent;
+    property SectionsCurrent: Boolean read FSectionsCurrent write FSetSectionsCurrent;
 
-    property Height: Integer read FHeight write FHeight;
+    property CoursesCurrent: Boolean read FCoursesCurrent write FSetCoursesCurrent;
+    property DiscountSchemesCurrent: Boolean read FDiscountSchemesCurrent write FSetDiscountSchemesCurrent;
+    property CurrentOutletID: Integer read FCurrentOutletID write FSetCurrentOutletID;
+    property ModGroupCurrent: Boolean read FModGroupCurrent write FSetModGroupCurrent;
+    property CombosCurrent : Boolean read FCombosCurrent write SetCombosCurrent;
+    property EventsCurrent : Boolean read FEventsCurrent write SetEventsCurrent;
+    //read FEventsCurrent write FEventsCurrent;
 
-    property InvoiceID: Integer read FInvoiceID write FInvoiceID;
-    property TenderID: Integer read FTenderID write FTenderID;
-    property AccountName: string read FAccountName write FAccountName;
-    property TableNo: Integer read FTableNo write FTableNo;
-    property Location: string read FLocation write FLocation;
-    property GroupName: string read FGroupName write FGroupName;
-    property InvoiceNo: Integer read FInvoiceNo write FInvoiceNo;
-    property TenderNo: Integer read FTenderNo write FTenderNo;
-    property StaffName: string read FStaffName write FStaffName;
-    property WhenInvoiced: TDateTime read FWhenInvoiced write FWhenInvoiced;
-    property Notes: string read FNotes write FNotes;
-    property EventID: Integer read FEventID write FEventID;
-    property EventName: string read FEventName write FEventName;
-    property HostSubsidy: Currency read FHostSubsidy write FHostSubsidy;
-    property GuestSubsidy: Currency read FGuestSubsidy write FGuestSubsidy;
-    property LoyaltyPoints1: Integer read FLoyaltyPoints1 write FLoyaltyPoints1;
-    property LoyaltyPoints2: Integer read FLoyaltyPoints2 write FLoyaltyPoints2;   
-    property LoyaltyPoints1Rewarded: Integer read FLoyaltyPoints1Rewarded write FLoyaltyPoints1Rewarded;
-    property LoyaltyPoints2Rewarded: Integer read FLoyaltyPoints2Rewarded write FLoyaltyPoints2Rewarded;  
-    property BalanceChanged: Currency read FBalanceChanged write FBalanceChanged; 
-    property LoyaltyReward: string read FLoyaltyReward write FLoyaltyReward;
-    property RemoteLocationName: string read FRemoteLocationName write FRemoteLocationName;   
-    property NoSaleTypeName: string read FNoSaleTypeName write FNoSaleTypeName;
+    procedure GetItemGroups;
+    procedure GetModGroups;
+    procedure GetAccounts;
+    procedure GetEvents;
+    procedure GetAccountTypes;
+    procedure GetPeopleRemoteOverrideGroups;
+    procedure GetStaff;
+    procedure GetTerminals;
+    procedure GetTills;
+    procedure GetSaleCategories;
+    procedure GetSections;
+    procedure GetSalePeriods;
+    procedure GetCourses;
+    procedure GetCombos;
+    procedure GetDiscountSchemes;
+    procedure GetPeriodEnds(FromTime, ToTime: TDateTime);
+    function  GetAccountSummary(FromTime, ToTime: TDateTime; AccountID, AccountTypeID: Integer): Integer;
+    procedure SetQueryTenderedDiscounts(OutletID: Integer = 0;  RemoteLocationID: Integer = 0);
   end;
-{******************************************************************************}
+{*****************************************************************************}
+var
+  dm: Tdm;
+{*****************************************************************************}
 implementation
-
-{$R *.dfm}
-{******************************************************************************}
+{$R *.DFM}
+{*****************************************************************************}
 uses
-  LMain, DM_WBWaiter, UResources, LServiceQueries, UGlobalMenuList, UGlobalMenuObjects,
-  UPrintJob, IB_Components, IB_Access, wiGroupPOS;
-{******************************************************************************}
-procedure TframeReceipt.FrameResize(Sender: TObject);
+  LMain, UAppDetails, USettings,
+  uResources, UReports;
+{*****************************************************************************}
+procedure Tdm.dmCreate(Sender: TObject);
 begin
-  SetMargins;
-end;
-{******************************************************************************}
-procedure TframeReceipt.FSetMarginWidth(I: Integer);
-begin
-  FMarginWidth := I;
-  SetMargins;
-end;
-{******************************************************************************}
-procedure TframeReceipt.SetMargins;
-begin
-  FPageWidth := ((Width * 72) div Screen.PixelsPerInch) - 4 - (2 * FMarginWidth);
-  FHalfWay := (FPageWidth div 2);
-  FSubTotalMargin := ((FPageWidth * 3) div 4);
-end;
-{******************************************************************************}
-procedure TframeReceipt.SetFont(Name: string; Size: Integer; Style: TFontStyles; Colour: TColor = clBlack);
-begin
-  mmoReceipt.SelAttributes.Name := name;
-  mmoReceipt.SelAttributes.Size := Size;
-  FHeight := FHeight + Round(Size/72*96) + 4;
-  mmoReceipt.SelAttributes.Style := Style;
-  mmoReceipt.SelAttributes.Color := Colour;
-end;
-{******************************************************************************}
-procedure TframeReceipt.Clear;
-var
-  I: Integer;
-begin
-  FInvoiceID := 0;
-  FTenderID := 0;
-  FAccountName := '';
-  FTableNo :=0;
-  FLocation := '';
-  FGroupName := '';
-  FInvoiceNo := 0;
-  FTenderNo := 0;
-  FStaffName := '';
-  FWhenInvoiced := 0;
-  FNotes := '';
-  FEventName := '';
-  FHostSubsidy := 0;
-  FGuestSubsidy := 0;
-  FEventID := 0;
-  FBalanceChanged := 0;
-  FLoyaltyPoints2Rewarded := 0;
-  FLoyaltyPoints1Rewarded := 0;
-  FLoyaltyPoints2 := 0;
-  FLoyaltyPoints1 := 0;
-  FRemoteLocationName := '';
-  FNoSaleTypeName := '';
-  FLoyaltyReward := '';
+  FItemGroupsCurrent:= True;
+  FAccountsCurrent:= True;
+  FStaffCurrent:= True;
+  FTerminalsCurrent:= True;
+  FTillsCurrent:= True;
+  FSaleCategoriesCurrent:= True;
+  FSectionsCurrent := True;
+  FCoursesCurrent:= True;
+  FDiscountSchemesCurrent:= True;
+  FCurrentOutletID:= -1;
+  FModGroupCurrent:= True;
+  FCombosCurrent := True;
+  FEventsCurrent := True;
 
-
-  mmoReceipt.Clear;
-  mmoReceipt.Paragraph.FirstIndent := FMarginWidth;
-  mmoReceipt.Paragraph.LeftIndent := 0;
-  mmoReceipt.Paragraph.RightIndent := FMarginWidth;
-  FHeight := 0;
-
-  I := 0;
-  while (I < FMarginWidth) do
-  begin
-    BlankLine;
-    Inc(I, 10);
+  if (TheDB.Connected) then begin
+    TheDB.Close;
   end;
-end;
-{******************************************************************************}
-procedure TframeReceipt.WriteTitle(S: string);
-begin
-  mmoReceipt.Paragraph.Alignment := taCenter;
-  SetFont('Arial', 14, [fsBold], clBlack);
-  mmoReceipt.Lines.Add(S);
-end;
-{******************************************************************************}
-procedure TframeReceipt.BlankLine;
-begin
-  SetFont('Arial', 12, []);
-  mmoReceipt.Lines.Add('');
-end;
-{******************************************************************************}
-procedure TframeReceipt.DrawLine;
-begin
-  mmoReceipt.Paragraph.FirstIndent := 0;
-  mmoReceipt.Paragraph.RightIndent := 0;
-
-  SetFont('Arial', 12, [fsBold, fsUnderLine], clBlack);
-  mmoReceipt.Paragraph.Alignment := taCenter;
-  mmoReceipt.Paragraph.TabCount := 1;
-  //mmoReceipt.Paragraph.Tab[0] := FPageWidth - 6 - 4;
-  mmoReceipt.Paragraph.Tab[0] := FPageWidth - 4;
-  mmoReceipt.Lines.Add(#32#09#32);
-  BlankLine;
-
-  mmoReceipt.Paragraph.FirstIndent := FMarginWidth;
-  mmoReceipt.Paragraph.RightIndent := FMarginWidth;
-end;
-{******************************************************************************}
-procedure TframeReceipt.WriteHeaderDetail(Name: string; Detail: string);
-begin
-  mmoReceipt.Paragraph.Alignment := taLeftJustify;
-  mmoReceipt.Paragraph.TabCount := 1;
-  mmoReceipt.Paragraph.Tab[0] := FHalfWay;
-  SetFont('Arial', 12, [], clBlack);
-  mmoReceipt.Lines.Add(name + #09 + Detail);
-end;
-{******************************************************************************}
-procedure TframeReceipt.WriteItemLine(S: string; C: Currency; FontType: Integer = 0; ComboCount: Integer = 0);
-var
-  CString: string;
-  CStringLen: Integer;
-
-begin
-  if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-    C := TruncateTo(C, 2);
-
-  CString := FormatFloat('######0.00#', C);
-
-  CStringLen := Length(CString);
-  mmoReceipt.Paragraph.Alignment := taLeftJustify;
-  mmoReceipt.Paragraph.TabCount := 1;
-
-  if FontType = -1 then // combo header
-    SetFont('Arial', 12, [fsUnderLine, fsBold], clBlack) //GetComboColor(ComboCount))
-  else if FontType = -2 then // normal and underline
-    SetFont('Arial', 12, [fsUnderLine], clBlack)
-  else if FontType = -3 then //  bold
-    SetFont('Arial', 12, [fsBold], clBlack)
-  else
-    SetFont('Arial', 12, [], clBlack);
-
-  if (FontType < 0) then // combo header
-  begin
-    mmoReceipt.Paragraph.Tab[0] := FPageWidth - (CStringLen * 7) + 3 + FMarginWidth;
-    mmoReceipt.Lines.Add(S);
-  end
-  else
-  begin
-    mmoReceipt.Paragraph.Tab[0] := FPageWidth - (CStringLen * 7) + 3 + FMarginWidth;
-    mmoReceipt.Lines.Add(S + #09 + CString);
-  end; //SetFont('Arial', 12, []);
-end;
-{******************************************************************************}
-procedure TframeReceipt.WriteItem2Currency(S: string; C1: Currency; C2: Currency);
-var
-  C1String: string;
-  C2String: string;
-  C1StringLen: Integer;
-  C2StringLen: Integer;
-begin
-  if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-  begin
-    C1 := TruncateTo(C1, 2);
-    C2 := TruncateTo(C2, 2);
-  end;
-  C1String := FormatFloat('######0.00#', C1);
-  C1StringLen := Length(C1String);
-  C2String := FormatFloat('######0.00#', C2);
-  C2StringLen := Length(C2String);
-  mmoReceipt.Paragraph.Alignment := taLeftJustify;
-  mmoReceipt.Paragraph.TabCount := 2;
-  mmoReceipt.Paragraph.Tab[0] := FSubTotalMargin - (C1StringLen * 7) + 3 + FMarginWidth;
-  mmoReceipt.Paragraph.Tab[1] := FPageWidth - (C2StringLen * 7) + 3 + FMarginWidth;
-
-  SetFont('Arial', 12, []);
-  mmoReceipt.Lines.Add(S + #09 + C1String + #09 + C2String);
-end;
-{******************************************************************************}
-procedure TframeReceipt.WriteItemQtyPrice(Qty: Double; UnitPrice: Currency; WeighedItem: SmallInt = 0);
-begin
-  if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-    UnitPrice := TruncateTo(UnitPrice, 2);
-
-  mmoReceipt.Paragraph.Alignment := taLeftJustify;
-  mmoReceipt.Paragraph.TabCount := 1;
-  mmoReceipt.Paragraph.Tab[0] := 20;
-  SetFont('Arial', 12, []);
-  if WeighedItem = 1 then
-    mmoReceipt.Lines.Add(#09 + FormatFloat('#######0.###', Qty) + ' @ ' + FormatFloat('#######0.00', UnitPrice))
-  else
-    mmoReceipt.Lines.Add(#09 + FormatFloat('#######0.##', Qty) + ' @ ' + FormatFloat('#######0.00', UnitPrice));
-end;
-{******************************************************************************}
-procedure TframeReceipt.WriteModLine(S: string);
-begin
-  mmoReceipt.Paragraph.Alignment := taLeftJustify;
-  mmoReceipt.Paragraph.TabCount := 1;
-  mmoReceipt.Paragraph.Tab[0] := 20;
-  SetFont('Arial', 12, [fsItalic]);
-  mmoReceipt.Lines.Add(#09 + S);
-end;
-{******************************************************************************}
-{Display the wiTrxId for either a wiGroup tender line or discount line}
-procedure TframeReceipt.WritewiTrxIdLine(wiTrxId: Integer);
-begin
-  mmoReceipt.Paragraph.Alignment := taLeftJustify;
-  mmoReceipt.Paragraph.TabCount := 1;
-  mmoReceipt.Paragraph.Tab[0] := 20;
-  SetFont('Arial', 10, []);
-  mmoReceipt.Lines.Add(#09 + Format(swiTrxIdLabel, [wiTrxId]));
-end;
-{******************************************************************************}
-procedure TframeReceipt.WriteSubTotalLine(S: string; C: Currency);
-var
-  CString: string;
-  CStringLen: Integer;
-begin
-  if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-    C := TruncateTo(C, 2);
-
-  CString := AppDetails.CurrencyType + ' ' + FormatFloat('######0.00', C);
-  CStringLen := Length(CString);
-  mmoReceipt.Paragraph.Alignment := taLeftJustify;
-  mmoReceipt.Paragraph.TabCount := 1;
-  mmoReceipt.Paragraph.Tab[0] := FSubTotalMargin - (CStringLen * 7) + 7 + FMarginWidth;
-  SetFont('Arial', 12, [fsBold]);
-  mmoReceipt.Lines.Add(S + #09 + CString);
-end;
-{******************************************************************************}
-procedure TframeReceipt.WriteTotalLine(S: string; C: Currency);
-var
-  CString: string;
-  CStringLen: Integer;
-begin
-  if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-    C := TruncateTo(C, 2);
-
-  CString := AppDetails.CurrencyType + ' ' + FormatFloat('######0.00', C);
-  CStringLen := Length(CString);
-  mmoReceipt.Paragraph.Alignment := taLeftJustify;
-  mmoReceipt.Paragraph.TabCount := 1;
-  mmoReceipt.Paragraph.Tab[0] := FPageWidth - (CStringLen * 7) + 7 + FMarginWidth;
-  SetFont('Arial', 12, [fsBold]);
-  mmoReceipt.Lines.Add(S + #09 + CString);
-end;
-{******************************************************************************}
-procedure TframeReceipt.WriteTotalMessage(S: string);
-begin
-  mmoReceipt.Paragraph.Alignment := taLeftJustify;
-  SetFont('Arial', 12, [fsBold]);
-  mmoReceipt.Lines.Add(S);
-end;
-{******************************************************************************}
-procedure TframeReceipt.ScrollUp;
-begin
-  SendMessage(mmoReceipt.Handle, WM_VSCROLL, SB_PAGEUP, 0);
-end;
-{******************************************************************************}
-procedure TframeReceipt.ScrollDown;
-begin
-  SendMessage(mmoReceipt.Handle, WM_VSCROLL, SB_PAGEDOWN, 0);
-end;
-{******************************************************************************}
-procedure TframeReceipt.DisplayReceipt;
-var
-  I: Integer;
-  LocalItemAbbrev: string;
-  LocalWeigedItem: Integer;
-  LocalComboIndex: Integer;
-  LocalAllowCombineCombo, LocalItemID, LocalComboId, ComboGroupOrder: Integer;
-  LocalItemUnitPrice, LocalItemUP: Currency;
-  LocalItemSalesTax: Currency;
-  LocalQty: Currency;
-  LocalItemILAmount: Currency;
-  LocalItemExists, PrintJustOnce: Boolean;
-  LocalInvoiceLineID: Integer;
-  ModPrices: Currency;
-  ModAmount: Currency;
-  InvoiceTotal: Currency;
-  DiscountTotal: Currency;
-  ComboDiscount: Currency;
-  FoodTotal: Currency;
-  BevTotal: Currency;
-  SalesTaxTotal: Currency;
-  SalesTax: Currency;
-  ILAmount: Currency;
-  Discount: Currency;
-  NettDue: Currency;
-  NettPayment: Currency;
-  Qty: Currency;
-  ChangeAmount: Currency;
-  RoundingTotal: Currency;
-  TipTotal: Currency;
-  TenderTotal: Currency;
-  TenderTip: Currency;
-  TenderAmount: Currency;
-  NYHappyHourOL: TNYHappyHourOL;
-  iSendCombo, PrevComboIndex: Integer;
-  PrevComboName, ExtraMargin: string;
-  TempCombo, PrevComboGrp, ComboGroup, ComboQty: string;
-  ComboID, iIndex: Integer;
-  ComboQtyList: TStringList;
-  CanGroupCombo: Boolean;
-  TenderLineType: string;
-
-  function ItemToAdd: Boolean;
-  begin
-    if (LocalAllowCombineCombo = 0) then
-    begin
-      Result := ((dm.qr.FieldByName('comboid').AsInteger = LocalComboId) and
-                 (dm.qr.FieldByName('comboindex').AsInteger = LocalComboIndex) and
-                 (dm.qr.FieldByName('itemid').AsInteger = LocalItemID) and
-                 (dm.qr.FieldByName('itemabbrev').AsString = LocalItemAbbrev) and
-                 (dm.qr.FieldByName('unitprice').AsCurrency = LocalItemUP));
-    end
-    else
-    begin                                                            
-      Result := ((dm.qr.FieldByName('comboid').AsInteger = LocalComboId) and
-                 (dm.qr.FieldByName('combogrouporder').AsInteger = ComboGroupOrder) and
-                 (dm.qr.FieldByName('itemid').AsInteger = LocalItemID) and
-                 (dm.qr.FieldByName('itemabbrev').AsString = LocalItemAbbrev) and
-                 (dm.qr.FieldByName('unitprice').AsCurrency = LocalItemUP));
-
-      if (not AppDetails.CashSaleCombineOLs) then
-      begin
-        Result := (Result and (dm.qr.FieldByName('invoicelineid').AsInteger = LocalInvoiceLineID));
-      end;
-    end;
-  end;
-
-  procedure PrintwiGroupDiscounts;
-  begin
-    with dm.qrwiGroupInvDiscs do
-    begin
-      while not EOF do
-      begin
-        WriteItemLine(sLessLabel + FieldByName('discountname').AsString, FieldByName('discountamount').AsCurrency);
-
-        //the compulsory wiTrxId must be displayed
-        WritewiTrxIdLine(FieldByName('wiTrxId').AsInteger);
-
-        Next;
-      end;
-    end;
-  end;
-begin
-  if (InvoiceID > 0) then
-    WriteTitle(sTaxInvCap)
-  else if (TenderID > 0) then
-    WriteTitle(sNoSaleTender);
-  if (FNoSaleTypeName <> '') then
-  begin
-    WriteTitle(FNoSaleTypeName);
-  end;    
-  if (FAccountName <> '') then
-  begin
-    WriteTitle(FAccountName);
-  end;
-  BlankLine;
-  if (FTableNo > 0) then
-  begin
-    if (not (TheActiveForm in [afTables, afBookings])) then
-      WriteHeaderDetail(sTab, IntToStr(FTableNo));
-  end   
-  else if (TheActiveForm = afBookings) then
-  begin
-    WriteHeaderDetail(sBooking, '');
-  end
-  else if (FInvoiceID > 0) then
-  begin
-    WriteHeaderDetail(sCashSale, '');
-  end;
-  if (FRemoteLocationName <> '') and (AppDetails.RemoteLocationLevel = 1) then
-  begin
-    WriteHeaderDetail(sRemote, FRemoteLocationName);
-  end;
-  if (FLocation <> '') then
-  begin
-    WriteHeaderDetail(sDestination, FLocation);
-  end;
-
-  if (FGroupName <> '') then
-  begin
-    WriteHeaderDetail(sName, FGroupName);
-  end;
-  if (FInvoiceNo > 0) then
-    WriteHeaderDetail(sInvNo, IntToStr(FInvoiceNo))
-  else if (FTenderNo > 0) then
-    WriteHeaderDetail(sNoSaleNo, IntToStr(FTenderNo));
-  WriteHeaderDetail(sSalesperson, FStaffName);
-  WriteHeaderDetail(sDate, FormatDateTime('h:nn AM/PM d mmm yy', FWhenInvoiced));
-  if Trim(FEventName) <> '' then
-    WriteHeaderDetail(sEvent, FEventName);
-  DrawLine;
-
-  InvoiceTotal := 0;
-  DiscountTotal := 0;
-  ComboDiscount := 0;
-  FoodTotal := 0;
-  BevTotal := 0;
-  SalesTaxTotal := 0;
-  ChangeAmount := 0;
-  RoundingTotal := 0;
-  TipTotal := 0;
-  TenderTotal := 0;
-  LocalItemSalesTax := 0;
-  ComboID := 0;
-  NettDue := 0;
-  ComboQtyList := TStringList.Create;
+  TheDB.Database := AppDetails.DBHost + ':' + AppDetails.DBAlias;
+  TheDB.Username:= AppDetails.DBUserName;
+  TheDB.Password:= AppDetails.DBPassword;
+  TheDB.SchemaCacheDir := AppDetails.DBCacheDir;
   try
-    if ((AppDetails.SpecialNYHappyHour) and (GlobalMenuList.ListNYHappyHourOL.Count > 0)) then
-    begin
-      for I := 0 to (GlobalMenuList.ListNYHappyHourOL.Count - 1) do
-      begin
-        NYHappyHourOL := GlobalMenuList.ListNYHappyHourOL.Items[I];
-        WriteItemLine(NYHappyHourOL.Item, NYHappyHourOL.Price);
-        if (NYHappyHourOL.Qty <> 1) then
-        begin
-          WriteItemQtyPrice(NYHappyHourOL.Qty, NYHappyHourOL.UnitPrice, 0);
-        end;
-        InvoiceTotal := InvoiceTotal + NYHappyHourOL.Price;
-        if (NYHappyHourOL.ForB = 'F') then
-        begin
-          FoodTotal := FoodTotal + NYHappyHourOL.Price;
-        end
-        else
-        begin
-          BevTotal := BevTotal + NYHappyHourOL.Price;
-        end;
-        LocalItemSalesTax := LocalItemSalesTax + (NYHappyHourOL.Price - ((NYHappyHourOL.Price / (NYHappyHourOL.SalesTaxPercent + 100)) * 100));
-        SalesTaxTotal := SalesTaxTotal + (NYHappyHourOL.Price - ((NYHappyHourOL.Price / (NYHappyHourOL.SalesTaxPercent + 100)) * 100));
-      end;
-      DrawLine;
-      WriteSubTotalLine(sFoodCap, FoodTotal);
-      WriteSubTotalLine(sBevCap, BevTotal);
+    TheDB.Open;
+  except
+    if (not TheDB.Connected) then begin
+      TheDB.Username:= 'sysdba';
+      TheDB.Password:= 'masterkey';
+    end;
+  end;
 
-      if (AppDetails.TaxExclusivePrices) then
-      begin
-        WriteTotalLine(AppDetails.TaxName, SalesTaxTotal);
-        NettDue := InvoiceTotal + SalesTaxTotal;
-      end
-      else
-      begin
-        NettDue := InvoiceTotal;
-      end;
+  try
+    TheDB.Open;
+  except on e : exception do begin
+     ShowMessage(Format(sAppWillClose,[e.message]));
+     if not(ChangeSettings) then
+       Application.Terminate;
+     AppDetails.SaveDetails;
+     TheDB.Database := AppDetails.DBHost + ':' + AppDetails.DBAlias;
+     TheDB.Username:= AppDetails.DBUserName;
+     TheDB.Password:= AppDetails.DBPassword;
+    end;
+  end;
+  try
+    TheDB.Open;
+    qrOutlets.Open;
 
-      WriteTotalLine(sBalDue, NettDue);
+    GetAccounts;
+    GetAccountTypes;
+    GetPeopleRemoteOverrideGroups;
+    GetStaff;
+    GetTerminals;
+    GetTills;
+    GetSaleCategories;
+    GetSections;
+    GetCombos;
+    GetSalePeriods;
+    GetCourses;
+    GetDiscountSchemes;
+    GetItemGroups;
+    GetModGroups;
+    GetEvents;
+  except on e : exception do begin
+     ShowMessage(Format(sAppWillClose,[e.message]));
+     Application.Terminate;
+    end;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.FSetItemGroupsCurrent(Value: Boolean);
+begin
+  if (Value <> FItemGroupsCurrent) then begin
+    FItemGroupsCurrent:= Value;
+    GetItemGroups;
+  end;
+end;
+{******************************************************************************}
+procedure Tdm.FSetAccountsCurrent(Value: Boolean);
+begin
+  if (Value <> FAccountsCurrent) then begin
+    FAccountsCurrent:= Value;
+    GetAccounts;
+    GetAccountTypes;
+  end;
+end;
+{******************************************************************************}
+procedure Tdm.FSetStaffCurrent(Value: Boolean);
+begin
+  if (Value <> FStaffCurrent) then begin
+    FStaffCurrent:= Value;
+    GetStaff;
+  end;
+end;
+{******************************************************************************}
+procedure Tdm.FSetTerminalsCurrent(Value: Boolean);
+begin
+  if (Value <> FTerminalsCurrent) then begin
+    FTerminalsCurrent:= Value;
+    GetTerminals;
+  end;
+end;
+{******************************************************************************}
+procedure Tdm.FSetTillsCurrent(Value: Boolean);
+begin
+  if (Value <> FTillsCurrent) then begin
+    FTillsCurrent:= Value;
+    GetTills;
+  end;
+end;
+{******************************************************************************}
+procedure Tdm.FSetSaleCategoriesCurrent(Value: Boolean);
+begin
+  if (Value <> FSaleCategoriesCurrent) then begin
+    FSaleCategoriesCurrent:= Value;
+    GetSaleCategories;
+  end;
+end;
+{******************************************************************************}
+procedure Tdm.FSetSectionsCurrent(Value: Boolean);
+begin
+  if (Value <> FSectionsCurrent) then begin
+    FSectionsCurrent:= Value;
+    GetSections;
+  end;
+end;
+{******************************************************************************}
+procedure Tdm.FSetCoursesCurrent(Value: Boolean);
+begin
+  if (Value <> FCoursesCurrent) then begin
+    FCoursesCurrent:= Value;
+    GetCourses;
+  end;
+end;
+{******************************************************************************}
+procedure Tdm.FSetDiscountSchemesCurrent(Value: Boolean);
+begin
+  if (Value <> FDiscountSchemesCurrent) then begin
+    FDiscountSchemesCurrent:= Value;
+    GetDiscountSchemes;
+  end;
+end;
+{******************************************************************************}
+procedure Tdm.FSetCurrentOutletID(Value: Integer);
+begin
+  if (Value <> FCurrentOutletID) then begin
+    FCurrentOutletID:= Value;
 
-      if (not AppDetails.TaxExclusivePrices) then
-      begin
-        WriteTotalLine(Format(sIncludesTaxName, [AppDetails.TaxName]), SalesTaxTotal);
-      end;
+    if (FCurrentOutletID <> -1) then begin
+      with qrOutlets do begin
+        Locate('outletid', FCurrentOutletID, [loCaseInsensitive]);
 
-      WriteItemLine('Cash', NettDue);
-      BlankLine;
-      WriteTotalLine(sTenderedCap, NettDue);
-      if (GlbNYHappyHour.Total > 0) then
-      begin
-        WriteTotalLine(sChangeCap, GlbNYHappyHour.Total);
+        Glbs.OutletID := FieldByName('outletid').AsInteger;
+        Glbs.OutletName := FieldByName('outletname').AsString;
+        Glbs.OutletAddress := FieldByName('outletaddress').AsString;
+        Glbs.OutletPhone := FieldByName('outletphone').AsString;
+        Glbs.OutletFax := FieldByName('outletfax').AsString;
+        Glbs.OutletTaxNumber := FieldByName('taxnumber').AsString;
+        Glbs.OutletTaxNumberName := FieldByName('taxnumbername').AsString;
+        Glbs.OutletTaxRate := FieldByName('taxrate').AsFloat;
       end;
+    end;
+
+    GetItemGroups;
+  end;
+end;
+{******************************************************************************}
+procedure Tdm.FSetModGroupCurrent(Value: Boolean);
+begin
+  if (Value <> FModGroupCurrent) then begin
+    FModGroupCurrent:= Value;
+    GetModGroups;
+  end;
+end;
+{******************************************************************************}
+procedure Tdm.GetItemGroups;
+begin
+  with qrItemGroups do begin
+    Close;
+    UnPrepare;
+
+    SQL.Clear;
+    SQL.Add('select o.outletid, o.outletname, ig.forb, ig.itemgrouporder, ig.itemgroupid,');
+    SQL.Add('  ig.itemgroupabbrev, ig.itemgroupname, ig.whendeleted, 0 sharing');
+    SQL.Add('  from itemgrp ig');
+    SQL.Add('  inner join outlet o on (ig.outletid = o.outletid)'); //get owner outletname
+    SQL.Add('  where ((:outletid = -1) or (ig.outletid = :outletid))');
+
+    if (FItemGroupsCurrent) then begin
+      SQL.Add('and (ig.whendeleted is null)');
     end
-    else if (InvoiceID > 0) then
-    begin
-      ComboQtyList.Clear;
-      ComboQtyList.Sorted := True;
-      ComboQtyList.Duplicates := dupIgnore;
-      PrevComboName := '';
-      ComboGroupOrder := 0;
-      with dm.qr do
-      begin
-        Close;
-        SQL.Clear;
-        SQL.Add('select ol.comboid, c.ALLOWCOMBINEINREPORTS, max(ol.comboindex) as comboindex');
-        SQL.Add('  from invline il');
-        SQL.Add(' inner join ordln ol on (il.ORDERLINEID = ol.ORDERLINEID)');
-        SQL.Add(' inner join combos c on (ol.COMBOID = c.COMBOID)');
-        SQL.Add(' where il.invoiceid = ' + IntToStr(InvoiceID) + ' and ol.COMBOID > 0');
-        SQL.Add(' group by ol.comboid, c.ALLOWCOMBINEINREPORTS');
-        Active := True;
-
-        while (not Eof) do
-        begin
-          if (FieldAsBool(FieldByName('ALLOWCOMBINEINREPORTS'))) then
-          begin
-            ComboQtyList.AddObject(IntToStr(FieldByName('comboid').AsInteger), TObject(FieldByName('comboindex').AsInteger));
-          end
-          else
-          begin
-            ComboQtyList.AddObject(IntToStr(FieldByName('comboid').AsInteger), TObject(1));
-          end;
-
-          Next;
-        end;
-        Close;
-
-        //get any wiGroup invoice discounts
-        GetwiGroupInvDiscs(InvoiceID);
-
-        Unprepare;
-        SQL.Clear;
-        SQL.Add('select * from getils(:invoiceid)');
-        SQL.Add(' order by surcharge, comboorder, combogrouporder, comboindex, itemgrouporder, itemorder, itemabbrev, unitprice');
-        Prepare;
-        ParamByName('invoiceid').AsInteger := InvoiceID;
-        Open;
-
-        First;
-        PrevComboName := '';
-        PrevComboIndex := 0;
-        ExtraMargin := '';
-        PrintJustOnce := False;
-
-        while (not Eof) do
-        begin
-          LocalComboId := FieldByName('comboid').AsInteger;
-          LocalAllowCombineCombo := FieldByName('ALLOWCOMBINEINREPORTS').AsInteger;
-          if (LocalAllowCombineCombo = 0) then
-          begin
-            if ((FieldByName('comboid').AsInteger > 0) and (ComboGroupOrder <> FieldByName('combogrouporder').AsInteger)) then
-              PrevComboName := '';
-            LocalComboIndex := FieldByName('comboindex').AsInteger;
-          end
-          else
-          begin
-            LocalComboIndex := FieldByName('combogrouporder').AsInteger;
-          end;
-          LocalItemAbbrev := FieldByName('itemabbrev').Asstring;
-
-          LocalWeigedItem := FieldByName('WeighedItem').AsInteger;
-          LocalItemID := FieldByName('itemid').AsInteger;
-          LocalItemUnitPrice := FieldByName('unitprice').AsCurrency;
-          LocalItemUP := FieldByName('unitprice').AsCurrency;
-
-          if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-            LocalItemUnitPrice := TruncateTo(LocalItemUnitPrice, 2);
-
-          LocalQty := 0;
-          LocalItemSalesTax := 0;
-          LocalItemILAmount := 0;
-          LocalItemExists := False;
-          LocalInvoiceLineID := FieldByName('invoicelineid').AsInteger;
-
-          if ((not PrintJustOnce) and (PrevComboName <> '') and (FieldByName('comboid').AsInteger = 0)) then
-          begin
-            WriteItemLine('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', 0, -3, 0);
-            PrintJustOnce := True;
-          end;
-
-          if (LocalAllowCombineCombo = 0) then
-          begin
-            CanGroupCombo := (FieldByName('comboid').AsInteger > 0) and
-                             ((ComboID <> FieldByName('comboid').AsInteger) or
-                              (ComboGroupOrder <> FieldByName('combogrouporder').AsInteger) or
-                              (PrevComboIndex <> FieldByName('comboindex').AsInteger));
-          end
-          else
-          begin
-            CanGroupCombo := (FieldByName('comboid').AsInteger > 0) and ((ComboID <> FieldByName('comboid').AsInteger) or (ComboGroupOrder <> FieldByName('combogrouporder').AsInteger));
-          end;
-
-          if (CanGroupCombo) then
-          begin
-            ComboGroupOrder := FieldByName('combogrouporder').AsInteger;
-            ComboID := FieldByName('comboid').AsInteger;
-            ComboGroup := FieldByName('combogroupname').Asstring;
-            if (LocalAllowCombineCombo = 0) then
-            begin
-              CanGroupCombo := ((PrevComboName <> FieldByName('comboname').Asstring) or (PrevComboIndex <> FieldByName('comboindex').AsInteger));
-            end
-            else
-            begin
-              CanGroupCombo := (PrevComboName <> FieldByName('comboname').Asstring);
-            end;
-
-            if (CanGroupCombo) then
-            begin
-              if (PrevComboName <> FieldByName('comboname').Asstring) then
-              begin
-                ComboQty := '';
-                if ((ComboQtyList.Find(IntToStr(ComboID), iIndex)) and (Integer(ComboQtyList.Objects[iIndex]) > 1)) then
-                begin
-                  ComboQty := IntToStr(Integer(ComboQtyList.Objects[iIndex])) + ' X ';
-                end;
-                WriteItemLine(ComboQty + FieldByName('comboname').Asstring, 0, -1, 0);
-              end;
-
-              PrevComboName := FieldByName('comboname').Asstring;
-              PrevComboGrp := '';
-              TempCombo := PrevComboName;
-              if (LocalAllowCombineCombo = 0) then
-              begin
-                PrevComboIndex := FieldByName('comboindex').AsInteger;
-              end
-              else
-              begin
-                PrevComboIndex := FieldByName('combogrouporder').AsInteger;
-              end;
-            end;
-            if (PrevComboGrp <> FieldByName('combogroupname').Asstring) then
-            begin
-              PrevComboGrp := FieldByName('combogroupname').Asstring;
-              WriteItemLine(FieldByName('combogroupname').Asstring, 0, -1, 0);
-            end;
-          end;
-
-          ExtraMargin := '';
-          if LocalComboId > 0 then
-            ExtraMargin := '   ';
-          while ((not Eof) and ItemToAdd) do
-          begin
-            LocalInvoiceLineID := FieldByName('invoicelineid').AsInteger;
-
-            if ((TestInvoiceLineForModifiers(LocalInvoiceLineID, ModPrices, ModAmount))) then
-            begin
-              Qty := FieldByName('qty').AsCurrency;
-
-              if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-                Qty := TruncateTo(Qty, 3);
-
-              iSendCombo := 0;
-              if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-                WriteItemLine(ExtraMargin + FieldByName('itemabbrev').Asstring, TruncateTo(FieldByName('ilamount').AsCurrency, 2), 0, iSendCombo)
-              else
-                WriteItemLine(ExtraMargin + FieldByName('itemabbrev').Asstring, (FieldByName('ilamount').AsCurrency), 0, iSendCombo);
-
-              SetQueryGetModifiersForInvoiceLine;
-              with dm.qrGetModifiersForInvoiceLine do
-              begin
-                Open;
-                ParamByName('invoicelineid').AsInteger := LocalInvoiceLineID;
-                ParamByName('allowzero').AsInteger := 1;
-
-                while (not Eof) do
-                begin
-                  if (FieldByName('modqtyordered').AsDouble > 1) then
-                    WriteModLine(FloatToStr(FieldByName('modqtyordered').AsDouble) + ' x ' + FieldByName('modifier').Asstring)
-                  else
-                    WriteModLine(FieldByName('modifier').Asstring);
-                  Next;
-                end;
-                Close;
-              end;
-              if (Qty <> 1) then
-              begin
-                if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-                begin
-                  WriteItemQtyPrice(Qty, TruncateTo(FieldByName('unitprice').AsCurrency, 2), FieldByName('weigheditem').AsInteger);
-                end
-                else
-                begin
-                  WriteItemQtyPrice(Qty, FieldByName('unitprice').AsCurrency, FieldByName('weigheditem').AsInteger);
-                end;
-              end;
-            end
-            else
-            begin
-              LocalItemExists := True;
-              Qty := FieldByName('qty').AsCurrency;
-              if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-                Qty := TruncateTo(Qty, 3);
-
-              LocalQty := LocalQty + Qty;
-            end;
-            SalesTax := FieldAsCurrency(FieldByName('salestax'));
-            ILAmount := FieldByName('ilamount').AsCurrency;
-            Discount := FieldByName('discountamount').AsCurrency;
-            InvoiceTotal := InvoiceTotal + ILAmount;
-            LocalItemILAmount := LocalItemILAmount + ILAmount;
-
-            if FieldByName('comboid').AsInteger > 0 then
-              ComboDiscount := ComboDiscount + Discount
-            else
-              DiscountTotal := DiscountTotal + Discount;
-
-            if (FieldByName('forb').Asstring = 'F') then
-            begin
-              FoodTotal := FoodTotal + ILAmount;
-            end
-            else
-            begin
-              BevTotal := BevTotal + ILAmount;
-            end;
-
-            if FEventID <= 0 then
-            begin
-              if (FieldByName('forb').Asstring = 'F') then
-                FoodTotal := FoodTotal - Discount
-              else
-                BevTotal := BevTotal - Discount;
-            end;
-
-            LocalItemSalesTax := LocalItemSalesTax + SalesTax;
-            SalesTaxTotal := SalesTaxTotal + SalesTax;
-
-            Next;
-            // ItemToAdd;
-          end;
-
-          if (LocalItemExists) then
-          begin
-            iSendCombo := 0;
-            //if LocalComboId > 0 then
-            //iSendCombo := LocalComboGroup;
-            WriteItemLine(ExtraMargin + LocalItemAbbrev, LocalItemILAmount, 0, iSendCombo);
-            if (LocalQty <> 1) then
-            begin
-              WriteItemQtyPrice(LocalQty, LocalItemUnitPrice, LocalWeigedItem);
-            end;
-          end;
-        end;
-        Close;
-        DrawLine;
-
-        if (AppDetails.EnableFiscalPrinting and (AppDetails.TruncateAmount = 1)) then
-        begin
-          InvoiceTotal := TruncateTo(InvoiceTotal, 2);
-          DiscountTotal := TruncateTo(DiscountTotal, 2);
-          ComboDiscount := TruncateTo(ComboDiscount, 2);
-          BevTotal := TruncateTo(BevTotal, 2);
-          FoodTotal := TruncateTo(FoodTotal, 2);
-          SalesTaxTotal := TruncateTo(SalesTaxTotal, 2);
-        end;
-
-        if ((DiscountTotal > 0) or (ComboDiscount > 0) or (AppDetails.TaxExclusivePrices)) then
-        begin
-          WriteTotalLine(sSubTotal, InvoiceTotal);
-        end;
-
-        if ((DiscountTotal > 0) and (dm.qrwiGroupInvDiscs.RecordCount > 0)) then
-          PrintwiGroupDiscounts
-        else if ((DiscountTotal > 0) and (FEventID <= 0)) then
-        begin
-          WriteTotalLine(sLessDisc, DiscountTotal);
-        end;
-
-        if (ComboDiscount > 0) then
-        begin
-          WriteTotalLine(sLessComboDiscount, ComboDiscount);
-        end;
-
-        WriteSubTotalLine(sFoodCap, FoodTotal);
-        WriteSubTotalLine(sBevCap, BevTotal);
-
-        if (AppDetails.TaxExclusivePrices) then
-        begin
-          WriteTotalLine(AppDetails.TaxName, SalesTaxTotal);
-          NettDue := InvoiceTotal - ComboDiscount + SalesTaxTotal;
-        end
-        else
-          NettDue := InvoiceTotal - ComboDiscount;
-
-        if FEventID <= 0 then
-          NettDue := NettDue - DiscountTotal;
-
-        WriteTotalLine(sBalDue, NettDue);
-
-        if (not AppDetails.TaxExclusivePrices) then
-        begin
-          WriteTotalLine(Format(sIncludesTaxName, [AppDetails.TaxName]), SalesTaxTotal);
-        end;
-        if (TenderID > 0) then
-          DrawLine;
-      end;
-    end;
-    if (TenderID > 0) then
-    begin
-      with dm.qr do
-      begin
-        Unprepare;
-        SQL.Clear;
-        SQL.Add('select * from gettls (:tenderid)');
-        SQL.Add('  order by tenderlineid');
-        Prepare;
-        ParamByName('tenderid').AsInteger := TenderID;
-        Open;
-        First;
-        if (not Eof) then
-        begin
-          while (not Eof) do
-          begin
-            if (FieldAsBool(FieldByName('changeamount'))) then
-            begin
-              ChangeAmount := Abs(FieldAsCurrency(FieldByName('tenderlineamount')));
-              RoundingTotal := RoundingTotal + FieldAsCurrency(FieldByName('roundingamount'));
-            end
-            else
-            begin
-              TenderTip := FieldAsCurrency(FieldByName('tenderlinetip'));
-              TenderAmount := FieldAsCurrency(FieldByName('tenderlineamount'));
-              TenderLineType := FieldByName('tenderlinetype').AsString;
-              if (FieldAsString(FieldByName('tenlinetypeprovider')) <> '') then
-              begin
-                if (FieldByName('tenderlinetypeid').AsInteger = 29) then
-                begin
-                  if (TenderAmount >= 0) then
-                    TenderLineType := sThorLinkPurchaseOn + FieldAsString(FieldByName('tenlinetypeprovider'))
-                  else if (TenderAmount < 0) then
-                    TenderLineType := sThorLinkTopupOn + FieldAsString(FieldByName('tenlinetypeprovider'))
-                  else
-                    TenderLineType := TenderLineType + ' - ' + FieldAsString(FieldByName('tenlinetypeprovider'));
-                end;
-              end;
-
-              if (TenderTip > 0) then
-              begin
-                WriteItem2Currency(TenderLineType, TenderTip, TenderAmount);
-              end
-              else
-              begin
-                WriteItemLine(TenderLineType, TenderAmount);
-              end;
-
-              //if wiTrxId exists, it's a wiGroup tender line, and the compulsory wiTrxId must be displayed
-              if not FieldByName('wiTrxId').IsNull then
-                WritewiTrxIdLine(FieldByName('wiTrxId').AsInteger);
-
-              RoundingTotal := RoundingTotal + FieldAsCurrency(FieldByName('roundingamount'));
-              TipTotal := TipTotal + TenderTip;
-              TenderTotal := TenderTotal + TenderAmount;
-            end;
-            Next;
-          end;
-
-          BlankLine;
-          if (TipTotal > 0) then
-          begin
-            WriteSubTotalLine(sTipCap, TipTotal);
-          end;
-          if (TenderTotal > 0) then
-          begin
-            if ((FEventID > 0) and (FGuestSubsidy > 0)) then
-              WriteTotalLine(sGuestTenderedCap, TenderTotal)
-            else
-              WriteTotalLine(sTenderedCap, TenderTotal);
-          end;
-          if (ChangeAmount > 0) then
-          begin
-            WriteTotalLine(sChangeCap, ChangeAmount);
-          end;
-        end;
-      end;
-
-      NettPayment := TenderTotal - ChangeAmount - TipTotal + RoundingTotal;
-
-      if ((AccountName <> '') and (Abs(NettDue - NettPayment) > 0.02)) then
-      begin
-        if (TenderID = 0) then
-        begin
-          DrawLine;
-        end;
-        if (NettDue > NettPayment) then
-        begin
-          if (FEventID > 0) then
-          begin
-            //if NettDue - NettPayment - DiscountTotal > 0 then
-            begin
-              WriteTotalLine(Format(sHostSubsidyMsg, [Trim(Copy(AccountName, 1, 30))]), NettDue - NettPayment);
-              {if (DiscountTotal > 0)  then
-               WriteTotalLine(sLessDisc, DiscountTotal);
-                      WriteTotalLine(sOnHost, NettDue - NettPayment - DiscountTotal);}
-            end;
-          end
-          else
-            WriteTotalLine(sOnAcct, NettDue - NettPayment);
-        end
-        else
-        begin
-          WriteTotalLine(sCreditedToacct, NettPayment - NettDue);
-          WriteTotalMessage(AccountName);
-        end;
-      end;
+    else begin
+      SQL.Add('and (ig.whendeleted is not null)');
     end;
 
-                                     
-    if (FLoyaltyPoints1Rewarded < 0) or (FLoyaltyPoints2Rewarded < 0) then
-    begin
-      if (FInvoiceID > 0) then
-        DrawLine;
-      if (FLoyaltyReward <> '') then
-        WriteTotalMessage(Format(sLoyaltyRewardRedeemed, [FLoyaltyReward]));
+    qrItemGroupsOUTLETNAME.Visible:= (FCurrentOutletID = -1) or (AppDetails.ShowSharing); //show owner outlet
 
-      if (FLoyaltyPoints1Rewarded < 0) then
-        WriteHeaderDetail(AppDetails.LoyaltyPoints1Name, IntToStr(FLoyaltyPoints1Rewarded));
-      if (FLoyaltyPoints2Rewarded < 0) then
-        WriteHeaderDetail(AppDetails.LoyaltyPoints2Name, IntToStr(FLoyaltyPoints2Rewarded));
-    end;
+    if ((FCurrentOutletID <> -1) and (AppDetails.ShowSharing)) then begin
+      SQL.Add('union');
+      SQL.Add('select distinct o.outletid, o.outletname, ig.forb, ig.itemgrouporder, ig.itemgroupid,');
+      SQL.Add('ig.itemgroupabbrev, ig.itemgroupname, ig.whendeleted, 1 sharing');
+      SQL.Add('from itemgrpshare igs');
+      SQL.Add('inner join itemgrp ig on (igs.itemgroupid = ig.itemgroupid)');
+      SQL.Add('inner join outlet o on (ig.outletid = o.outletid)'); //get owner outletname
+      SQL.Add('where (igs.outletid = :outletid)');
 
-    if ((FLoyaltyPoints1 <> 0) or (FLoyaltyPoints2 <> 0)) then
-    begin        
-      if (FInvoiceID > 0) then
-        DrawLine;
-//      WriteTotalMessage(sPointsEarned);
-
-      if (FLoyaltyPoints1 <> 0) then
-        WriteHeaderDetail(AppDetails.LoyaltyPoints1Name, IntToStr(FLoyaltyPoints1));
-      if (FLoyaltyPoints2 <> 0) then
-        WriteHeaderDetail(AppDetails.LoyaltyPoints2Name, IntToStr(FLoyaltyPoints2));
-    end;
-
-    if (BalanceChanged <> 0) and (FNoSaleTypeName = 'Expired Points/Credit') then   //should get this from DB fixed NSType 7
-    begin       
-      if (FInvoiceID > 0) then
-        DrawLine;
-      WriteTotalLine(sExpiredCredit, FBalanceChanged);
-    end;
-
-    if Trim(Notes) <> '' then
-    begin
-      DrawLine;
-      WriteTotalMessage(Notes);
-    end;
-  finally
-    ComboQtyList.Clear;
-    ComboQtyList.Free;
-  end;
-end;
-{******************************************************************************}
-procedure TframeReceipt.PrintNYReceipt;
-var
-  ErrorMessage: string;
-  NYHappyHourOL: TNYHappyHourOL;
-  I: Integer;
-  InvoiceTotal, SalesTax: Currency;
-  FoodTotal, BevTotal: Currency;
-  TipTotal, TenderTotal, TheChange: Currency;
-  //  SaleTaxPer: double;
-begin
-  PrintJob.SetupPrinter(AppDetails.PrinterID);
-  with PrintJob do
-  begin
-    if (not OpenThePrinter(ErrorMessage)) then
-    begin
-      Exit;
-    end;
-    DrawLogo;
-
-    //outlet name
-    if (Assigned(AppDetails.PrintLogo)) then
-    begin
-      PrintCentre(fsBig, AppDetails.OutletName);
-      BlankLine;
-    end;
-
-    //
-    PrintCentre(fsBoldIt, 'TAX INVOICE');
-    BlankLine;
-
-    PrintLeft(fsNormal, 'Cash Sales');
-
-    PrintLeft(fsNormal, 'Destination');
-    PrintDestination(FLocation, fsNormal, 'MidCol');
-
-    if (AppDetails.PrintLocalOrderNo) then
-    begin
-      PrintLocalOrderNo(-1, FInvoiceNo, 0);
-    end;
-
-    //Invoice #
-    PrintLeft(fsNormal, 'Invoice #');
-    PrintAlign(CentreCol, atLeft, IntToStr(FInvoiceNo));
-
-    //StaffName
-    PrintLeft(fsNormal, 'Salesperson');
-    PrintAlign(CentreCol, atLeft, FStaffName);
-
-    //date
-    PrintLeft(fsNormal, sDate);
-    PrintAlign(CentreCol, atLeft, FormatDateTime('h:nn AM/PM d mmm yy', FWhenInvoiced));
-    BlankLine;
-
-    DrawLine;
-
-    InvoiceTotal := 0;
-    SalesTax := 0;
-    FoodTotal := 0;
-    BevTotal := 0;
-    for I := 0 to (GlobalMenuList.ListNYHappyHourOL.Count - 1) do
-    begin
-      NYHappyHourOL := GlobalMenuList.ListNYHappyHourOL.Items[I];
-
-      PrintIL(NYHappyHourOL.Item, NYHappyHourOL.Price, NYHappyHourOL.UnitPrice, NYHappyHourOL.Qty, False);
-
-      InvoiceTotal := InvoiceTotal + NYHappyHourOL.Price;
-      if (NYHappyHourOL.ForB = 'F') then
-      begin
-        FoodTotal := FoodTotal + NYHappyHourOL.Price;
+      //shared item group is 'current' if both the item group and the share have not been deleted
+      if (FItemGroupsCurrent) then begin
+        SQL.Add('and ((ig.whendeleted is null) and (igs.whendeleted is null))');
       end
-      else
-      begin
-        BevTotal := BevTotal + NYHappyHourOL.Price;
+      else begin
+        SQL.Add('and (not ((ig.whendeleted is null) and (igs.whendeleted is null)))');
       end;
-      SalesTax := SalesTax + ((NYHappyHourOL.Price * NYHappyHourOL.SalesTaxPercent) / (100 + NYHappyHourOL.SalesTaxPercent));
     end;
 
-    //SaleTaxPer := SalesTax / InvoiceTotal;
+    SQL.Add('order by 1, 3 desc, 4');
 
-    BlankLine;
-    //Totals
-    PrintLeft(fsBoldIt, 'BALANCE DUE');
-    PrintAlign(TheRight, atRight, FormatCurrencySignSpace(InvoiceTotal));
-
-    BlankLine;
-
-    DrawLine;
-
-    //Tenders
-    TipTotal := 0;
-    TenderTotal := GlbNYHappyHour.Total + InvoiceTotal;
-    TheChange := GlbNYHappyHour.Total;
-    PrintRL('Cash', 0, TenderTotal);
-
-    //tip total
-    if (TipTotal > 0) then
-    begin
-      BlankLine;
-      PrintLeft(fsBoldIt, 'TIP');
-      PrintAlign(FigCol, atRight, FormatCurrencySignSpace(TipTotal));
+    //show/hide when deleted field
+    if (FItemGroupsCurrent) then begin
+      qrItemGroupsITEMGROUPNAME.DisplayWidth := 30;
+      qrItemGroupsWHENDELETED.Visible := False;
+    end
+    else begin
+      qrItemGroupsITEMGROUPNAME.DisplayWidth := 20;
+      qrItemGroupsWHENDELETED.Visible := True;
     end;
 
-    //tender total
-    if TenderTotal > 0 then
-    begin
-      if (TipTotal = 0) then
-      begin
-        BlankLine;
-      end;
-      PrintLeft(fsBoldIt, 'TENDERED');
-      PrintAlign(TheRight, atRight, FormatCurrencySignSpace(TenderTotal));
-    end;
 
-    //change
-    if TheChange > 0 then
-    begin
-      PrintLeft(fsBoldIt, 'CHANGE');
-      PrintAlign(TheRight, atRight, FormatCurrencySignSpace(TheChange));
-    end;
-
-    BlankLine;
-
-    //Footer
-    PrintFooter(AppDetails.OutletID);
-
-    CheckSpacing;
-    CloseThePrinter;
+    Prepare;
+    ParamByName('outletid').AsInteger:= FCurrentOutletID;
+    Open;
   end;
 end;
 {******************************************************************************}
-function TframeReceipt.TestInvoiceLineForModifiers(InvoiceLineID: Integer; var ModPrices: Currency; var ModAmount: Currency): Boolean;
+procedure Tdm.GetModGroups;
 begin
-  with dm.sp do
-  begin
-    try
-      Unprepare;
-      StoredProcName := 'testmodifiersforinvoiceline';
-      Prepare;
-      ParamByName('invoicelineid').AsInteger := InvoiceLineID;
-      ParamByName('allowzero').AsInteger := 1;
+  with qrModGroups do begin
+    Close;
+    UnPrepare;
 
-      ExecProc;
+    SQL.Clear;
+    SQL.Add('select o.outletid, o.outletname, mg.forb, mg.modgroupid,');
+    SQL.Add('  mg.modgroup, mg.whendeleted');
+    SQL.Add('  from modgroup mg');
+    SQL.Add('  inner join outlet o on (mg.outletid = o.outletid)'); //get owner outletname
 
-      Result := (not FieldByName('modprices').IsNull);
-      ModPrices := FieldAsCurrency(FieldByName('modprices'));
-      ModAmount := FieldAsCurrency(FieldByName('modamount'));
-
-    except
-      on e: exception do
-      begin
-        Result := False;
-      end;
+    if (FModGroupCurrent) then begin
+      SQL.Add('where (mg.whendeleted is null)');
+    end
+    else begin
+      SQL.Add('where (mg.whendeleted is not null)');
     end;
+
+    qrModGroupsOUTLETNAME.Visible:= (FCurrentOutletID = -1) or (AppDetails.ShowSharing); //show owner outlet
+
+    SQL.Add('order by o.outletid, mg.forb desc, mg.modgroup');
+
+    //show/hide when deleted field
+    if (FItemGroupsCurrent) then begin
+      qrModGroupsMODGROUP.DisplayWidth := 30;
+      qrModGroupsWHENDELETED.Visible := False;
+    end
+    else begin
+      qrModGroupsMODGROUP.DisplayWidth := 20;
+      qrModGroupsWHENDELETED.Visible := True;
+    end;
+
+    Prepare;
+    Open;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.GetAccounts;
+begin
+  with qrAccounts do begin
+    Close;
+    UnPrepare;
+
+    SQL.Clear;
+    SQL.Add('select a.accountid, att.accounttype, a.accountname, a.currentbalance, a.whenclosed,iif(att.remoteoverridegroupid is null, ''All Groups'', att.remoteoverridegroupname) as remoteoverridegroupname');
+
+    SQL.Add('  from account a');
+    SQL.Add('  inner join get_accounttypes(0) att on att.accounttypeid = a.accounttypeid');
+
+    if (FAccountsCurrent) then begin
+      SQL.Add('  and (a.whenclosed is null)');
+//      SQL.Add('get_accounts');
+      qrAccountsWHENCLOSED.Visible:= False;
+    end
+    else begin
+      SQL.Add('  and (a.whenclosed is not null)');
+//      SQL.Add('get_closedaccounts');
+      qrAccountsWHENCLOSED.Visible:= True;
+    end;
+
+    SQL.Add('  order by att.remoteoverridegroupname, att.accounttype, a.accountname');
+    Prepare;
+    Open;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.GetAccountTypes;
+begin
+  with qrAccountTypes do begin
+    Close;
+    UnPrepare;
+
+    SQL.Clear;
+    SQL.Add('select iif(att.remoteoverridegroupid is null, ''All Groups'', att.remoteoverridegroupname) as remoteoverridegroupname,');
+    SQL.Add('att.accounttypeid, att.accounttype');
+    SQL.Add('  from get_accounttypes(:deleted) att');
+    SQL.Add('  order by att.remoteoverridegroupname, att.accounttype');
+
+    Prepare;
+    if (FAccountsCurrent) then begin
+      ParamByName('deleted').AsInteger := 0;
+//      SQL.Add('get_accounts');
+      qrAccountsWHENCLOSED.Visible:= False;
+    end
+    else begin
+      ParamByName('deleted').AsInteger := 1;
+//      SQL.Add('get_closedaccounts');
+      qrAccountsWHENCLOSED.Visible:= True;
+    end;
+    Open;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.GetPeopleRemoteOverrideGroups;
+begin
+  with qrRemoteGroups do begin
+    Close;
+    UnPrepare;
+
+    SQL.Clear;
+    SQL.Add('  select rg.remoteoverridegroupid, rg.remoteoverridegroupname ');
+    SQL.Add('  from GET_REMOTEOVERRIDEGROUPS(0,0,1,0,0,:remotelocationid,0) rg');
+    ParamByName('remotelocationid').AsInteger := -1; //use -1 to let db proc find local db remote groups, since reports is unaware of its local remotelocationid
+    Prepare;
+    Open;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.GetStaff;
+begin
+  with qrStaff do begin
+    Close;
+    UnPrepare;
+
+    SQL.Clear;
+    SQL.Add('select rog.remoteoverridegroupid, iif(rog.remoteoverridegroupid is null, ''All Groups'', rog.remoteoverridegroupname) as remoteoverridegroupname,');
+    SQL.Add('  s.staffid, s.staffname, p.firstname, p.surname,');
+    SQL.Add('  s.whenbegin, s.whenend');
+    SQL.Add('  from staff s');
+    SQL.Add('  inner join perorg p on (s.perorgid = p.perorgid)'); 
+    SQL.Add('  left join remoteoverridegroup rog on (s.remoteoverridegroupid = rog.remoteoverridegroupid)');
+
+
+    if (FStaffCurrent) then begin
+      SQL.Add('where (s.whenend is null) and (s.staffinactive = 0)');
+      qrStaffWHENEND.Visible:= False;
+    end
+    else begin
+      SQL.Add('where (s.whenend is not null)');
+      qrStaffWHENEND.Visible:= True;
+    end;
+
+    SQL.Add('order by rog.remoteoverridegroupname, s.staffname, p.firstname, p.surname');
+
+    
+    Prepare;
+    Open;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.GetTerminals;
+begin
+  with qrTerminals do begin
+    Close;
+    UnPrepare;
+
+    SQL.Clear;
+    SQL.Add('select t.terminalid, t.terminalname, wa.waname, o.outletname, t.whendeleted whendeleted');
+    SQL.Add('  from terminal t');
+    SQL.Add('  inner join workarea wa on (t.workareaid = wa.workareaid)');
+    SQL.Add('  inner join outlet o on (wa.outletid = o.outletid)');
+
+    if (FTerminalsCurrent) then begin
+      SQL.Add('where (t.whendeleted is null)');
+      qrTerminalsWHENDELETED.Visible := False;
+    end
+    else begin
+      SQL.Add('where (t.whendeleted is not null)');
+      qrTerminalsWHENDELETED.Visible := True;
+    end;
+
+    SQL.Add('order by o.outletid, wa.workareaid, t.terminalid');
+
+    Prepare;
+
+
+    Open;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.GetTills;
+begin
+  with qrTills do begin
+    Close;
+    UnPrepare;
+
+    SQL.Clear;
+    SQL.Add('select t.tillid, t.tillname, wa.waname, o.outletname, t.whendeleted whendeleted');
+    SQL.Add('  from till t');
+    SQL.Add('  inner join workarea wa on (t.workareaid = wa.workareaid)');
+    SQL.Add('  inner join outlet o on (wa.outletid = o.outletid)');
+
+    if (FTillsCurrent) then begin
+      SQL.Add('where (t.whendeleted is null)');
+      qrTillsWHENDELETED.Visible := False;
+    end
+    else begin
+      SQL.Add('where (t.whendeleted is not null)');
+      qrTillsWHENDELETED.Visible := True;
+    end;
+
+    SQL.Add('order by o.outletid, wa.workareaid, t.tillid');
+
+    Prepare;
+    Open;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.GetSaleCategories;
+begin
+  with qrSaleCategories do begin
+    Close;
+    UnPrepare;
+
+    SQL.Clear;
+    SQL.Add('select salecategoryid, salecategory, whendeleted');
+    SQL.Add('from salecategory');
+
+    if (FSaleCategoriesCurrent) then begin
+      SQL.Add('where whendeleted is null');
+      qrSaleCategoriesWHENDELETED.Visible := False;
+    end
+    else begin
+      SQL.Add('where whendeleted is not null');
+      qrSaleCategoriesWHENDELETED.Visible := True;
+    end;
+
+    SQL.Add('order by salecategory, whendeleted');
+
+    Prepare;
+
+    Open;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.GetSections;
+begin
+  with qrSections do begin
+    Close;
+    UnPrepare;
+
+    SQL.Clear;
+    SQL.Add('select sectionid, section, whendeleted');
+    SQL.Add('from section');
+
+    if (FSectionsCurrent) then begin
+      SQL.Add('where whendeleted is null');
+      qrSectionsWHENDELETED.Visible := False;
+    end
+    else begin
+      SQL.Add('where whendeleted is not null');
+      qrSectionsWHENDELETED.Visible := True;
+    end;
+
+    SQL.Add('order by section, whendeleted');
+
+    Prepare;
+
+    Open;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.GetCourses;
+begin
+  with qrCourses do begin
+    Close;
+    UnPrepare;
+
+    SQL.Clear;
+    SQL.Add('select courseid, course, whendeleted');
+    SQL.Add('from course');
+
+    if (FCoursesCurrent) then begin
+      SQL.Add('where whendeleted is null');
+      qrCoursesWHENDELETED.Visible := False;
+    end
+    else begin
+      SQL.Add('where whendeleted is not null');
+      qrCoursesWHENDELETED.Visible := True;
+    end;
+
+    SQL.Add('order by course, whendeleted');
+
+    Prepare;
+
+
+    Open;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.GetDiscountSchemes;
+begin
+  with qrDiscountSchemes do begin
+    Close;
+    UnPrepare;
+
+    SQL.Clear;
+    SQL.Add('select discountschemeid, discountschemename, whendeleted');
+    SQL.Add('from discountscheme');
+
+    if (FDiscountSchemesCurrent) then begin
+      SQL.Add('where whendeleted is null');
+      qrDiscountSchemesWHENDELETED.Visible := False;
+    end
+    else begin
+      SQL.Add('where whendeleted is not null');
+      qrDiscountSchemesWHENDELETED.Visible := True;
+    end;
+    SQL.Add('and discountschemetype = 1');
+    SQL.Add('order by discountschemename, whendeleted');
+
+    Prepare;
+    Open;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.GetPeriodEnds(FromTime, ToTime: TDateTime);
+begin
+  with qrAccountPEs do begin
+    Close;
+    UnPrepare;
+
+{    SQL.Clear;
+    SQL.Add('select salecategoryid, salecategory, whendeleted');
+    SQL.Add('from salecategory');
+
+    if formReports.radSCCurrent.Checked then begin
+      SQL.Add('where whendeleted is null');
+      qrSaleCategoriesWHENDELETED.Visible := False;
+    end else begin
+      SQL.Add('where whendeleted is not null');
+      qrSaleCategoriesWHENDELETED.Visible := True;
+    end;
+
+    SQL.Add('order by salecategory, whendeleted');}
+
+    Prepare;
+
+    ParamByName('fromtime').AsDateTime:= FromTime;
+    ParamByName('totime').AsDateTime:= ToTime;
+
+    Open;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.dsAccountsDataChange(Sender: TObject; Field: TField);
+begin
+  with qrAccounts do begin
+    Glbs.AccountID := FieldByName('accountid').AsInteger;
+    Glbs.AccountName := FieldByName('accountname').AsString;
+    Glbs.AccRemoteGroupName := FieldByName('remoteoverridegroupname').AsString;
+    Glbs.AccTRemoteGroupName := FieldByName('remoteoverridegroupname').AsString;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.dsAccountPEsDataChange(Sender: TObject; Field: TField);
+begin
+  with qrAccountPEs do begin
+    Glbs.PeriodEndID := FieldByName('periodendid').AsInteger;
+    Glbs.PeriodEndAccountType:= FieldByName('accounttype').AsString;
+    Glbs.PeriodEndWhenEnded:= FieldByName('whenupd').AsDateTime;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.dsStaffDataChange(Sender: TObject; Field: TField);
+begin
+  with qrStaff do begin
+    Glbs.StaffID := FieldByName('staffid').AsInteger;
+    Glbs.StaffName := FieldByName('staffname').AsString;
+    Glbs.SurName := FieldByName('surname').AsString;
+    Glbs.FirstName := FieldByName('firstname').AsString;
+    Glbs.StaffRemoteGroupID := FieldByName('remoteoverridegroupid').AsInteger;
+    Glbs.StaffRemoteGroupName := FieldByName('remoteoverridegroupname').AsString;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.QRAccountSalesCalcFields(DataSet: TDataSet);
+begin
+  qrAccountSalesOutlet.Value := Copy(qrAccountSalesOutletName.Value,1,6);
+end;
+{*****************************************************************************}
+procedure Tdm.dsItemGroupsDataChange(Sender: TObject; Field: TField);
+begin
+  with qrItemGroups do begin
+    Glbs.ItemGroupID := FieldByName('itemgroupid').AsInteger;
+    Glbs.ItemGroup := FieldByName('itemgroupname').AsString;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.qrOrdersCalcFields(DataSet: TDataSet);
+begin
+  qrOrdersOutlet.Value := Copy(qrOrdersOutletName.Value,1,6);
+end;
+{*****************************************************************************}
+procedure Tdm.qrVoidLinesCalcFields(DataSet: TDataSet);
+begin
+  qrVoidLinesOutlet.Value := Copy(qrVoidLinesOutletName.Value,1,6);
+end;
+{*****************************************************************************}
+procedure Tdm.dsTerminalsDataChange(Sender: TObject; Field: TField);
+begin
+  with qrTerminals do begin
+    Glbs.TerminalID := FieldByName('terminalid').AsInteger;
+    Glbs.TerminalName := FieldByName('terminalname').AsString;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.dsTillsDataChange(Sender: TObject; Field: TField);
+begin
+  with qrTills do begin
+    Glbs.TillID := FieldByName('tillid').AsInteger;
+    Glbs.TillName := FieldByName('tillname').AsString;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.dsSaleCategoriesDataChange(Sender: TObject; Field: TField);
+begin
+  with qrSaleCategories do begin
+    Glbs.SaleCategoriesSaleCategoryID := FieldByName('salecategoryid').AsInteger;
+    Glbs.SaleCategoriesSaleCategory := FieldByName('salecategory').AsString;
+    Glbs.SaleCategoriesWhenDeleted := FieldByName('whendeleted').AsDateTime;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.dsAccountTypesDataChange(Sender: TObject; Field: TField);
+begin
+  with qrAccountTypes do begin
+    Glbs.AccountTypeID := FieldByName('accounttypeid').AsInteger;
+    Glbs.AccountType := FieldByName('accounttype').AsString;
+    Glbs.AccRemoteGroupName := '';
+    Glbs.AccTRemoteGroupName := FieldByName('remoteoverridegroupname').AsString;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.dsCoursesDataChange(Sender: TObject; Field: TField);
+begin
+  with qrCourses do begin
+    Glbs.CourseID:= FieldByName('courseid').AsInteger;
+    Glbs.Course:= FieldByName('course').AsString;
+  end;
+end;
+{*****************************************************************************}
+procedure Tdm.dsDiscountSchemesDataChange(Sender: TObject; Field: TField);
+begin
+  with qrDiscountSchemes do begin
+    Glbs.DiscountSchemeID:= FieldByName('discountschemeid').AsInteger;
+    Glbs.DiscountSchemeName:= FieldByName('discountschemename').AsString;
   end;
 end;
 {******************************************************************************}
+function Tdm.GetAccountSummary(FromTime, ToTime: TDateTime; AccountID, AccountTypeID: Integer): Integer;
+begin
+  qrItemTotalForAccountDay.Close;
+  qrInvocesForAccount.Close;
+  qrAccountsForPeriod.Close;
+  with qrAccountsForPeriod.Params do begin
+    ParamByName('PeriodStart').Value := FromTime;
+    ParamByName('PeriodEnd').Value := ToTime;
+    ParamByName('AccountID').Value := AccountID;
+    ParamByName('AccountTypeID').Value := AccountTypeID;
+  end;
+  with qrInvocesForAccount.Params do begin
+    ParamByName('PeriodStart').Value := FromTime;
+    ParamByName('PeriodEnd').Value := ToTime;
+  end;
+  qrAccountsForPeriod.Open;
+  qrInvocesForAccount.Open;
+  Result := qrAccountsForPeriod.RecordCount;
+end;
+{*****************************************************************************}
+{*****************************************************************************}
+procedure Tdm.dsModGroupDataChange(Sender: TObject; Field: TField);
+begin
+  with qrModGroups do begin
+    Glbs.ModGroupID:= FieldByName('modgroupid').AsInteger;
+    Glbs.ModGroup:= FieldByName('modgroup').AsString;
+  end;
+end;
+procedure StringAsParam(Param: TParam; S: String);
+//Jon 08-01-2002
+//Used to quickly fill in Parameters
+begin
+  Param.AsString:= S;
+end;
+{******************************************************************************}
+procedure IntegerAsParam(Param: TParam; I: Integer);
+begin
+  Param.AsInteger:= I;
+end;
+{******************************************************************************}
+procedure BoolAsParam(Param: TParam; B: Boolean);
+begin
+  if (B) then begin
+    Param.AsInteger:= 1;
+  end
+  else begin
+    Param.AsInteger:= 0;
+  end;
+end;
+{******************************************************************************}
+function FieldAsString(Field: TField; const DefaultS: String): String;
+begin
+  if (Field.IsNull) then begin
+    Result:= DefaultS;
+  end
+  else begin
+    Result:= Field.AsString;
+  end;
+end;
+{******************************************************************************}
+function FieldAsInt(Field: TField; const DefaultI: Integer): Integer;
+begin
+  if (Field.IsNull) then begin
+    Result:= DefaultI;
+  end
+  else begin
+    Result:= Field.AsInteger;
+  end;
+end;
+{******************************************************************************}
+function FieldAsBool(Field: TField): Boolean;
+begin
+  Result:= ((not Field.IsNull) and (Field.AsInteger = 1));
+end;
+{******************************************************************************}
+procedure Tdm.GetSalePeriods;
+begin
+  with qrSalePeriods do begin
+    Close;
+    UnPrepare;
+
+    SQL.Clear;
+    SQL.Add('SELECT r.TIMEPERIODID, r.TimePeriodName ');
+    SQL.Add('FROM TIMEPERIOD r where r.WHENDELETED is null');
+    SQL.Add('order by TIMEPERIODORDER');
+
+    Prepare;
+
+    Open;
+  end;
+  qrSalePeriods.FieldByName('TimePeriodName').DisplayWidth := 30;
+  qrSalePeriods.FieldByName('TIMEPERIODID').Visible := False;
+end;
+
+procedure Tdm.dsSalePeriodsDataChange(Sender: TObject; Field: TField);
+begin
+  with qrSalePeriods do begin
+    Glbs.SalePeriodID   := FieldByName('TIMEPERIODID').AsInteger;
+    Glbs.SalePeriodName := FieldByName('TimePeriodName').AsString;
+  end;
+end;
+
+procedure Tdm.GetCombos;
+begin
+  with qrCombos do
+  begin
+    Close;
+    UnPrepare;
+
+    SQL.Clear;
+    SQL.Add('Select Comboid, ComboName, WhenDeleted');
+    SQL.Add('From Combos');
+               
+    if (FCombosCurrent) then
+    begin
+      SQL.Add('Where whendeleted is null');
+      qrCombosWHENDELETED.Visible := False;
+    end
+    else begin
+      SQL.Add('Where whendeleted is not null');
+      qrCombosWHENDELETED.Visible := True;
+    end;
+
+    SQL.Add('Order by ComboName, whendeleted');
+    Prepare;
+    Open;
+  end;
+end;
+
+procedure Tdm.SetCombosCurrent(const Value: Boolean);
+begin
+  if (Value <> FCombosCurrent) then
+  begin
+    FCombosCurrent  := Value;
+    GetCombos;
+  end;
+end;
+
+procedure Tdm.dsCombosDataChange(Sender: TObject; Field: TField);
+begin
+  with qrCombos do
+  begin
+    Glbs.ComboId   := FieldByName('ComboID').AsInteger;
+    Glbs.ComboName := FieldByName('ComboName').AsString;
+  end;
+end;
+
+procedure Tdm.GetEvents;
+begin
+  with qrEvents do
+  begin
+    Close;
+    UnPrepare;
+
+    SQL.Clear;
+    SQL.Add('select a.eventid, a.eventname, a.whendeleted');
+    SQL.Add(' from anevent a');
+    if (FEventsCurrent) then
+    begin
+      SQL.Add('  where (a.whendeleted is null)');
+      qrEventsWhenDeleted.Visible:= False;
+    end
+    else begin
+      SQL.Add('  where (a.whendeleted is not null)');
+      qrEventsWhenDeleted.Visible:= True;
+    end;
+
+    SQL.Add('  order by a.eventname');
+    Prepare;
+    Open;
+  end;
+end;
+
+procedure Tdm.dsEventsDataChange(Sender: TObject; Field: TField);
+begin
+  with qrEvents do
+  begin
+    Glbs.EventID   := FieldByName('EventID').AsInteger;
+    Glbs.EventName := FieldByName('EventName').AsString;
+  end;
+end;
+
+procedure Tdm.SetEventsCurrent(const Value: Boolean);
+begin
+  if (Value <> FEventsCurrent) then
+  begin
+    FEventsCurrent := Value;
+    GetEvents;
+  end;
+end;
+
+procedure Tdm.qrEventSalesCalcFields(DataSet: TDataSet);
+begin
+  qrEventSalesOutlet.Value := Copy(qrEventSalesOutletName.Value,1,6);
+end;
+
+procedure Tdm.SetQueryTenderedDiscounts(OutletID: Integer; RemoteLocationID: Integer);
+begin
+  with dm.qrTenderedDiscount do
+  begin
+    Close;
+    ParamByName('fromtime').AsDateTime := formReports.FromTime;
+    ParamByName('totime').AsDateTime := formReports.ToTime;  
+    ParamByName('outletid').AsInteger := OutletID;
+    ParamByName('remotelocationid').AsInteger := RemoteLocationID;
+
+    Open;
+  end;
+end;
+
+procedure Tdm.dsSectionsDataChange(Sender: TObject; Field: TField);
+begin
+  with qrSections do begin
+    Glbs.SectionsSectionID := FieldByName('sectionid').AsInteger;
+    Glbs.SectionsSection := FieldByName('section').AsString;
+    Glbs.SectionsWhenDeleted := FieldByName('whendeleted').AsDateTime;
+  end;
+end;
 
 end.
+
