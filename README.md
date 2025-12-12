@@ -21,7 +21,8 @@ type
     rptypClockIns, rptypAccountSummaries, rptypStaffTips, rptypNoSales, rptypTillSales, rptypDiscountSchemeSales,
     rptypItemModSales, rptypModItems, rptypOrderByBumped, rptypItemByBumped, rptypItemCountByBumped,
     rptypAccountTransactions, rptypComboSales, rptypOrdersSalesVoids, rptypAccountTabSales,
-    rptypOpenTables, rptypTableSummary, rptypEventSales, rptypTransList, rptypAccTypeMovements);
+    rptypOpenTables, rptypTableSummary, rptypEventSales, rptypTransList, rptypAccTypeMovements,
+    rptypStaffDetails);
 
   (**
     Main page of the Reports Program.
@@ -454,16 +455,18 @@ type
     radSecRemoved: TRadioButton;
     frmStaffDetails: TGroupBox;
     Panel1: TPanel;
-    radPastStaff: TRadioButton;
-    radAllStaff: TRadioButton;
-    radCurrentStaff: TRadioButton;
+    radStaffPastStaff: TRadioButton;
+    radStaffAllStaff: TRadioButton;
+    radStaffCurrentStaff: TRadioButton;
     Panel2: TPanel;
-    lblStaffWorkingFrom: TLabel;
-    ComboBox1: TComboBox;
+    lblStaffSelectStaff: TLabel;
+    cmboBoxStaffLocation: TComboBox;
     Panel3: TPanel;
-    Label1: TLabel;
-    SpinEdit2: TSpinEdit;
+    lblStaffStartedYearsAgo: TLabel;
+    SpinEdtStaffYrsAgo: TSpinEdit;
     lblStaffLocation: TLabel;
+    Bevel1: TBevel;
+    Bevel2: TBevel;
     procedure FormShow(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure cmdFromClick(Sender: TObject);
@@ -632,6 +635,7 @@ type
     procedure ShowAllStaffOpenPriceOrders;
     procedure ShowTransListReport;
     procedure ShowAccTypeMovementsReport;
+    procedure ShowStaffDetailsReport;
 
     procedure ChangeReportType;
     procedure EnableGroupSubTotalCheckBoxes(B: Boolean);
@@ -676,7 +680,7 @@ uses
   UQRAccountTransaction, UQRComboSales, UQRComboItemSales, UQROrdersSalesVoids,
   UQRAccountTabSales, UQROpenTables, UQRTableSummary, UQRStaffOpenPrice,
   UAboutBox, UQREventSales, UQRTransactionsListing, ULogonStaff,
-  UQRAccTypeMovements, DateUtils, UQRSectionSales, Math;
+  UQRAccTypeMovements, DateUtils, UQRSectionSales, Math, UQRStaffDetails;
 {******************************************************************************}
 procedure TformReports.FormShow(Sender: TObject);
 begin
@@ -1181,6 +1185,7 @@ begin
       rptypEventSales : ShowEventSalesReport;
       rptypTransList : ShowTransListReport;
       rptypAccTypeMovements : ShowAccTypeMovementsReport;
+      rptypStaffDetails : ShowStaffDetailsReport;
     end;
   finally
     cmdDoReport.Cursor := crDefault;
@@ -1228,7 +1233,7 @@ begin
     34: ReportType := rptypTableSummary;
     35: ReportType := rptypTransList;
     36: ReportType := rptypVoids;
-
+    37: ReportType := rptypStaffDetails;
 //    35: ReportType := rptypOrderByBumped;
 //    36: ReportType := rptypItemByBumped;
 //    37: ReportType := rptypItemCountByBumped;
@@ -1277,6 +1282,10 @@ var
   end;
 
 begin
+
+  frmStaffDetails.Enabled := (ReportType in [rptypStaffDetails]);
+  frmStaffDetails.Visible := frmStaffDetails.Enabled;
+
   frmRange.Enabled := (ReportType in [rptypSales, rptypAccountSales,rptypEventSales, rptypCourseSales, rptypTerminalSales,
       rptypOrders, rptypStaffOrders, rptypVoids, rptypModifiers, rptypSalesHistory,
       rptypStaffSales, rptypSaleCategorySales, rptypSectionSales, rptypSalePeriodSales, rptypCashTotals, rptypSalesByDate,rptypOrderByBumped,
@@ -3939,7 +3948,28 @@ begin
     formQRSalesHistory.Free;
   end;
 end;
+
 {******************************************************************************}
+
+procedure TformReports.ShowStaffDetailsReport;
+begin
+  try
+    formQRStaffDetails := TformQRStaffDetails.Create(Application);
+    formQRStaffDetails.lblTitle1.Caption := sStaffDetailsTitle1;
+    formQRStaffDetails.lblTitle2.Caption := Glbs.OutletName;
+
+    dm.qrStaffDetails.Close;
+    dm.qrStaffDetails.Open;
+
+    formQRStaffDetails.QRStaffDetails.ReportTitle := sStaffDetailsRepTitle;
+    formQRStaffDetails.QRStaffDetails.Preview;
+  finally
+    formQRStaffDetails.Free;
+  end;
+end;
+
+{******************************************************************************}
+
 procedure TformReports.ShowStaffSalesReport;
 begin
   try
@@ -7302,6 +7332,7 @@ begin
   cmbReportType.Items.Add(sRepTablesSummary);
   cmbReportType.Items.Add(sTransactionList);
   cmbReportType.Items.Add(sVoidsWastage);
+  cmbReportType.Items.Add(sStaffDetails);
 
   cmbReportType.ItemIndex := iIndex;
 
@@ -8110,7 +8141,384 @@ end.
 
 
 
-=========================================================================================
+=====================================================================================================================
+
+
+
+
+unit UQRStaffDetails;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, QRCtrls, QuickRpt, Vcl.ExtCtrls,
+  UTypesConstants, UWBCSV{, IvDictio, IvMulti};
+
+type
+  TformQRStaffDetails = class(TForm)
+    QRStaffDetails: TQuickRep;
+    bndTitle: TQRBand;
+    lblTitle1: TQRLabel;
+    lblTitle2: TQRLabel;
+    QRShape: TQRShape;
+    lblTime: TQRLabel;
+    lblWizBangWaiter: TQRLabel;
+    QRLabel2: TQRLabel;
+    QRLabel3: TQRLabel;
+    QRSysData1: TQRSysData;
+    lblStaffId: TQRLabel;
+    lblStaffName: TQRLabel;
+    lblStaffPin: TQRLabel;
+    lblStaffRole: TQRLabel;
+    lbStaffLocation: TQRLabel;
+    DetailBand: TQRBand;
+    QRBSummary: TQRBand;
+    txtStaffId: TQRDBText;
+    txtStaffName: TQRDBText;
+    txtStaffPin: TQRDBText;
+    txtStaffRole: TQRDBText;
+    txtRemoteLoc: TQRDBText;
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure bndTitleBeforePrint(Sender: TQRCustomBand;
+      var PrintBand: Boolean);
+  private
+    { Private declarations }
+  public
+    { Public declarations }
+    WBCSV: TWBCSV;
+  end;
+
+var
+  formQRStaffDetails: TformQRStaffDetails;
+
+implementation
+{$R *.dfm}
+{*****************************************************************************}
+uses
+  UDM, UReports, UResources, LMain;
+{*****************************************************************************}
+procedure TformQRStaffDetails.bndTitleBeforePrint(Sender: TQRCustomBand;
+  var PrintBand: Boolean);
+begin
+  lblTitle1.Caption := sStaffDetailsTitle1;
+  lblTitle2.Caption := Glbs.OutletName;
+end;
+
+procedure TformQRStaffDetails.FormCreate(Sender: TObject);
+begin
+  WBCSV:= TWBCSV.Create;
+end;
+
+procedure TformQRStaffDetails.FormDestroy(Sender: TObject);
+begin
+  WBCSV.Free;
+end;
+
+end.
+
+
+=======================================================================================================================
+
+
+
+
+unit UQRMenuItems;
+{*****************************************************************************}
+interface
+{*****************************************************************************}
+uses
+  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
+  Qrctrls, quickrpt, ExtCtrls,
+  UTypesConstants, UWBCSV{, IvDictio, IvMulti};
+{*****************************************************************************}
+type
+  (**
+    Report that shows the current menu.
+  *)
+  TformQRMenuItems = class(TForm)
+    QRMenuItems: TQuickRep;
+    bndTitle: TQRBand;
+    lblTitle1: TQRLabel;
+    lblTitle2: TQRLabel;
+    lblTitle3: TQRLabel;
+    lblWizBangWaiter: TQRLabel;
+    lblTime: TQRLabel;
+    lblTM: TQRLabel;
+    lblPage: TQRLabel;
+    lblPageNo: TQRSysData;
+    DetailBand: TQRBand;
+    txtFORB: TQRDBText;
+    txtItemGroupAbbrev: TQRDBText;
+    txtItemAbbrev: TQRDBText;
+    txtPrice: TQRDBText;
+    lblForB: TQRLabel;
+    lblItemGroupAbbrev: TQRLabel;
+    lblItemAbbrev: TQRLabel;
+    QRShape4: TQRShape;
+    lblPrice: TQRLabel;
+    QRGOutlet: TQRGroup;
+    QREOutletHeaderName: TQRExpr;
+    QRBSummary: TQRBand;
+    QRGSuperItemGroup: TQRGroup;
+    QRExprSIG: TQRExpr;
+    QRGForb: TQRGroup;
+    QRExprForBFooter: TQRExpr;
+    QRGGroup: TQRGroup;
+    QRExprGroup: TQRExpr;
+    lblPrice6: TQRLabel;
+    lblPrice5: TQRLabel;
+    lblPrice4: TQRLabel;
+    lblPrice3: TQRLabel;
+    lblPrice2: TQRLabel;
+    txtPrice2: TQRDBText;
+    txtPrice3: TQRDBText;
+    txtPrice4: TQRDBText;
+    txtPrice5: TQRDBText;
+    txtPrice6: TQRDBText;
+    QRShapeGroup: TQRShape;
+    lblLinkCode: TQRLabel;
+    txtLinkCode: TQRDBText;
+//    IvTranslator1: TIvTranslator;
+    procedure QRMenuItemsBeforePrint(Sender: TCustomQuickRep; var PrintReport: Boolean);
+    procedure bndTitleBeforePrint(Sender: TQRCustomBand; var PrintBand: Boolean);
+    procedure QRGOutletBeforePrint(Sender: TQRCustomBand; var PrintBand: Boolean);
+    procedure QRGForbBeforePrint(Sender: TQRCustomBand; var PrintBand: Boolean);
+    procedure QRGGroupBeforePrint(Sender: TQRCustomBand; var PrintBand: Boolean);
+    procedure DetailBandBeforePrint(Sender: TQRCustomBand; var PrintBand: Boolean);
+    procedure QRBSummaryAfterPrint(Sender: TQRCustomBand; BandPrinted: Boolean);
+    procedure QRGSuperItemGroupBeforePrint(Sender: TQRCustomBand; var PrintBand: Boolean);
+    procedure QRExprGroupPrint(sender: TObject; var Value: String);
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+  private
+    TheTime : TDateTime;
+    ShowLinkCodes: Boolean;
+
+    CurrentWidth: Integer;    //Width of Useable Space
+    CreatedWidth: Integer;
+    CurrentHeight: Integer;   //Height of Useable Space     (used for stretching objects when in Windows LargeFonts)
+    CreatedHeight: Integer;
+    { Private declarations }
+  public
+    WBCSV: TWBCSV;
+    { Public declarations }
+  end;
+{*****************************************************************************}
+var
+  formQRMenuItems: TformQRMenuItems;
+{*****************************************************************************}
+implementation
+{$R *.DFM}
+{*****************************************************************************}
+uses
+  UDM, UReports,
+  uResources{sinu};
+{*****************************************************************************}
+procedure TformQRMenuItems.FormCreate(Sender: TObject);
+begin
+  WBCSV:= TWBCSV.Create;
+end;
+{******************************************************************************}
+procedure TformQRMenuItems.FormDestroy(Sender: TObject);
+begin
+  WBCSV.Free;
+end;
+{******************************************************************************}
+procedure TformQRMenuItems.QRMenuItemsBeforePrint(Sender: TCustomQuickRep;
+  var PrintReport: Boolean);
+begin
+  TheTime := Now;
+
+  CreatedWidth:= 720;
+  CreatedHeight:= 1049;     //Put in proper figures in a little while
+  CurrentWidth:= bndTitle.Width;
+  CurrentHeight:= Trunc(CurrentWidth * (QRMenuItems.Page.Length / QRMenuItems.Page.Width));
+
+  with formReports do begin
+    QRGGroup.Enabled:= ((ckbGroupGroup.Checked) and (radMenuOrderGroup.Checked) and (radAllItems.Checked));
+
+    QRGForB.Enabled:= ((ckbGroupForB.Checked) and (radFAndB.Checked) and (radMenuOrderGroup.Checked) and (radAllItems.Checked));
+
+    QRGSuperItemGroup.Enabled:= ((ckbGroupForB.Checked) and (radFAndB.Checked) and (radMenuOrderGroup.Checked) and (radAllItems.Checked));
+
+    QRGOutlet.Enabled:= ((ckbGroupOutlet.Checked) and (cmbOutlets.ItemIndex = 0));
+
+    ShowLinkCodes:= chkShowLinkCodes.Checked;
+    if (ShowLinkCodes) then begin
+      lblLinkCode.Left:= ((68 * CurrentWidth) div CreatedWidth);
+      txtLinkCode.Left:= ((68 * CurrentWidth) div CreatedWidth);
+      lblItemAbbrev.Left:= ((164 * CurrentWidth) div CreatedWidth);
+      txtItemAbbrev.Left:= ((164 * CurrentWidth) div CreatedWidth);
+      txtItemAbbrev.Width:= ((308 * CurrentWIdth) div CreatedWidth);
+
+      lblLinkCode.Enabled:= True;
+      txtLinkCode.Enabled:= True;
+    end
+    else begin
+      lblItemAbbrev.Left:= ((68 * CurrentWidth) div CreatedWidth);
+      txtItemAbbrev.Left:= ((68 * CurrentWidth) div CreatedWidth);
+      txtItemAbbrev.Width:= ((308 * CurrentWIdth) div CreatedWidth);
+
+      lblLinkCode.Enabled:= False;
+      txtLinkCode.Enabled:= False;
+    end;
+  end;
+
+  with (WBCSV) do begin
+    if (Active) then begin
+      WriteString(Title1);
+      WriteString(Title2);
+      WriteString(Title3);
+
+      SendString(sFB);
+      SendString(sGrp);
+      if (ShowLinkCodes) then begin
+        SendString(sLinkCode);
+      end;
+      SendString(sItem);
+      SendString(sPrice);
+      SendString(sPrice2);
+      SendString(sPrice3);
+      SendString(sPrice4);
+      SendString(sPrice5);
+      SendString(sPrice6);
+      SendString(sBarCode);
+      SendString(sUnitCost);
+      SendString(sAvailQty);
+      SendString(sId);
+      WriteLine;
+    end;
+  end;
+end;
+{*****************************************************************************}
+procedure TformQRMenuItems.bndTitleBeforePrint(Sender: TQRCustomBand;
+  var PrintBand: Boolean);
+begin
+  lblTitle1.Caption := Title1;
+  lblTitle2.Caption := Title2;
+  lblTitle3.Caption := Title3;
+
+  lblTime.Caption := Format(sPrinted , [FormatDateTime('ddd dd mmm yy hh:mm AM/PM',TheTime)]);
+end;
+{*****************************************************************************}
+procedure TformQRMenuItems.QRGOutletBeforePrint(Sender: TQRCustomBand;
+  var PrintBand: Boolean);
+begin
+  with (WBCSV) do begin
+    if (Active) then begin
+      SendString(dm.qrMenuItems.FieldByName('outletname').AsString);
+      WriteLine;
+    end;
+  end;
+end;
+{*****************************************************************************}
+procedure TformQRMenuItems.QRGForbBeforePrint(Sender: TQRCustomBand;
+  var PrintBand: Boolean);
+begin
+  if (dm.qrMenuItems.FieldByName('hideforb').AsInteger = 1) then begin
+    PrintBand:= False;
+    Exit;
+  end;
+
+  with (WBCSV) do begin
+    if (Active) then begin
+      if (dm.qrMenuItems.FieldByName('forb').AsString= 'F') then begin
+        SendString(sFoodItems);
+      end
+      else begin
+        SendString(sBeverageItems);
+      end;
+      WriteLine;
+    end;
+  end;
+end;
+{*****************************************************************************}
+procedure TformQRMenuItems.QRGGroupBeforePrint(Sender: TQRCustomBand;
+  var PrintBand: Boolean);
+begin
+  with (WBCSV) do begin
+    if (Active) then begin
+      SendString(dm.qrMenuItems.FieldByName('itemgroupname').AsString);
+      SendEmpty(11);
+      SendInteger(dm.qrMenuItems.FieldByName('itemgroupid').AsInteger);
+      WriteLine;
+    end;
+  end;
+end;
+{*****************************************************************************}
+procedure TformQRMenuItems.DetailBandBeforePrint(Sender: TQRCustomBand;
+  var PrintBand: Boolean);
+begin
+  with (WBCSV) do begin
+    if (Active) then begin
+      with DM.qrMenuItems do begin
+        SendString(FieldByName('forb').AsString);
+        SendString(FieldByName('itemgroupabbrev').AsString);
+        if (ShowLinkCodes) then begin
+          SendString(FieldByName('linkcode').AsString);
+        end;
+        SendString(FieldByName('itemabbrev').AsString);
+        SendCurrency(FieldByName('itemprice').AsCurrency);
+        SendCurrency(FieldByName('itemprice2').AsCurrency);
+        SendCurrency(FieldByName('itemprice3').AsCurrency);
+        SendCurrency(FieldByName('itemprice4').AsCurrency);
+        SendCurrency(FieldByName('itemprice5').AsCurrency);
+        SendCurrency(FieldByName('itemprice6').AsCurrency);
+        SendString(FieldByName('barcode').AsString);
+        SendCurrency(FieldByName('nonstockprice').AsCurrency);
+        SendInteger(FieldByName('availqty').AsInteger);
+        SendInteger(FieldByName('itemid').AsInteger);
+        WriteLine;
+      end;
+    end;
+  end;
+end;
+{*****************************************************************************}
+procedure TformQRMenuItems.QRBSummaryAfterPrint(Sender: TQRCustomBand;
+  BandPrinted: Boolean);
+begin
+  with (WBCSV) do begin
+    if (Active) then begin
+      //Close File cos we're done with it now
+      CloseFile;
+    end;
+  end;
+end;
+{*****************************************************************************}
+procedure TformQRMenuItems.QRGSuperItemGroupBeforePrint(
+  Sender: TQRCustomBand; var PrintBand: Boolean);
+begin
+  if (dm.qrMenuItems.FieldByName('superitemgroupid').IsNull) then begin
+    PrintBand:= False;
+    Exit;
+  end;
+
+  with (WBCSV) do begin
+    if (Active) then begin
+      SendString(Format(sGroupItems , [dm.qrMenuItems.FieldByName('superitemgroup').AsString]));
+      SendEmpty(11);
+      SendInteger(dm.qrMenuItems.FieldByName('superitemgroupid').AsInteger);
+      WriteLine;
+    end;
+  end;
+end;
+{*****************************************************************************}
+procedure TformQRMenuItems.QRExprGroupPrint(sender: TObject;
+  var Value: String);
+begin
+  QRShapeGroup.Width:= QRExprGroup.Width + 4;
+end;
+{*****************************************************************************}
+
+
+end.
+
+
+
+
+======================================================================================================================
 
 
 
@@ -8428,2150 +8836,6 @@ begin
   end;
 end;
 {*****************************************************************************}
-
-end.
-
-
-
-
-==========================================================================================================
-
-
-
-
-unit UDM;
-{*****************************************************************************}
-interface
-{*****************************************************************************}
-uses
-  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
-  IBODataset, IB_Components, IB_Access, DB;
-{*****************************************************************************}
-procedure StringAsParam(Param: TParam; S: String);
-procedure IntegerAsParam(Param: TParam; I: Integer);
-procedure BoolAsParam(Param: TParam; B: Boolean);
-function  FieldAsString(Field: TField; const DefaultS: String): String;
-function  FieldAsInt(Field: TField; const DefaultI: Integer): Integer;
-function  FieldAsBool(Field: TField): Boolean;
-{******************************************************************************}
-type
-  (**
-    Datamodule for the reports program.
-    The Database, Query, and Datasource Components live here.
-  *)
-  Tdm = class(TDataModule)
-    TheDB: TIBODatabase;
-    qrSales: TIBOQuery;
-    dsSales: TDataSource;
-    dsItemGroups: TDataSource;
-    qrOutlets: TIBOQuery;
-    dsOutlets: TDataSource;
-    qrAccounts: TIBOQuery;
-    dsAccounts: TDataSource;
-    qrAccountSales: TIBOQuery;
-    dsAccountSales: TDataSource;
-    qrAccountPEs: TIBOQuery;
-    dsAccountPEs: TDataSource;
-    qrAccountsACCOUNTID: TIntegerField;
-    qrAccountsACCOUNTTYPE: TStringField;
-    qrAccountsACCOUNTNAME: TStringField;
-    qrAccountsWHENCLOSED: TDateTimeField;
-    qrAccountSalesITEMGROUPID: TSmallintField;
-    qrAccountSalesITEMGROUPABBREV: TStringField;
-    qrAccountSalesITEMID: TIntegerField;
-    qrAccountSalesITEMABBREV: TStringField;
-    qrAccountSalesITEMGROUPORDER: TSmallintField;
-    qrAccountSalesITEMORDER: TSmallintField;
-    qrAccountSalesFORB: TStringField;
-    qrStaff: TIBOQuery;
-    dsStaff: TDataSource;
-    qrStaffSTAFFID: TSmallintField;
-    qrStaffSTAFFNAME: TStringField;
-    qrStaffWHENEND: TDateTimeField;
-    qrStaffWHENBEGIN: TDateTimeField;
-    qrStaffSURNAME: TStringField;
-    qrStaffFIRSTNAME: TStringField;
-    qrAccountSalesOUTLETNAME: TStringField;
-    qrOrders: TIBOQuery;
-    dsOrders: TDataSource;
-    qrOrdersOutlet: TStringField;
-    qrVoidLines: TIBOQuery;
-    dsVoidLines: TDataSource;
-    qrAccountSalesWHENDELETED: TDateTimeField;
-    qrAllStaffOrders: TIBOQuery;
-    dsAllStaffOrders: TDataSource;
-    qrAllStaffOrdersOUTLETNAME: TStringField;
-    qrAllStaffOrdersSTAFFID: TIntegerField;
-    qrAllStaffOrdersSTAFFNAME: TStringField;
-    qrAllStaffOrdersFORB: TStringField;
-    qrAllStaffOrdersITEMGROUPID: TSmallintField;
-    qrAllStaffOrdersITEMGROUPABBREV: TStringField;
-    qrAllStaffOrdersITEMID: TIntegerField;
-    qrAllStaffOrdersITEMABBREV: TStringField;
-    qrAllStaffOrdersITEMGROUPORDER: TSmallintField;
-    qrAllStaffOrdersITEMORDER: TSmallintField;
-    qrAccountSalesOutlet: TStringField;
-    qrAccountSalesACCOUNTID: TIntegerField;
-    qrAccountSalesACCOUNTNAME: TStringField;
-    qrTerminalSales: TIBOQuery;
-    dsTerminalSales: TDataSource;
-    qrTerminals: TIBOQuery;
-    dsTerminals: TDataSource;
-    qrTerminalsTERMINALID: TSmallintField;
-    qrTerminalsTERMINALNAME: TStringField;
-    qrTerminalsWANAME: TStringField;
-    qrTerminalsOUTLETNAME: TStringField;
-    qrTerminalsWHENDELETED: TDateTimeField;
-    qrMenuItems: TIBOQuery;
-    dsMenuItems: TDataSource;
-    qrMenuItemsITEMID: TIntegerField;
-    qrMenuItemsOUTLETID: TIntegerField;
-    qrMenuItemsOUTLETNAME: TStringField;
-    qrMenuItemsITEMABBREV: TStringField;
-    qrMenuItemsITEMGROUPNAME: TStringField;
-    qrMenuItemsITEMGROUPABBREV: TStringField;
-    qrMenuItemsFORB: TStringField;
-    dsPeople: TDataSource;
-    qrPeople: TIBOQuery;
-    qrPeoplePERORGID: TIntegerField;
-    qrModifiers: TIBOQuery;
-    dsModifiers: TDataSource;
-    qrModifiersMODIFIERID: TSmallintField;
-    qrModifiersOUTLETID: TSmallintField;
-    qrModifiersFORB: TStringField;
-    qrModifiersMODIFIERORDER: TSmallintField;
-    qrModifiersMODIFIER: TStringField;
-    qrModifiersOUTLETNAME: TStringField;
-    qrSalesHistory: TIBOQuery;
-    dsSalesHistory: TDataSource;
-    qrStaffSales: TIBOQuery;
-    dsStaffSales: TDataSource;
-    qrStaffSalesITEMID: TIntegerField;
-    qrStaffSalesITEMABBREV: TStringField;
-    qrStaffSalesWHENDELETED: TDateTimeField;
-    qrStaffSalesITEMORDER: TSmallintField;
-    qrStaffSalesFORB: TStringField;
-    qrStaffSalesITEMGROUPID: TSmallintField;
-    qrStaffSalesITEMGROUPABBREV: TStringField;
-    qrStaffSalesITEMGROUPORDER: TSmallintField;
-    qrStaffSalesOUTLETNAME: TStringField;
-    qrStaffSalesSTAFFID: TSmallintField;
-    qrStaffSalesSTAFFNAME: TStringField;
-    qrSaleCategorySales: TIBOQuery;
-    dsSaleCategorySales: TDataSource;
-    qrSaleCategorySalesITEMID: TIntegerField;
-    qrSaleCategorySalesITEMABBREV: TStringField;
-    qrSaleCategorySalesWHENDELETED: TDateTimeField;
-    qrSaleCategorySalesITEMORDER: TSmallintField;
-    qrSaleCategorySalesFORB: TStringField;
-    qrSaleCategorySalesITEMGROUPID: TSmallintField;
-    qrSaleCategorySalesITEMGROUPABBREV: TStringField;
-    qrSaleCategorySalesITEMGROUPORDER: TSmallintField;
-    qrSaleCategorySalesOUTLETNAME: TStringField;
-    qrSaleCategorySalesSALECATEGORYID: TIntegerField;
-    qrSaleCategorySalesSALECATEGORY: TStringField;
-    qrSectionSales: TIBOQuery;
-    dsSectionSales: TDataSource;                 
-    qrSectionSalesITEMID: TIntegerField;
-    qrSectionSalesITEMABBREV: TStringField;
-    qrSectionSalesWHENDELETED: TDateTimeField;
-    qrSectionSalesITEMORDER: TSmallintField;
-    qrSectionSalesFORB: TStringField;
-    qrSectionSalesITEMGROUPID: TSmallintField;
-    qrSectionSalesITEMGROUPABBREV: TStringField;
-    qrSectionSalesITEMGROUPORDER: TSmallintField;
-    qrSectionSalesOUTLETNAME: TStringField;
-    qrSectionSalesSECTIONID: TIntegerField;
-    qrSectionSalesSECTION: TStringField;
-    qrSaleCategories: TIBOQuery;
-    dsSaleCategories: TDataSource;
-    qrSaleCategoriesSALECATEGORY: TStringField;
-    qrSaleCategoriesWHENDELETED: TDateTimeField;
-    qrSaleCategoriesSALECATEGORYID: TSmallintField;
-    qrCashTotals: TIBOQuery;
-    dsCashTotals: TDataSource;
-    qrCashTotalsCASHUPID: TIntegerField;
-    qrCashTotalsOUTLETID: TSmallintField;
-    qrCashTotalsOUTLETNAME: TStringField;
-    qrCashTotalsTILLID: TSmallintField;
-    qrCashTotalsTILLNAME: TStringField;
-    qrCashTotalsWHENFROM: TDateTimeField;
-    qrCashTotalsWHENCASHEDUP: TDateTimeField;
-    qrCashTotalsTENDERLINETYPEID: TSmallintField;
-    qrCashTotalsTENDERLINETYPE: TStringField;
-    qrCashTotalsTENDERLINETYPEORDER: TSmallintField;
-    qrCashTotalsONACCOUNT: TIBOFloatField;
-    qrAccountSalesSUPERITEMGROUPID: TSmallintField;
-    qrAccountSalesSUPERITEMGROUP: TStringField;
-    qrAccountSalesSUPERITEMGROUPABBREV: TStringField;
-    qrAccountSalesSUPERITEMGROUPORDER: TSmallintField;
-    qrAccountSalesHIDEFORB: TSmallintField;
-    qrTerminalSalesITEMID: TIntegerField;
-    qrTerminalSalesITEMABBREV: TStringField;
-    qrTerminalSalesWHENDELETED: TDateTimeField;
-    qrTerminalSalesITEMORDER: TSmallintField;
-    qrTerminalSalesFORB: TStringField;
-    qrTerminalSalesITEMGROUPID: TSmallintField;
-    qrTerminalSalesITEMGROUPABBREV: TStringField;
-    qrTerminalSalesITEMGROUPORDER: TSmallintField;
-    qrTerminalSalesOUTLETNAME: TStringField;
-    qrTerminalSalesTERMINALID: TIntegerField;
-    qrTerminalSalesTERMINALNAME: TStringField;
-    qrTerminalSalesSUPERITEMGROUPID: TSmallintField;
-    qrTerminalSalesSUPERITEMGROUP: TStringField;
-    qrTerminalSalesSUPERITEMGROUPABBREV: TStringField;
-    qrTerminalSalesSUPERITEMGROUPORDER: TSmallintField;
-    qrTerminalSalesHIDEFORB: TSmallintField;
-    qrStaffSalesSUPERITEMGROUPID: TSmallintField;
-    qrStaffSalesSUPERITEMGROUP: TStringField;
-    qrStaffSalesSUPERITEMGROUPABBREV: TStringField;
-    qrStaffSalesSUPERITEMGROUPORDER: TSmallintField;
-    qrStaffSalesHIDEFORB: TSmallintField;
-    qrSaleCategorySalesSUPERITEMGROUPID: TSmallintField;
-    qrSaleCategorySalesSUPERITEMGROUP: TStringField;
-    qrSaleCategorySalesSUPERITEMGROUPABBREV: TStringField;
-    qrSaleCategorySalesSUPERITEMGROUPORDER: TSmallintField;
-    qrSaleCategorySalesHIDEFORB: TSmallintField; 
-    qrSectionSalesSUPERITEMGROUPID: TSmallintField;
-    qrSectionSalesSUPERITEMGROUP: TStringField;
-    qrSectionSalesSUPERITEMGROUPABBREV: TStringField;
-    qrSectionSalesSUPERITEMGROUPORDER: TSmallintField;
-    qrSectionSalesHIDEFORB: TSmallintField;
-    qrAllStaffOrdersSUPERITEMGROUPID: TSmallintField;
-    qrAllStaffOrdersSUPERITEMGROUP: TStringField;
-    qrAllStaffOrdersSUPERITEMGROUPABBREV: TStringField;
-    qrAllStaffOrdersSUPERITEMGROUPORDER: TSmallintField;
-    qrAllStaffOrdersHIDEFORB: TSmallintField;
-    qrMenuItemsSUPERITEMGROUPID: TSmallintField;
-    qrMenuItemsSUPERITEMGROUP: TStringField;
-    qrMenuItemsSUPERITEMGROUPABBREV: TStringField;
-    qrMenuItemsSUPERITEMGROUPORDER: TSmallintField;
-    qrMenuItemsHIDEFORB: TSmallintField;
-    qrSalesByDate: TIBOQuery;
-    dsSalesByDate: TDataSource;
-    qrSalesByDateSTARTTIME: TDateTimeField;
-    qrSalesByDateENDTIME: TDateTimeField;
-    qrSalesByDateOUTLETNAME: TStringField;
-    qrSalesByDateSUPERITEMGROUPID: TSmallintField;
-    qrSalesByDateSUPERITEMGROUP: TStringField;
-    qrSalesByDateSUPERITEMGROUPABBREV: TStringField;
-    qrSalesByDateSUPERITEMGROUPORDER: TSmallintField;
-    qrSalesByDateHIDEFORB: TSmallintField;
-    qrSalesByDateFORB: TStringField;
-    qrSalesByDatePLEVEL1: TIBOFloatField;
-    qrSalesByDatePLEVEL2: TIBOFloatField;
-    qrSalesByDatePLEVEL3: TIBOFloatField;
-    qrSalesByDatePLEVEL4: TIBOFloatField;
-    qrSalesByDatePLEVEL5: TIBOFloatField;
-    qrSalesByDatePLEVEL6: TIBOFloatField;
-    qrAccountPETrans: TIBOQuery;
-    dsAccountPETrans: TDataSource;
-    qrAccountPETransPERIODENDID: TIntegerField;
-    qrAccountPETransACCOUNTID: TIntegerField;
-    qrAccountPETransACCOUNTNAME: TStringField;
-    qrAccountPETransACCOUNTTYPEID: TSmallintField;
-    qrAccountPETransACCOUNTTYPE: TStringField;
-    qrAccountPETransPERSONNAME: TStringField;
-    qrAccountPETransCOUNTRY: TStringField;
-    qrAccountPETransWHENBEGIN: TDateTimeField;
-    qrAccountPETransWHENEND: TDateTimeField;
-    qrAccountPETransTRANSACTIONDATE: TDateTimeField;
-    qrAccountPETransTRANSTYPE: TStringField;
-    qrAccountPETransTRANSREF: TIntegerField;
-    qrAccountPETransINVOICED: TIBOFloatField;
-    qrAccountPEsPERIODENDID: TIntegerField;
-    qrAccountPEsWHENUPD: TDateTimeField;
-    qrAccountPEsACCOUNTTYPE: TStringField;
-    qrAccountTypes: TIBOQuery;
-    dsAccountTypes: TDataSource;
-    qrAccountTypesACCOUNTTYPEID: TSmallintField;
-    qrAccountTypesACCOUNTTYPE: TStringField;
-    qrClockIns: TIBOQuery;
-    dsClockIns: TDataSource;
-    qrClockInsCLOCKINID: TIntegerField;
-    qrClockInsSTAFFID: TSmallintField;
-    qrClockInsSTAFFNAME: TStringField;
-    qrClockInsLOGINID: TIntegerField;
-    qrClockInsWHENEDITED: TDateTimeField;
-    qrClockInsWHOEDITED: TStringField;
-    qrClockInsWHEREEDITED: TStringField;
-    qrClockInsCLOCKINTIME: TDateTimeField;
-    qrClockInsCLOCKOUTTIME: TDateTimeField;
-    qrClockInsWHENCLOCKINTIME: TDateTimeField;
-    qrClockInsWHOCLOCKIN: TIntegerField;
-    qrClockInsWHOCLOCKINSTAFF: TStringField;
-    qrClockInsWHERECLOCKINSTAFF: TStringField;
-    qrClockInsWHENCLOCKOUTTIME: TDateTimeField;
-    qrClockInsWHOCLOCKOUT: TIntegerField;
-    qrClockInsWHOCLOCKOUTSTAFF: TStringField;
-    qrClockInsWHERECLOCKOUTSTAFF: TStringField;
-    qrClockInsSTAFFPIN: TSmallintField;
-    qrVoidLinesOutlet: TStringField;
-    qrCourses: TIBOQuery;
-    dsCourses: TDataSource;
-    qrCoursesCOURSEID: TSmallintField;
-    qrCoursesCOURSE: TStringField;
-    qrCoursesWHENDELETED: TDateTimeField;
-    qrCourseSales: TIBOQuery;
-    dsCourseSales: TDataSource;
-    qrCourseSalesITEMID: TIntegerField;
-    qrCourseSalesITEMABBREV: TStringField;
-    qrCourseSalesWHENDELETED: TDateTimeField;
-    qrCourseSalesITEMORDER: TSmallintField;
-    qrCourseSalesFORB: TStringField;
-    qrCourseSalesITEMGROUPID: TSmallintField;
-    qrCourseSalesITEMGROUPABBREV: TStringField;
-    qrCourseSalesITEMGROUPORDER: TSmallintField;
-    qrCourseSalesOUTLETNAME: TStringField;
-    qrCourseSalesCOURSEID: TSmallintField;
-    qrCourseSalesCOURSE: TStringField;
-    qrCourseSalesSUPERITEMGROUPID: TSmallintField;
-    qrCourseSalesSUPERITEMGROUP: TStringField;
-    qrCourseSalesSUPERITEMGROUPABBREV: TStringField;
-    qrCourseSalesSUPERITEMGROUPORDER: TSmallintField;
-    qrCourseSalesHIDEFORB: TSmallintField;
-    qrModifiersLINKCODE: TStringField;
-    qrMenuItemsLINKCODE: TStringField;
-    qrStaffTips: TIBOQuery;
-    dsStaffTips: TDataSource;
-    qrNoSales: TIBOQuery;
-    dsNoSales: TDataSource;
-    qrNoSalesTENDERID: TIntegerField;
-    qrNoSalesTENDERNO: TIntegerField;
-    qrNoSalesOUTLETID: TSmallintField;
-    qrNoSalesOUTLETNAME: TStringField;
-    qrNoSalesSTAFFID: TSmallintField;
-    qrNoSalesSTAFFNAME: TStringField;
-    qrNoSalesWHENTENDERED: TDateTimeField;
-    qrNoSalesTILLID: TSmallintField;
-    qrNoSalesTILLNAME: TStringField;
-    qrNoSalesTERMINALID: TSmallintField;
-    qrNoSalesTERMINALNAME: TStringField;
-    qrNoSalesNOSALETYPEID: TSmallintField;
-    qrNoSalesNOSALETYPE: TStringField;
-    qrNoSalesNOSALENOTES: TStringField;
-    qrNoSalesCASHUPID: TSmallintField;
-    qrNoSalesACCOUNTID: TIntegerField;
-    qrNoSalesACCOUNTNAME: TStringField;
-    qrTerminalSalesSALESTAX: TIBOFloatField;
-    qrClockInsLINKCODE: TStringField;
-    qrStaffTipsTENDERID: TIntegerField;
-    qrStaffTipsWHENTENDERED: TDateTimeField;
-    qrStaffTipsTENDERLINEID: TIntegerField;
-    qrStaffTipsTENDERLINETYPEID: TSmallintField;
-    qrStaffTipsTENDERLINETYPE: TStringField;
-    qrStaffTipsOUTLETID: TSmallintField;
-    qrStaffTipsOUTLETNAME: TStringField;
-    qrStaffTipsSTAFFID: TSmallintField;
-    qrStaffTipsSTAFFNAME: TStringField;
-    qrStaffTipsSTAFFNO: TSmallintField;
-    qrStaffTipsGROUPID: TIntegerField;
-    qrStaffTipsGROUPNAME: TStringField;
-    qrStaffTipsTABLENO: TSmallintField;
-    qrStaffTipsTILLID: TSmallintField;
-    qrStaffTipsTILLNAME: TStringField;
-    qrClockInsPERSONNAME: TStringField;
-    qrRemoteLocations: TIBOQuery;
-    qrRemoteLocationsREMOTELOCATIONID: TSmallintField;
-    qrRemoteLocationsREMOTELOCATIONNAME: TStringField;
-    qrCourseSalesOUTLETID: TSmallintField;
-    qrSaleCategorySalesOUTLETID: TSmallintField;
-    qrSectionSalesOUTLETID: TSmallintField;
-    qrStaffSalesOUTLETID: TSmallintField;
-    qrTerminalSalesOUTLETID: TSmallintField;
-    qrSalesByDateOUTLETID: TSmallintField;
-    qrAllStaffOrdersOUTLETID: TSmallintField;
-    qrAccountsForPeriod: TIBOQuery;
-    qrInvocesForAccount: TIBOQuery;
-    qrItemTotalForAccountDay: TIBOQuery;
-    dsAccountsForPeriod: TDataSource;
-    qrAccountSalesOUTLETID: TSmallintField;
-    qrAccountSalesREMOTELOCATIONID: TSmallintField;
-    qrAccountSalesREMOTELOCATIONNAME: TStringField;
-    qrTerminalSalesREMOTELOCATIONID: TSmallintField;
-    qrTerminalSalesREMOTELOCATIONNAME: TStringField;
-    qrTills: TIBOQuery;
-    dsTills: TDataSource;
-    qrTillsTILLID: TSmallintField;
-    qrTillsTILLNAME: TStringField;
-    qrTillsWANAME: TStringField;
-    qrTillsOUTLETNAME: TStringField;
-    qrTillsWHENDELETED: TDateTimeField;
-    qrTillSales: TIBOQuery;
-    dsTillSales: TDataSource;
-    qrTillSalesITEMID: TIntegerField;
-    qrTillSalesITEMABBREV: TStringField;
-    qrTillSalesWHENDELETED: TDateTimeField;
-    qrTillSalesITEMORDER: TSmallintField;
-    qrTillSalesFORB: TStringField;
-    qrTillSalesITEMGROUPID: TSmallintField;
-    qrTillSalesITEMGROUPABBREV: TStringField;
-    qrTillSalesITEMGROUPORDER: TSmallintField;
-    qrTillSalesOUTLETID: TSmallintField;
-    qrTillSalesOUTLETNAME: TStringField;
-    qrTillSalesTILLID: TIntegerField;
-    qrTillSalesTILLNAME: TStringField;
-    qrTillSalesSUPERITEMGROUPID: TSmallintField;
-    qrTillSalesSUPERITEMGROUP: TStringField;
-    qrTillSalesSUPERITEMGROUPABBREV: TStringField;
-    qrTillSalesSUPERITEMGROUPORDER: TSmallintField;
-    qrTillSalesHIDEFORB: TSmallintField;
-    qrTillSalesREMOTELOCATIONID: TSmallintField;
-    qrTillSalesREMOTELOCATIONNAME: TStringField;
-    qrDiscountSchemes: TIBOQuery;
-    dsDiscountSchemes: TDataSource;
-    qrDiscountSchemesDISCOUNTSCHEMEID: TSmallintField;
-    qrDiscountSchemesDISCOUNTSCHEMENAME: TStringField;
-    qrDiscountSchemesWHENDELETED: TDateTimeField;
-    qrDiscountSchemeSales: TIBOQuery;
-    dsDiscountSchemeSales: TDataSource;
-    qrDiscountSchemeSalesITEMID: TIntegerField;
-    qrDiscountSchemeSalesITEMABBREV: TStringField;
-    qrDiscountSchemeSalesWHENDELETED: TDateTimeField;
-    qrDiscountSchemeSalesITEMORDER: TSmallintField;
-    qrDiscountSchemeSalesFORB: TStringField;
-    qrDiscountSchemeSalesITEMGROUPID: TSmallintField;
-    qrDiscountSchemeSalesITEMGROUPABBREV: TStringField;
-    qrDiscountSchemeSalesITEMGROUPORDER: TSmallintField;
-    qrDiscountSchemeSalesOUTLETID: TSmallintField;
-    qrDiscountSchemeSalesOUTLETNAME: TStringField;
-    qrDiscountSchemeSalesDISCOUNTSCHEMEID: TSmallintField;
-    qrDiscountSchemeSalesDISCOUNTSCHEMENAME: TStringField;
-    qrDiscountSchemeSalesSUPERITEMGROUPID: TSmallintField;
-    qrDiscountSchemeSalesSUPERITEMGROUP: TStringField;
-    qrDiscountSchemeSalesSUPERITEMGROUPABBREV: TStringField;
-    qrDiscountSchemeSalesSUPERITEMGROUPORDER: TSmallintField;
-    qrDiscountSchemeSalesHIDEFORB: TSmallintField;
-    qrDiscountSchemeSalesREMOTELOCATIONID: TSmallintField;
-    qrDiscountSchemeSalesREMOTELOCATIONNAME: TStringField;
-    qrCourseSalesREMOTELOCATIONID: TSmallintField;
-    qrCourseSalesREMOTELOCATIONNAME: TStringField;
-    qrSaleCategorySalesREMOTELOCATIONID: TSmallintField;
-    qrSaleCategorySalesREMOTELOCATIONNAME: TStringField;
-    qrSectionSalesREMOTELOCATIONID: TSmallintField;
-    qrSectionSalesREMOTELOCATIONNAME: TStringField;
-    qrStaffSalesREMOTELOCATIONID: TSmallintField;
-    qrStaffSalesREMOTELOCATIONNAME: TStringField;
-    qrSalesByDateREMOTELOCATIONID: TSmallintField;
-    qrSalesByDateREMOTELOCATIONNAME: TStringField;
-    qrCashTotalsREMOTELOCATIONID: TSmallintField;
-    qrCashTotalsREMOTELOCATIONNAME: TStringField;
-    qrClockInsREMOTELOCATIONID: TSmallintField;
-    qrClockInsREMOTELOCATIONNAME: TStringField;
-    dsItemModSales: TDataSource;
-    qrItemModSales: TIBOQuery;
-    qrItemModSalesITEMID: TIntegerField;
-    qrItemModSalesITEMABBREV: TStringField;
-    qrItemModSalesWHENDELETED: TDateTimeField;
-    qrItemModSalesITEMORDER: TSmallintField;
-    qrItemModSalesFORB: TStringField;
-    qrItemModSalesITEMGROUPID: TSmallintField;
-    qrItemModSalesITEMGROUPABBREV: TStringField;
-    qrItemModSalesITEMGROUPORDER: TSmallintField;
-    qrItemModSalesOUTLETID: TSmallintField;
-    qrItemModSalesOUTLETNAME: TStringField;
-    qrItemModSalesMODIFIERID: TSmallintField;
-    qrItemModSalesMODIFIER: TStringField;
-    qrItemModSalesSUPERITEMGROUPID: TSmallintField;
-    qrItemModSalesSUPERITEMGROUP: TStringField;
-    qrItemModSalesSUPERITEMGROUPABBREV: TStringField;
-    qrItemModSalesSUPERITEMGROUPORDER: TSmallintField;
-    qrItemModSalesHIDEFORB: TSmallintField;
-    qrItemModSalesREMOTELOCATIONID: TSmallintField;
-    qrItemModSalesREMOTELOCATIONNAME: TStringField;
-    qrModGroups: TIBOQuery;
-    dsModGroups: TDataSource;
-    qrModGroupsMODGROUPID: TSmallintField;
-    qrModGroupsMODGROUP: TStringField;
-    qrModGroupsFORB: TStringField;
-    qrModGroupsOUTLETNAME: TStringField;
-    qrModGroupsWHENDELETED: TDateTimeField;
-    qrItemModSalesMODGROUPID: TSmallintField;
-    qrItemModSalesMODGROUP: TStringField;
-    qrModifiersREMOTELOCATIONID: TSmallintField;
-    qrModifiersREMOTELOCATIONNAME: TStringField;
-    qrNoSalesREMOTELOCATIONID: TSmallintField;
-    qrNoSalesREMOTELOCATIONNAME: TStringField;
-    qrStaffTipsREMOTELOCATIONID: TSmallintField;
-    qrStaffTipsREMOTELOCATIONNAME: TStringField;
-    qrStaffTipsTENDERLINEAMOUNT: TIBOFloatField;
-    qrStaffTipsTENDERLINETIP: TIBOFloatField;
-    qrAllStaffOrdersREMOTELOCATIONID: TSmallintField;
-    qrAllStaffOrdersREMOTELOCATIONNAME: TStringField;
-    qrModItems: TIBOQuery;
-    dsModItems: TDataSource;
-    qrModItemsMODIFIERID: TSmallintField;
-    qrModItemsITEMID: TSmallintField;
-    qrModItemsITEMGROUPID: TSmallintField;
-    qrModItemsOUTLETID: TSmallintField;
-    qrModItemsREMOTELOCATIONID: TSmallintField;
-    qrModItemsFORB: TStringField;
-    qrModItemsMODIFIERORDER: TSmallintField;
-    qrModItemsMODIFIER: TStringField;
-    qrModItemsITEMORDER: TSmallintField;
-    qrModItemsITEMABBREV: TStringField;
-    qrModItemsITEMGROUPORDER: TSmallintField;
-    qrModItemsITEMGROUPABBREV: TStringField;
-    qrModItemsOUTLETNAME: TStringField;
-    qrModItemsREMOTELOCATIONNAME: TStringField;
-    qrModItemsLINKCODE: TStringField;
-    qrSys: TIBOQuery;
-    qrSysCURRENCYTYPE: TStringField;
-    qrOrdersbumped: TIBOQuery;
-    qrOrdersbumpedOUTLETID: TSmallintField;
-    qrOrdersbumpedOUTLETNAME: TStringField;
-    qrOrdersbumpedORDERID: TIntegerField;
-    qrOrdersbumpedORDERLINEID: TIntegerField;
-    qrOrdersbumpedFORB: TStringField;
-    qrOrdersbumpedITEMGROUPID: TSmallintField;
-    qrOrdersbumpedITEMGROUPABBREV: TStringField;
-    qrOrdersbumpedITEMID: TIntegerField;
-    qrOrdersbumpedCOURSEID: TSmallintField;
-    qrOrdersbumpedITEMABBREV: TStringField;
-    qrOrdersbumpedITEMGROUPORDER: TSmallintField;
-    qrOrdersbumpedITEMORDER: TSmallintField;
-    qrOrdersbumpedSUPERITEMGROUPID: TSmallintField;
-    qrOrdersbumpedSUPERITEMGROUP: TStringField;
-    qrOrdersbumpedSUPERITEMGROUPABBREV: TStringField;
-    qrOrdersbumpedSUPERITEMGROUPORDER: TSmallintField;
-    qrOrdersbumpedSUPERITEMGRPHIDEFORB: TSmallintField;
-    qrOrdersbumpedWHENORDERED: TDateTimeField;
-    qrOrdersbumpedWHENSTARTED: TDateTimeField;
-    qrOrdersbumpedWHENBUMPED: TDateTimeField;
-    qrOrdersbumpedSTOCK: TSmallintField;
-    qrOrdersbumpedCOURSE: TStringField;
-    qrPeopleSURNAME: TStringField;
-    qrPeopleFIRSTNAME: TStringField;
-    qrPeopleMIDDLENAME: TStringField;
-    qrPeopleTITLE: TStringField;
-    qrPeopleSALUTATION: TStringField;
-    qrPeopleTAXNUMBER: TStringField;
-    qrPeopleWHENUPD: TDateTimeField;
-    qrPeopleWHENDELETED: TDateTimeField;
-    qrPeopleSTAFFNAME: TStringField;
-    qrPeopleTERMINALNAME: TStringField;
-    qrPeopleADDRESS1: TStringField;
-    qrPeopleADDRESS2: TStringField;
-    qrPeopleADDRESS3: TStringField;
-    qrPeoplePOSTCODE: TStringField;
-    qrPeopleCOUNTRY: TStringField;
-    qrPeoplePOADDRESS1: TStringField;
-    qrPeoplePOADDRESS2: TStringField;
-    qrPeoplePOADDRESS3: TStringField;
-    qrPeoplePOPOSTCODE: TStringField;
-    qrPeoplePOCOUNTRY: TStringField;
-    qrPeopleWORKNO: TStringField;
-    qrPeopleFAXNO: TStringField;
-    qrPeopleEMAIL: TStringField;
-    qrPeopleNOTES: TMemoField;
-    qrPeopleDOB: TDateTimeField;
-    qrPeopleBIRTHDAY: TSmallintField;
-    qrPeopleBIRTHMONTH: TSmallintField;
-    qrPeopleHOMENO: TStringField;
-    qrPeopleMOBILENO: TStringField;
-    qrPeopleANNIVERSARY: TDateTimeField;
-    qrPeopleANNIVERSARYDAY: TSmallintField;
-    qrPeopleANNIVERSARYMONTH: TSmallintField;
-    qrPeopleVIP: TSmallintField;
-    qrPeopleVIPSTR: TStringField;
-    qrPeopleCUSTOMER: TSmallintField;
-    qrPeopleCUSTOMERSTR: TStringField;
-    qrPeopleGENDER: TStringField;
-    qrPeopleHOBBIES: TStringField;
-    qrPeopleSPORTS: TStringField;
-    qrPeopleMUSIC: TStringField;
-    qrPeopleFAVORITEITEM: TStringField;
-    qrPeopleOCCUPATION: TStringField;
-    qrPeopleNATIONALITY: TStringField;
-    qrPeopleOPTOUT: TSmallintField;
-    qrPeopleLASTWHENINVOICED: TDateTimeField;
-    qrPeopleACCOUNTID: TIntegerField;
-    qrPeopleACCOUNTNAME: TStringField;
-    qrPeopleACCOUNTNO: TIntegerField;
-    qrPeopleACCOUNTTYPEID: TSmallintField;
-    qrPeopleLINKCODE: TStringField;
-    qrAccountPETransADDRESS1: TStringField;
-    qrAccountPETransADDRESS2: TStringField;
-    qrAccountPETransADDRESS3: TStringField;
-    qrAccountPETransPOSTCODE: TStringField;
-    qrSysSTARTHOUR: TSmallintField;
-    qrSalePeriodSales: TIBOQuery;
-    dsSalePeriodSales: TDataSource;
-    qrSalePeriods: TIBOQuery;
-    dsSalePeriods: TDataSource;
-    qrSalePeriodsTIMEPERIODID: TSmallintField;
-    qrSalePeriodsTIMEPERIODNAME: TStringField;
-    qrOutletsOUTLETID: TSmallintField;
-    qrOutletsOUTLETNAME: TStringField;
-    qrOutletsOUTLETADDRESS: TStringField;
-    qrOutletsOUTLETPHONE: TStringField;
-    qrOutletsOUTLETFAX: TStringField;
-    qrOutletsTAXNUMBER: TStringField;
-    qrOutletsTAXNUMBERNAME: TStringField;
-    qrSalesITEMID: TIntegerField;
-    qrSalesAMOUNTSOLD: TIBOFloatField;
-    qrSalesGROSSSOLD: TIBOFloatField;
-    qrSalesSALESTAX: TIBOFloatField;
-    qrSalesDISCOUNT: TIBOFloatField;
-    qrSalesAVERAGEUNITPRICE: TIBOFloatField;
-    qrSalesNETTSOLD: TIBOFloatField;
-    qrSalesITEMABBREV: TStringField;
-    qrSalesWHENDELETED: TDateTimeField;
-    qrSalesITEMORDER: TSmallintField;
-    qrSalesFORB: TStringField;
-    qrSalesITEMGROUPID: TSmallintField;
-    qrSalesITEMGROUPABBREV: TStringField;
-    qrSalesITEMGROUPORDER: TSmallintField;
-    qrSalesOUTLETID: TSmallintField;
-    qrSalesOUTLETNAME: TStringField;
-    qrSalesPLEVEL1: TIBOFloatField;
-    qrSalesPLEVEL2: TIBOFloatField;
-    qrSalesPLEVEL3: TIBOFloatField;
-    qrSalesPLEVEL4: TIBOFloatField;
-    qrSalesPLEVEL5: TIBOFloatField;
-    qrSalesPLEVEL6: TIBOFloatField;
-    qrSalesSUPERITEMGROUPID: TSmallintField;
-    qrSalesSUPERITEMGROUP: TStringField;
-    qrSalesSUPERITEMGROUPABBREV: TStringField;
-    qrSalesSUPERITEMGROUPORDER: TSmallintField;
-    qrSalesHIDEFORB: TSmallintField;
-    qrSalesREMOTELOCATIONID: TSmallintField;
-    qrSalesREMOTELOCATIONNAME: TStringField;
-    qrOrdersOUTLETID: TSmallintField;
-    qrOrdersOUTLETNAME: TStringField;
-    qrOrdersREMOTELOCATIONID: TSmallintField;
-    qrOrdersREMOTELOCATIONNAME: TStringField;
-    qrOrdersFORB: TStringField;
-    qrOrdersITEMGROUPID: TSmallintField;
-    qrOrdersITEMGROUPABBREV: TStringField;
-    qrOrdersITEMID: TIntegerField;
-    qrOrdersITEMABBREV: TStringField;
-    qrOrdersITEMGROUPORDER: TSmallintField;
-    qrOrdersITEMORDER: TSmallintField;
-    qrOrdersLINKCODE: TStringField;
-    qrOrdersSUPERITEMGROUPID: TSmallintField;
-    qrOrdersSUPERITEMGROUP: TStringField;
-    qrOrdersSUPERITEMGROUPABBREV: TStringField;
-    qrOrdersSUPERITEMGROUPORDER: TSmallintField;
-    qrOrdersHIDEFORB: TSmallintField;
-    qrVoidLinesOUTLETID: TSmallintField;
-    qrVoidLinesOUTLETNAME: TStringField;
-    qrVoidLinesREMOTELOCATIONID: TSmallintField;
-    qrVoidLinesREMOTELOCATIONNAME: TStringField;
-    qrVoidLinesFORB: TStringField;
-    qrVoidLinesITEMGROUPID: TSmallintField;
-    qrVoidLinesITEMGROUPABBREV: TStringField;
-    qrVoidLinesITEMID: TIntegerField;
-    qrVoidLinesITEMABBREV: TStringField;
-    qrVoidLinesITEMGROUPORDER: TSmallintField;
-    qrVoidLinesITEMORDER: TSmallintField;
-    qrVoidLinesVOIDLINEID: TIntegerField;
-    qrVoidLinesWHOVOID: TStringField;
-    qrVoidLinesWHENVOID: TDateTimeField;
-    qrVoidLinesQTY: TIBOFloatField;
-    qrVoidLinesQTYVOIDED: TIBOFloatField;
-    qrVoidLinesQTYWASTED: TIBOFloatField;
-    qrVoidLinesUNITPRICE: TIBOFloatField;
-    qrVoidLinesNETT: TIBOFloatField;
-    qrVoidLinesNETTVOIDED: TIBOFloatField;
-    qrVoidLinesNETTWASTED: TIBOFloatField;
-    qrVoidLinesCOST: TIBOFloatField;
-    qrVoidLinesCOSTVOIDED: TIBOFloatField;
-    qrVoidLinesCOSTWASTED: TIBOFloatField;
-    qrVoidLinesVOIDREASON: TStringField;
-    qrVoidLinesFIXEDVOIDREASONID: TSmallintField;
-    qrVoidLinesVOIDEXPLANATION1: TStringField;
-    qrVoidLinesVOIDEXPLANATION2: TStringField;
-    qrVoidLinesGROUPNAME: TStringField;
-    qrVoidLinesTABLENO: TSmallintField;
-    qrVoidLinesSUPERITEMGROUPID: TSmallintField;
-    qrVoidLinesSUPERITEMGROUP: TStringField;
-    qrVoidLinesSUPERITEMGROUPABBREV: TStringField;
-    qrVoidLinesSUPERITEMGROUPORDER: TSmallintField;
-    qrVoidLinesHIDEFORB: TSmallintField;
-    qrItemGroups: TIBOQuery;
-    qrItemGroupsOUTLETNAME: TStringField;
-    qrItemGroupsITEMGROUPID: TSmallintField;
-    qrItemGroupsITEMGROUPABBREV: TStringField;
-    qrItemGroupsWHENDELETED: TDateTimeField;
-    qrItemGroupsITEMGROUPNAME: TStringField;
-    qrAllStaffOrdersNETTQTY: TIBOFloatField;
-    qrAllStaffOrdersAVPRICE: TIBOFloatField;
-    qrAllStaffOrdersNETT: TIBOFloatField;
-    qrOrdersQTYSTOCK: TIBOFloatField;
-    qrOrdersQTYWASTED: TIBOFloatField;
-    qrOrdersNETTQTY: TIBOFloatField;
-    qrOrdersAVPRICE: TIBOFloatField;
-    qrOrdersNETT: TIBOFloatField;
-    qrAccountSalesAMOUNTSOLD: TIBOFloatField;
-    qrAccountSalesGROSSSOLD: TIBOFloatField;
-    qrAccountSalesSALESTAX: TIBOFloatField;
-    qrAccountSalesDISCOUNT: TIBOFloatField;
-    qrAccountSalesAVERAGEUNITPRICE: TIBOFloatField;
-    qrAccountSalesNETTSOLD: TIBOFloatField;
-    qrTerminalSalesAMOUNTSOLD: TIBOFloatField;
-    qrTerminalSalesGROSSSOLD: TIBOFloatField;
-    qrTerminalSalesDISCOUNT: TIBOFloatField;
-    qrTerminalSalesAVERAGEUNITPRICE: TIBOFloatField;
-    qrTerminalSalesNETTSOLD: TIBOFloatField;
-    qrCourseSalesAMOUNTSOLD: TIBOFloatField;
-    qrCourseSalesGROSSSOLD: TIBOFloatField;
-    qrCourseSalesSALESTAX: TIBOFloatField;
-    qrCourseSalesDISCOUNT: TIBOFloatField;
-    qrCourseSalesAVERAGEUNITPRICE: TIBOFloatField;
-    qrCourseSalesNETTSOLD: TIBOFloatField;
-    qrMenuItemsITEMPRICE: TIBOFloatField;
-    qrMenuItemsITEMPRICE2: TIBOFloatField;
-    qrMenuItemsITEMPRICE3: TIBOFloatField;
-    qrMenuItemsITEMPRICE4: TIBOFloatField;
-    qrMenuItemsITEMPRICE5: TIBOFloatField;
-    qrMenuItemsITEMPRICE6: TIBOFloatField;
-    qrMenuItemsNONSTOCKPRICE: TIBOFloatField;
-    qrMenuItemsBARCODE: TStringField;
-    qrMenuItemsAVAILQTY: TIBOFloatField;
-    qrModifiersMODPRICE: TIBOFloatField;
-    qrModifiersNETTQTY: TIBOFloatField;
-    qrModifiersNETT: TIBOFloatField;
-    qrModifiersQTYWASTED: TIBOFloatField;
-    qrModifiersQTYSTOCK: TIBOFloatField;
-    qrStaffSalesAMOUNTSOLD: TIBOFloatField;
-    qrStaffSalesGROSSSOLD: TIBOFloatField;
-    qrStaffSalesSALESTAX: TIBOFloatField;
-    qrStaffSalesDISCOUNT: TIBOFloatField;
-    qrStaffSalesAVERAGEUNITPRICE: TIBOFloatField;
-    qrStaffSalesNETTSOLD: TIBOFloatField;
-    qrSaleCategorySalesAMOUNTSOLD: TIBOFloatField;
-    qrSaleCategorySalesGROSSSOLD: TIBOFloatField;
-    qrSaleCategorySalesSALESTAX: TIBOFloatField;
-    qrSaleCategorySalesDISCOUNT: TIBOFloatField;
-    qrSaleCategorySalesAVERAGEUNITPRICE: TIBOFloatField;
-    qrSaleCategorySalesNETTSOLD: TIBOFloatField;
-    qrSectionSalesAMOUNTSOLD: TIBOFloatField;
-    qrSectionSalesGROSSSOLD: TIBOFloatField;
-    qrSectionSalesSALESTAX: TIBOFloatField;
-    qrSectionSalesDISCOUNT: TIBOFloatField;
-    qrSectionSalesAVERAGEUNITPRICE: TIBOFloatField;
-    qrSectionSalesNETTSOLD: TIBOFloatField;
-    qrItemModSalesMODGROUPORDER: TSmallintField;
-    qrItemModSalesMODORDER: TSmallintField;
-    qrItemModSalesAMOUNTSOLD: TIBOFloatField;
-    qrItemModSalesGROSSSOLD: TIBOFloatField;
-    qrItemModSalesSALESTAX: TIBOFloatField;
-    qrItemModSalesDISCOUNT: TIBOFloatField;
-    qrItemModSalesAVERAGEUNITPRICE: TIBOFloatField;
-    qrItemModSalesNETTSOLD: TIBOFloatField;
-    qrModItemsMODPRICE: TIBOFloatField;
-    qrModItemsNETTQTY: TIBOFloatField;
-    qrModItemsNETT: TIBOFloatField;
-    qrModItemsQTYWASTED: TIBOFloatField;
-    qrModItemsQTYSTOCK: TIBOFloatField;
-    qrCashTotalsSYSTEMAMOUNT: TIBOFloatField;
-    qrCashTotalsDISCREPANCY: TIBOFloatField;
-    qrCashTotalsACTUALAMOUNT: TIBOFloatField;
-    qrCashTotalsPAID: TIBOFloatField;
-    qrCashTotalsOUTSTANDING: TIBOFloatField;
-    qrSalesByDateAMOUNTSOLD: TIBOFloatField;
-    qrSalesByDateGROSSSOLD: TIBOFloatField;
-    qrSalesByDateSALESTAX: TIBOFloatField;
-    qrSalesByDateDISCOUNT: TIBOFloatField;
-    qrSalesByDateNETTSOLD: TIBOFloatField;
-    qrAccountPETransOPENINGBALANCE: TIBOFloatField;
-    qrAccountPETransCLOSINGBALANCE: TIBOFloatField;
-    qrAccountPETransPAID: TIBOFloatField;
-    qrClockInsHOURLYRATE: TIBOFloatField;
-    qrClockInsOUTLETID: TSmallintField;
-    qrNoSalesINCOMINGAMOUNT: TIBOFloatField;
-    qrNoSalesOUTGOINGAMOUNT: TIBOFloatField;
-    qrNoSalesAMOUNT: TIBOFloatField;
-    qrTillSalesAMOUNTSOLD: TIBOFloatField;
-    qrTillSalesGROSSSOLD: TIBOFloatField;
-    qrTillSalesSALESTAX: TIBOFloatField;
-    qrTillSalesDISCOUNT: TIBOFloatField;
-    qrTillSalesAVERAGEUNITPRICE: TIBOFloatField;
-    qrTillSalesNETTSOLD: TIBOFloatField;
-    qrDiscountSchemeSalesAMOUNTSOLD: TIBOFloatField;
-    qrDiscountSchemeSalesGROSSSOLD: TIBOFloatField;
-    qrDiscountSchemeSalesSALESTAX: TIBOFloatField;
-    qrDiscountSchemeSalesDISCOUNT: TIBOFloatField;
-    qrDiscountSchemeSalesAVERAGEUNITPRICE: TIBOFloatField;
-    qrDiscountSchemeSalesNETTSOLD: TIBOFloatField;
-    qrRemoteGroups: TIBOQuery;
-    qrRemoteGroupsREMOTEOVERRIDEGROUPID: TSmallintField;
-    qrRemoteGroupsREMOTEOVERRIDEGROUPNAME: TStringField;
-    dsRemoteGroups: TDataSource;
-    qrStaffREMOTEOVERRIDEGROUPID: TIntegerField;
-    qrStaffREMOTEOVERRIDEGROUPNAME: TStringField;
-    qrAccountsREMOTEOVERRIDEGROUPNAME: TStringField;
-    qrAccountTypesREMOTEOVERRIDEGROUPNAME: TStringField;
-    dsAccountTransaction: TDataSource;
-    qrAccountTransaction: TIBOQuery;
-    qrAccountTransactionOUTLETNAME: TStringField;
-    qrAccountTransactionACCOUNTID: TIntegerField;
-    qrAccountTransactionACCOUNTNAME: TStringField;
-    qrAccountTransactionOUTLETID: TSmallintField;
-    qrAccountTransactionREMOTELOCATIONID: TSmallintField;
-    qrAccountTransactionREMOTELOCATIONNAME: TStringField;
-    qrAccountTransactionACCOUNTTYPEID: TSmallintField;
-    qrAccountTransactionACCOUNTTYPE: TStringField;
-    qrAccountTransactionACCOUNTNO: TIntegerField;
-    qrAccountTransactionLASTTRANSACTION: TDateTimeField;
-    qrAccountTransactionCURRENTBALANCECHANGE: TCurrencyField;
-    qrAccountTransactionLOYALTYPOINTS1CHANGE: TIntegerField;
-    qrAccountTransactionLOYALTYPOINTS2CHANGE: TIntegerField;
-    qrAccountTransactionTRANSACTIONTYPE: TStringField;
-    qrAccountTransactionLOYALTYREWARD: TStringField;
-    qrAccountTransactionINVOICENO: TIntegerField;
-    qrAccountTransactionREMINVOICENO: TIntegerField;
-    qrAccountTransactionTENDERNO: TIntegerField;
-    qrAccountTransactionREMTENDERNO: TIntegerField;
-    qrAccountTransactionWHOTRANSACTION: TStringField;
-    qrAccountTransactionWHENTRANSACTION: TDateTimeField;
-    qrAccountTransactionLASTTRANSRECEIVED: TDateTimeField;
-    qrCombosSales: TIBOQuery;
-    dsCombosSales: TDataSource;
-    qrCombos: TIBOQuery;
-    dsCombos: TDataSource;
-    qrCombosCOMBONAME: TStringField;
-    qrCombosWHENDELETED: TDateTimeField;
-    qrCombosCOMBOID: TIntegerField;
-    qrSalePeriodSalesITEMID: TIntegerField;
-    qrSalePeriodSalesAMOUNTSOLD: TIBOFloatField;
-    qrSalePeriodSalesGROSSSOLD: TIBOFloatField;
-    qrSalePeriodSalesSALESTAX: TIBOFloatField;
-    qrSalePeriodSalesDISCOUNT: TIBOFloatField;
-    qrSalePeriodSalesAVERAGEUNITPRICE: TIBOFloatField;
-    qrSalePeriodSalesNETTSOLD: TIBOFloatField;
-    qrSalePeriodSalesITEMABBREV: TStringField;
-    qrSalePeriodSalesWHENDELETED: TDateTimeField;
-    qrSalePeriodSalesITEMORDER: TSmallintField;
-    qrSalePeriodSalesFORB: TStringField;
-    qrSalePeriodSalesITEMGROUPID: TSmallintField;
-    qrSalePeriodSalesITEMGROUPABBREV: TStringField;
-    qrSalePeriodSalesITEMGROUPORDER: TSmallintField;
-    qrSalePeriodSalesOUTLETID: TSmallintField;
-    qrSalePeriodSalesOUTLETNAME: TStringField;
-    qrSalePeriodSalesSUPERITEMGROUPID: TSmallintField;
-    qrSalePeriodSalesSUPERITEMGROUP: TStringField;
-    qrSalePeriodSalesSUPERITEMGROUPABBREV: TStringField;
-    qrSalePeriodSalesSUPERITEMGROUPORDER: TSmallintField;
-    qrSalePeriodSalesHIDEFORB: TSmallintField;
-    qrSalePeriodSalesREMOTELOCATIONID: TSmallintField;
-    qrSalePeriodSalesREMOTELOCATIONNAME: TStringField;
-    qrSalePeriodSalesTIMEPERIODNAME: TStringField;
-    qrSalePeriodSalesSALECATEGORYPERIOD: TSmallintField;
-    qrCashupStats: TIBOQuery;
-    dsCashupStats: TDataSource;
-    qrCashupStatsINVOICES: TIBOFloatField;
-    qrCashupStatsINVOICECOUNT: TIntegerField;
-    qrCashupStatsCREDITNOTES: TIBOFloatField;
-    qrCashupStatsCREDITNOTECOUNT: TIntegerField;
-    qrCashupStatsCREDITNOTESGROSS: TIBOFloatField;
-    qrCashupStatsPAYMENTS: TIBOFloatField;
-    qrCashupStatsPAYMENTTIPS: TIBOFloatField;
-    qrCashupStatsREFUNDS: TIBOFloatField;
-    qrCashupStatsREFUNDTIPS: TIBOFloatField;
-    qrCashupStatsNOSALETHRUACCOUNT: TIBOFloatField;
-    qrCashupStatsNOSALENOACCOUNT: TIBOFloatField;
-    qrCashupStatsVOUCHERSSOLD: TIBOFloatField;
-    qrCashupStatsVOUCHERSREDEEMED: TIBOFloatField;
-    qrCashupStatsROUNDING: TIBOFloatField;
-    qrCashupStatsFSALES: TIBOFloatField;
-    qrCashupStatsBSALES: TIBOFloatField;
-    qrCashupStatsFGROSS: TIBOFloatField;
-    qrCashupStatsBGROSS: TIBOFloatField;
-    qrCashupStatsFDISCOUNT: TIBOFloatField;
-    qrCashupStatsBDISCOUNT: TIBOFloatField;
-    qrCashupStatsFCREDITNOTESGROSS: TIBOFloatField;
-    qrCashupStatsBCREDITNOTESGROSS: TIBOFloatField;
-    qrCashupStatsSALESTAX: TIBOFloatField;
-    qrCashupStatsEFTPOSCASHOUT: TIBOFloatField;
-    qrCashupStatsEFTPOSCHANGE: TIBOFloatField;
-    qrClockInsSTAFFROLEID: TSmallintField;
-    qrClockInsSTAFFROLENAME: TStringField;
-    qrOrdersSalesVoids: TIBOQuery;
-    dsOrdersSalesVoids: TDataSource;
-    qrOrdersSalesVoidsOUTLETID: TSmallintField;
-    qrOrdersSalesVoidsOUTLETNAME: TStringField;
-    qrOrdersSalesVoidsREMOTELOCATIONID: TSmallintField;
-    qrOrdersSalesVoidsREMOTELOCATIONNAME: TStringField;
-    qrOrdersSalesVoidsFORB: TStringField;
-    qrOrdersSalesVoidsSUPERITEMGROUPID: TSmallintField;
-    qrOrdersSalesVoidsSUPERITEMGROUP: TStringField;
-    qrOrdersSalesVoidsSUPERITEMGROUPABBREV: TStringField;
-    qrOrdersSalesVoidsSUPERITEMGROUPORDER: TSmallintField;
-    qrOrdersSalesVoidsHIDEFORB: TSmallintField;
-    qrOrdersSalesVoidsITEMGROUPID: TSmallintField;
-    qrOrdersSalesVoidsITEMGROUPABBREV: TStringField;
-    qrOrdersSalesVoidsITEMGROUPORDER: TSmallintField;
-    qrOrdersSalesVoidsITEMID: TIntegerField;
-    qrOrdersSalesVoidsITEMABBREV: TStringField;
-    qrOrdersSalesVoidsITEMORDER: TSmallintField;
-    qrOrdersSalesVoidsORDERSQTY: TIBOFloatField;
-    qrOrdersSalesVoidsORDERSVALUE: TIBOFloatField;
-    qrOrdersSalesVoidsSALESQTY: TIBOFloatField;
-    qrOrdersSalesVoidsSALESVALUE: TIBOFloatField;
-    qrOrdersSalesVoidsVOIDEDQTY: TIBOFloatField;
-    qrOrdersSalesVoidsVOIDEDVALUE: TIBOFloatField;
-    qrOrdersSalesVoidsVARIANCEQTY: TIBOFloatField;
-    qrOrdersSalesVoidsVARIANCEVALUE: TIBOFloatField;
-    qrAccountTabSales: TIBOQuery;
-    dsAccountTabSales: TDataSource;
-    qrAccountTabSalesOUTLETID: TSmallintField;
-    qrAccountTabSalesOUTLETNAME: TStringField;
-    qrAccountTabSalesREMOTELOCATIONID: TSmallintField;
-    qrAccountTabSalesREMOTELOCATIONNAME: TStringField;
-    qrAccountTabSalesACCOUNTID: TIntegerField;
-    qrAccountTabSalesACCOUNTNAME: TStringField;
-    qrAccountTabSalesACCOUNTTYPEID: TSmallintField;
-    qrAccountTabSalesACCOUNTTYPE: TStringField;
-    qrAccountTabSalesFOODDISC: TIBOFloatField;
-    qrAccountTabSalesFOODONACCOUNT: TIBOFloatField;
-    qrAccountTabSalesFOODTENDERED: TIBOFloatField;
-    qrAccountTabSalesFOODPRORATA: TIBOFloatField;
-    qrAccountTabSalesFOODNOTACCOUNT: TIBOFloatField;
-    qrAccountTabSalesFOODTOTAL: TIBOFloatField;
-    qrAccountTabSalesBEVDISC: TIBOFloatField;
-    qrAccountTabSalesBEVONACCOUNT: TIBOFloatField;
-    qrAccountTabSalesBEVTENDERED: TIBOFloatField;
-    qrAccountTabSalesBEVPRORATA: TIBOFloatField;
-    qrAccountTabSalesBEVNOTACCOUNT: TIBOFloatField;
-    qrAccountTabSalesBEVTOTAL: TIBOFloatField;
-    qrAccountTabSalesALLDISC: TIBOFloatField;
-    qrAccountTabSalesALLONACCOUNT: TIBOFloatField;
-    qrAccountTabSalesALLTENDERED: TIBOFloatField;
-    qrAccountTabSalesALLPRORATA: TIBOFloatField;
-    qrAccountTabSalesALLNOTACCOUNT: TIBOFloatField;
-    qrAccountTabSalesALLTOTAL: TIBOFloatField;
-    qrOpenTablesOLsToPay: TIBOQuery;
-    qrOpenTablesOLsToPayOUTLETID: TSmallintField;
-    qrOpenTablesOLsToPayOUTLETNAME: TStringField;
-    qrOpenTablesOLsToPayREMOTELOCATIONID: TSmallintField;
-    qrOpenTablesOLsToPayREMOTELOCATIONNAME: TStringField;
-    qrOpenTablesOLsToPaySALECATEGORYID: TSmallintField;
-    qrOpenTablesOLsToPaySALECATEGORY: TStringField;
-    qrOpenTablesOLsToPaySECTIONID: TSmallintField;
-    qrOpenTablesOLsToPaySECTION: TStringField;
-    qrOpenTablesOLsToPayTABLENO: TSmallintField;
-    qrOpenTablesOLsToPayTABLENOCAPTION: TStringField;
-    qrOpenTablesOLsToPayGROUPID: TIntegerField;
-    qrOpenTablesOLsToPayGROUPNAME: TStringField;
-    qrOpenTablesOLsToPayGUESTS: TSmallintField;
-    qrOpenTablesOLsToPayORDERID: TIntegerField;
-    qrOpenTablesOLsToPayORDERLINEID: TIntegerField;
-    qrOpenTablesOLsToPayITEMID: TIntegerField;
-    qrOpenTablesOLsToPayCOURSE: TStringField;
-    qrOpenTablesOLsToPayFORB: TStringField;
-    qrOpenTablesOLsToPayUNITPRICE: TIBOFloatField;
-    qrOpenTablesOLsToPayITEMABBREV: TStringField;
-    qrOpenTablesOLsToPayPOSITIONS: TStringField;
-    qrOpenTablesOLsToPayQTY: TIBOFloatField;
-    qrOpenTablesOLsToPayORDERED: TIBOFloatField;
-    qrOpenTablesOLsToPayQTYVOIDED: TIBOFloatField;
-    qrOpenTablesOLsToPayVOIDED: TIBOFloatField;
-    qrOpenTablesOLsToPayTHEQTY: TIBOFloatField;
-    qrOpenTablesOLsToPayDISCOUNTINCL: TIBOFloatField;
-    qrOpenTablesOLsToPayINVOICED: TIBOFloatField;
-    qrOpenTablesOLsToPayUNINVOICED: TIBOFloatField;
-    qrOpenTablesOLsToPayQTYLEFT: TIBOFloatField;
-    qrAccountTabSalesTABCOUNT: TIntegerField;
-    qrTabs: TIBOQuery;
-    qrTabsGROUPID: TIntegerField;
-    qrTabsGROUPTYPE: TStringField;
-    qrTabsGROUPNAME: TStringField;
-    qrTabsTABLENO: TSmallintField;
-    qrTabsGUESTS: TSmallintField;
-    qrTabsCHILDREN: TSmallintField;
-    qrTabsORDERED: TIBOFloatField;
-    qrTabsVOIDED: TIBOFloatField;
-    qrTabsINVOICED: TIBOFloatField;
-    qrTabsUNINVOICED: TIBOFloatField;
-    qrTabsWHENOPENED: TDateTimeField;
-    qrTabsWHOOPENEDSTAFFNAME: TStringField;
-    qrTabsWHENCLOSED: TDateTimeField;
-    qrTabsWHOCLOSEDSTAFFNAME: TStringField;
-    qrTabsWHOBOOKEDSTAFFNAME: TStringField;
-    qrTabsWHOCANCELLEDSTAFFNAME: TStringField;
-    qrTabsSALECATEGORYID: TSmallintField;
-    qrTabsSALECATEGORY: TStringField;
-    qrTabsTABLENOCAPTION: TStringField;
-    qrTabsSECTIONID: TSmallintField;
-    qrTabsSECTION: TStringField;
-    qrTabsOUTLETID: TSmallintField;
-    qrTabsOUTLETNAME: TStringField;
-    qrTabsREMOTELOCATIONID: TSmallintField;
-    qrTabsREMOTELOCATIONNAME: TStringField;
-    qrTabSummaryOLs: TIBOQuery;
-    qrTabSummaryOLsFORB: TStringField;
-    qrTabSummaryOLsITEMABBREV: TStringField;
-    qrTabSummaryOLsUNITPRICE: TIBOFloatField;
-    qrTabSummaryOLsITEMID: TSmallintField;
-    qrTabSummaryOLsITEMGROUPORDER: TSmallintField;
-    qrTabSummaryOLsITEMORDER: TSmallintField;
-    qrTabSummaryOLsENTERQTY: TIBOFloatField;
-    qrTabSummaryOLsWEIGHEDITEM: TSmallintField;
-    qrTabSummaryOLsNOTES: TMemoField;
-    qrTabSummaryOLsFROMTABNO: TSmallintField;
-    qrTabSummaryOLsQTY: TIBOFloatField;
-    qrTabSummaryOLsILQTY: TIBOFloatField;
-    qrTabSummaryOLsDISCOUNTAMOUNT: TIBOFloatField;
-    qrTabSummaryOLsPAID: TIBOFloatField;
-    qrTabSummaryOLsDUE: TIBOFloatField;
-    qrTabSummaryOLsSALESTAX: TIBOFloatField;
-    qrTabSummaryOLsSALESTAXPAID: TIBOFloatField;
-    qrTabSummaryOLsQTYVOIDED: TIBOFloatField;
-    qrTabSummaryOLsQTYWASTED: TIBOFloatField;
-    qrTabSummaryOLsILDISC: TIBOFloatField;
-    qrTabSummaryOLsOLDISC: TIBOFloatField;
-    qrTabSummaryOLsQTYLEFT: TIBOFloatField;
-    qrTabSummaryOLsORDERED: TIBOFloatField;
-    qrTabSummaryAccounts: TIBOQuery;
-    qrTabSummaryAccountsACCOUNTID: TIntegerField;
-    qrTabSummaryAccountsACCOUNTNAME: TStringField;
-    qrTabSummaryAccountsQTY: TIBOFloatField;
-    qrTabSummaryAccountsILAMOUNT: TIBOFloatField;
-    qrTabSummaryAccountsDISCOUNTAMOUNT: TIBOFloatField;
-    qrTabSummaryAccountsTENDERED: TIBOFloatField;
-    qrTabSummaryAccountsCHARGED: TIBOFloatField;
-    qrAccountPETransLOYALTY1NAME: TStringField;
-    qrAccountPETransLOYALTY2NAME: TStringField;
-    qrAccountPETransEXPIREDP1THISPE: TIntegerField;
-    qrAccountPETransEXPIREDP2THISPE: TIntegerField;
-    qrAccountPETransEXPIREDCRTHISPE: TIBOFloatField;
-    qrAccountPETransNEXTEXPIRYAT: TDateTimeField;
-    qrAccountPETransEXPIREDP1NEXTPE: TIntegerField;
-    qrAccountPETransEXPIREDP2NEXTPE: TIntegerField;
-    qrAccountPETransEXPIREDCRNEXTPE: TIBOFloatField;
-    qrAccountPETransLOYALTYPOINTS1BAL: TIntegerField;
-    qrAccountPETransLOYALTYPOINTS2BAL: TIntegerField;
-    qrStaffOpenPrice: TIBOQuery;
-    dsStaffOpenPrice: TDataSource;
-    qrStaffOpenPriceOUTLETID: TSmallintField;
-    qrStaffOpenPriceOUTLETNAME: TStringField;
-    qrStaffOpenPriceREMOTELOCATIONID: TSmallintField;
-    qrStaffOpenPriceREMOTELOCATIONNAME: TStringField;
-    qrStaffOpenPriceSTAFFID: TIntegerField;
-    qrStaffOpenPriceSTAFFNAME: TStringField;
-    qrStaffOpenPriceFORB: TStringField;
-    qrStaffOpenPriceWHENORDERED: TDateTimeField;
-    qrStaffOpenPriceITEMGROUPID: TSmallintField;
-    qrStaffOpenPriceITEMGROUPABBREV: TStringField;
-    qrStaffOpenPriceITEMID: TIntegerField;
-    qrStaffOpenPriceITEMABBREV: TStringField;
-    qrStaffOpenPriceOPENITEMABBREV: TStringField;
-    qrStaffOpenPriceOPENPRICE: TIBOFloatField;
-    qrStaffOpenPriceQTY: TIBOFloatField;
-    qrStaffOpenPriceNETT: TIBOFloatField;
-    qrStaffOpenPriceWHENORDEREDDATE: TDateField;
-    qrEventSales: TIBOQuery;
-    qrEventSalesItemGroupID: TSmallintField;
-    qrEventSalesOutlet: TStringField;
-    qrEventSalesOutletName: TStringField;
-    qrEventSalesFORB: TStringField;
-    qrEventSalesItemGroupAbbrev: TStringField;
-    qrEventSalesItemID: TIntegerField;
-    qrEventSalesItemAbbrev: TStringField;
-    qrEventSalesItemGroupOrder: TSmallintField;
-    qrEventSalesItemOrder: TSmallintField;
-    qrEventSalesWhenDeleted: TDateTimeField;
-    qrEventSalesAccountID: TIntegerField;
-    qrEventSalesAccountName: TStringField;
-    qrEventSalesSuperItemGroupID: TSmallintField;
-    qrEventSalesSuperItemGroup: TStringField;
-    qrEventSalesSuperItemGroupAbbrev: TStringField;
-    qrEventSalesSuperItemGroupOrder: TSmallintField;
-    qrEventSalesHideForB: TSmallintField;
-    qrEventSalesOutletID: TSmallintField;
-    qrEventSalesRemoteLocationID: TSmallintField;
-    qrEventSalesRemoteLocationName: TStringField;
-    qrEventSalesAmountSold: TIBOFloatField;
-    qrEventSalesGrossSold: TIBOFloatField;
-    qrEventSalesSalesTax: TIBOFloatField;
-    qrEventSalesDiscount: TIBOFloatField;
-    qrEventSalesAverageUnitPrice: TIBOFloatField;
-    qrEventSalesNettSold: TIBOFloatField;
-    dsEventSales: TDataSource;
-    qrEventSalesEventID: TIntegerField;
-    qrEventSalesEventName: TStringField;
-    qrEventSalesEventStartTime: TDateTimeField;
-    qrEventSalesEventEndTime: TDateTimeField;
-    qrEvents: TIBOQuery;
-    qrEventsEventID: TIntegerField;
-    qrEventsEventName: TStringField;
-    qrEventsWhenDeleted: TDateTimeField;
-    dsEvents: TDataSource;
-    qrSalesSIZENAME: TStringField;
-    dsTransList: TDataSource;
-    qrTransList: TIBOQuery;
-    qrTransListOUTLETID: TSmallintField;
-    qrTransListOUTLETNAME: TStringField;
-    qrTransListREMOTELOCATIONID: TSmallintField;
-    qrTransListREMOTELOCATIONNAME: TStringField;
-    qrTransListTILLID: TSmallintField;
-    qrTransListTILLNAME: TStringField;
-    qrTransListSTAFFID: TSmallintField;
-    qrTransListSTAFFNAME: TStringField;
-    qrTransListCASHUPID: TIntegerField;
-    qrTransListWHENCASHEDUP: TDateTimeField;
-    qrTransListCLOCKINID: TIntegerField;
-    qrTransListCLOCKINTIME: TDateTimeField;
-    qrTransListCLOCKOUTTIME: TDateTimeField;
-    qrTransListTENDERID: TIntegerField;
-    qrTransListTENDERNO: TIntegerField;
-    qrTransListTENDERTYPE: TStringField;
-    qrTransListINVOICEID: TIntegerField;
-    qrTransListINVOICENO: TIntegerField;
-    qrTransListNOSALETYPEID: TSmallintField;
-    qrTransListNOSALETYPE: TStringField;
-    qrTransListTENDERLINETYPEID: TSmallintField;
-    qrTransListTENDERLINETYPE: TStringField;
-    qrTransListTENDERLINETYPEORDER: TSmallintField;
-    qrTransListTENDERLINENOTES: TStringField;
-    qrTransListTENDERLINEAMOUNT: TIBOFloatField;
-    qrTransListTENDERLINETIP: TIBOFloatField;
-    qrTransListTENDERLINEID: TIntegerField;
-    qrTransListTENDERLINECHANGE: TIBOFloatField;
-    qrTransListWHENTENDERED: TDateTimeField;
-    qrTransListTENDERCOO: TStringField;
-    qrTransListINVOICETOTAL: TIBOFloatField;
-    qrCashTotalsTENLINETYPEPROVIDERID: TSmallintField;
-    qrCashTotalsTENLINETYPEPROVIDER: TStringField;
-    qrCashTotalsTENLINETYPEPROVIDERORDER: TSmallintField;
-    qrSysAVOIDPINCHECK: TSmallintField;
-    sp: TIB_StoredProc;
-    qrPeopleCARDCODE: TStringField;
-    qrMenuItemsWHENUPD: TDateTimeField;
-    qrAccountTypeMovements: TIBOQuery;
-    dsAccountTypeMovements: TDataSource;
-    qrAccountTypeMovementsACCOUNTTYPEID: TSmallintField;
-    qrAccountTypeMovementsACCOUNTTYPE: TStringField;
-    qrAccountTypeMovementsINVOICETYPE: TStringField;
-    qrAccountTypeMovementsTENDERTYPE: TStringField;
-    qrAccountTypeMovementsOUTLETID: TSmallintField;
-    qrAccountTypeMovementsOUTLETNAME: TStringField;
-    qrAccountTypeMovementsREMOTELOCATIONID: TSmallintField;
-    qrAccountTypeMovementsREMOTELOCATIONNAME: TStringField;
-    qrAccountTypeMovementsLOYALTYREWARDID: TSmallintField;
-    qrAccountTypeMovementsLOYALTYREWARD: TStringField;
-    qrAccountTypeMovementsNOSALETYPEID: TSmallintField;
-    qrAccountTypeMovementsNOSALETYPE: TStringField;
-    qrAccountTypeMovementsACCOUNTCHARGED: TIBOBCDField;
-    qrAccountTypeMovementsACCOUNTPAID: TIBOBCDField;
-    qrAccountTypeMovementsLOYALTYPOINTS1ISSUED: TIntegerField;
-    qrAccountTypeMovementsLOYALTYPOINTS1REDEEMED: TIntegerField;
-    qrAccountTypeMovementsLOYALTYPOINTS2ISSUED: TIntegerField;
-    qrAccountTypeMovementsLOYALTYPOINTS2REDEEMED: TIntegerField;
-    qrMenuItemsITEMGROUPID: TSmallintField;
-    qrTenderedDiscount: TIBOQuery;
-    qrTenderedDiscountDISCOUNT: TIBOFloatField;
-    qrTenderedDiscountTENLINETYPEPROVIDER: TStringField;
-    dsTenderedDiscount: TDataSource;
-    qrTenderedDiscountTENDERLINETYPE: TStringField;
-    qrTenderedDiscountTENDERLINETYPEID: TSmallintField;
-    qrOutletsTAXRATE: TIBOBCDField;
-    qrSalesLASTROSSTRANSACTIONSYNC: TDateTimeField;
-    qrCashTotalsREFERENCE: TStringField;
-    qrCashTotalsNOTES: TMemoField;
-    qrTransListREFERENCE: TStringField;
-    qrTransListNOTES: TMemoField;
-    qrSections: TIBOQuery;
-    qrSectionsSECTION: TStringField;
-    qrSectionsWHENDELETED: TDateTimeField;
-    qrSectionsSECTIONID: TSmallintField;
-    dsSections: TDataSource;
-    qrStaffDetails: TIBOQuery;
-    dsStaffDetails: TDataSource;
-    procedure dmCreate(Sender: TObject);
-    procedure dsAccountsDataChange(Sender: TObject; Field: TField);
-    procedure dsAccountPEsDataChange(Sender: TObject; Field: TField);
-    procedure dsStaffDataChange(Sender: TObject; Field: TField);
-    procedure dsItemGroupsDataChange(Sender: TObject; Field: TField);
-
-    procedure qrOrdersCalcFields(DataSet: TDataSet);
-    procedure QRAccountSalesCalcFields(DataSet: TDataSet);
-    procedure qrVoidLinesCalcFields(DataSet: TDataSet);
-    procedure dsTerminalsDataChange(Sender: TObject; Field: TField);
-    procedure dsTillsDataChange(Sender: TObject; Field: TField);
-    procedure dsSaleCategoriesDataChange(Sender: TObject; Field: TField);
-    procedure dsAccountTypesDataChange(Sender: TObject; Field: TField);
-    procedure dsCoursesDataChange(Sender: TObject; Field: TField);
-    procedure dsDiscountSchemesDataChange(Sender: TObject; Field: TField);
-    procedure dsModGroupDataChange(Sender: TObject; Field: TField);
-    procedure dsSalePeriodsDataChange(Sender: TObject; Field: TField);
-    procedure dsCombosDataChange(Sender: TObject; Field: TField);
-    procedure dsEventsDataChange(Sender: TObject; Field: TField);
-    procedure qrEventSalesCalcFields(DataSet: TDataSet);
-    procedure dsSectionsDataChange(Sender: TObject; Field: TField);
-  private
-    { Private declarations }
-  protected
-    FItemGroupsCurrent: Boolean;
-    FAccountsCurrent: Boolean;
-    FStaffCurrent: Boolean;
-    FTerminalsCurrent: Boolean;
-    FTillsCurrent: Boolean;
-    FSaleCategoriesCurrent: Boolean;
-    FSectionsCurrent: Boolean;
-
-    FCoursesCurrent: Boolean;
-    FDiscountSchemesCurrent: Boolean;
-    FCurrentOutletID: Integer;
-    FModGroupCurrent: Boolean;
-    FCombosCurrent: Boolean;
-    FEventsCurrent: Boolean;
-
-    procedure FSetItemGroupsCurrent(Value: Boolean);
-    procedure FSetAccountsCurrent(Value: Boolean);
-    procedure FSetStaffCurrent(Value: Boolean);
-    procedure FSetTerminalsCurrent(Value: Boolean);
-    procedure FSetTillsCurrent(Value: Boolean);
-    procedure FSetSaleCategoriesCurrent(Value: Boolean);
-    procedure FSetSectionsCurrent(Value: Boolean);
-    procedure FSetCoursesCurrent(Value: Boolean);
-    procedure FSetDiscountSchemesCurrent(Value: Boolean);
-    procedure FSetCurrentOutletID(Value: Integer);
-    procedure FSetModGroupCurrent(Value: Boolean);
-    procedure SetCombosCurrent(const Value: Boolean);
-    procedure SetEventsCurrent(const Value: Boolean);
-  public
-    property ItemGroupsCurrent: Boolean read FItemGroupsCurrent write FSetItemGroupsCurrent;
-    property AccountsCurrent: Boolean read FAccountsCurrent write FSetAccountsCurrent;
-    property StaffCurrent: Boolean read FStaffCurrent write FSetStaffCurrent;
-    property TerminalsCurrent: Boolean read FTerminalsCurrent write FSetTerminalsCurrent;
-    property TillsCurrent: Boolean read FTillsCurrent write FSetTillsCurrent;
-    property SaleCategoriesCurrent: Boolean read FSaleCategoriesCurrent write FSetSaleCategoriesCurrent;
-    property SectionsCurrent: Boolean read FSectionsCurrent write FSetSectionsCurrent;
-
-    property CoursesCurrent: Boolean read FCoursesCurrent write FSetCoursesCurrent;
-    property DiscountSchemesCurrent: Boolean read FDiscountSchemesCurrent write FSetDiscountSchemesCurrent;
-    property CurrentOutletID: Integer read FCurrentOutletID write FSetCurrentOutletID;
-    property ModGroupCurrent: Boolean read FModGroupCurrent write FSetModGroupCurrent;
-    property CombosCurrent : Boolean read FCombosCurrent write SetCombosCurrent;
-    property EventsCurrent : Boolean read FEventsCurrent write SetEventsCurrent;
-    //read FEventsCurrent write FEventsCurrent;
-
-    procedure GetItemGroups;
-    procedure GetModGroups;
-    procedure GetAccounts;
-    procedure GetEvents;
-    procedure GetAccountTypes;
-    procedure GetPeopleRemoteOverrideGroups;
-    procedure GetStaff;
-    procedure GetTerminals;
-    procedure GetTills;
-    procedure GetSaleCategories;
-    procedure GetSections;
-    procedure GetSalePeriods;
-    procedure GetCourses;
-    procedure GetCombos;
-    procedure GetDiscountSchemes;
-    procedure GetPeriodEnds(FromTime, ToTime: TDateTime);
-    function  GetAccountSummary(FromTime, ToTime: TDateTime; AccountID, AccountTypeID: Integer): Integer;
-    procedure SetQueryTenderedDiscounts(OutletID: Integer = 0;  RemoteLocationID: Integer = 0);
-  end;
-{*****************************************************************************}
-var
-  dm: Tdm;
-{*****************************************************************************}
-implementation
-{$R *.DFM}
-{*****************************************************************************}
-uses
-  LMain, UAppDetails, USettings,
-  uResources, UReports;
-{*****************************************************************************}
-procedure Tdm.dmCreate(Sender: TObject);
-begin
-  FItemGroupsCurrent:= True;
-  FAccountsCurrent:= True;
-  FStaffCurrent:= True;
-  FTerminalsCurrent:= True;
-  FTillsCurrent:= True;
-  FSaleCategoriesCurrent:= True;
-  FSectionsCurrent := True;
-  FCoursesCurrent:= True;
-  FDiscountSchemesCurrent:= True;
-  FCurrentOutletID:= -1;
-  FModGroupCurrent:= True;
-  FCombosCurrent := True;
-  FEventsCurrent := True;
-
-  if (TheDB.Connected) then begin
-    TheDB.Close;
-  end;
-  TheDB.Database := AppDetails.DBHost + ':' + AppDetails.DBAlias;
-  TheDB.Username:= AppDetails.DBUserName;
-  TheDB.Password:= AppDetails.DBPassword;
-  TheDB.SchemaCacheDir := AppDetails.DBCacheDir;
-  try
-    TheDB.Open;
-  except
-    if (not TheDB.Connected) then begin
-      TheDB.Username:= 'sysdba';
-      TheDB.Password:= 'masterkey';
-    end;
-  end;
-
-  try
-    TheDB.Open;
-  except on e : exception do begin
-     ShowMessage(Format(sAppWillClose,[e.message]));
-     if not(ChangeSettings) then
-       Application.Terminate;
-     AppDetails.SaveDetails;
-     TheDB.Database := AppDetails.DBHost + ':' + AppDetails.DBAlias;
-     TheDB.Username:= AppDetails.DBUserName;
-     TheDB.Password:= AppDetails.DBPassword;
-    end;
-  end;
-  try
-    TheDB.Open;
-    qrOutlets.Open;
-
-    GetAccounts;
-    GetAccountTypes;
-    GetPeopleRemoteOverrideGroups;
-    GetStaff;
-    GetTerminals;
-    GetTills;
-    GetSaleCategories;
-    GetSections;
-    GetCombos;
-    GetSalePeriods;
-    GetCourses;
-    GetDiscountSchemes;
-    GetItemGroups;
-    GetModGroups;
-    GetEvents;
-  except on e : exception do begin
-     ShowMessage(Format(sAppWillClose,[e.message]));
-     Application.Terminate;
-    end;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.FSetItemGroupsCurrent(Value: Boolean);
-begin
-  if (Value <> FItemGroupsCurrent) then begin
-    FItemGroupsCurrent:= Value;
-    GetItemGroups;
-  end;
-end;
-{******************************************************************************}
-procedure Tdm.FSetAccountsCurrent(Value: Boolean);
-begin
-  if (Value <> FAccountsCurrent) then begin
-    FAccountsCurrent:= Value;
-    GetAccounts;
-    GetAccountTypes;
-  end;
-end;
-{******************************************************************************}
-procedure Tdm.FSetStaffCurrent(Value: Boolean);
-begin
-  if (Value <> FStaffCurrent) then begin
-    FStaffCurrent:= Value;
-    GetStaff;
-  end;
-end;
-{******************************************************************************}
-procedure Tdm.FSetTerminalsCurrent(Value: Boolean);
-begin
-  if (Value <> FTerminalsCurrent) then begin
-    FTerminalsCurrent:= Value;
-    GetTerminals;
-  end;
-end;
-{******************************************************************************}
-procedure Tdm.FSetTillsCurrent(Value: Boolean);
-begin
-  if (Value <> FTillsCurrent) then begin
-    FTillsCurrent:= Value;
-    GetTills;
-  end;
-end;
-{******************************************************************************}
-procedure Tdm.FSetSaleCategoriesCurrent(Value: Boolean);
-begin
-  if (Value <> FSaleCategoriesCurrent) then begin
-    FSaleCategoriesCurrent:= Value;
-    GetSaleCategories;
-  end;
-end;
-{******************************************************************************}
-procedure Tdm.FSetSectionsCurrent(Value: Boolean);
-begin
-  if (Value <> FSectionsCurrent) then begin
-    FSectionsCurrent:= Value;
-    GetSections;
-  end;
-end;
-{******************************************************************************}
-procedure Tdm.FSetCoursesCurrent(Value: Boolean);
-begin
-  if (Value <> FCoursesCurrent) then begin
-    FCoursesCurrent:= Value;
-    GetCourses;
-  end;
-end;
-{******************************************************************************}
-procedure Tdm.FSetDiscountSchemesCurrent(Value: Boolean);
-begin
-  if (Value <> FDiscountSchemesCurrent) then begin
-    FDiscountSchemesCurrent:= Value;
-    GetDiscountSchemes;
-  end;
-end;
-{******************************************************************************}
-procedure Tdm.FSetCurrentOutletID(Value: Integer);
-begin
-  if (Value <> FCurrentOutletID) then begin
-    FCurrentOutletID:= Value;
-
-    if (FCurrentOutletID <> -1) then begin
-      with qrOutlets do begin
-        Locate('outletid', FCurrentOutletID, [loCaseInsensitive]);
-
-        Glbs.OutletID := FieldByName('outletid').AsInteger;
-        Glbs.OutletName := FieldByName('outletname').AsString;
-        Glbs.OutletAddress := FieldByName('outletaddress').AsString;
-        Glbs.OutletPhone := FieldByName('outletphone').AsString;
-        Glbs.OutletFax := FieldByName('outletfax').AsString;
-        Glbs.OutletTaxNumber := FieldByName('taxnumber').AsString;
-        Glbs.OutletTaxNumberName := FieldByName('taxnumbername').AsString;
-        Glbs.OutletTaxRate := FieldByName('taxrate').AsFloat;
-      end;
-    end;
-
-    GetItemGroups;
-  end;
-end;
-{******************************************************************************}
-procedure Tdm.FSetModGroupCurrent(Value: Boolean);
-begin
-  if (Value <> FModGroupCurrent) then begin
-    FModGroupCurrent:= Value;
-    GetModGroups;
-  end;
-end;
-{******************************************************************************}
-procedure Tdm.GetItemGroups;
-begin
-  with qrItemGroups do begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('select o.outletid, o.outletname, ig.forb, ig.itemgrouporder, ig.itemgroupid,');
-    SQL.Add('  ig.itemgroupabbrev, ig.itemgroupname, ig.whendeleted, 0 sharing');
-    SQL.Add('  from itemgrp ig');
-    SQL.Add('  inner join outlet o on (ig.outletid = o.outletid)'); //get owner outletname
-    SQL.Add('  where ((:outletid = -1) or (ig.outletid = :outletid))');
-
-    if (FItemGroupsCurrent) then begin
-      SQL.Add('and (ig.whendeleted is null)');
-    end
-    else begin
-      SQL.Add('and (ig.whendeleted is not null)');
-    end;
-
-    qrItemGroupsOUTLETNAME.Visible:= (FCurrentOutletID = -1) or (AppDetails.ShowSharing); //show owner outlet
-
-    if ((FCurrentOutletID <> -1) and (AppDetails.ShowSharing)) then begin
-      SQL.Add('union');
-      SQL.Add('select distinct o.outletid, o.outletname, ig.forb, ig.itemgrouporder, ig.itemgroupid,');
-      SQL.Add('ig.itemgroupabbrev, ig.itemgroupname, ig.whendeleted, 1 sharing');
-      SQL.Add('from itemgrpshare igs');
-      SQL.Add('inner join itemgrp ig on (igs.itemgroupid = ig.itemgroupid)');
-      SQL.Add('inner join outlet o on (ig.outletid = o.outletid)'); //get owner outletname
-      SQL.Add('where (igs.outletid = :outletid)');
-
-      //shared item group is 'current' if both the item group and the share have not been deleted
-      if (FItemGroupsCurrent) then begin
-        SQL.Add('and ((ig.whendeleted is null) and (igs.whendeleted is null))');
-      end
-      else begin
-        SQL.Add('and (not ((ig.whendeleted is null) and (igs.whendeleted is null)))');
-      end;
-    end;
-
-    SQL.Add('order by 1, 3 desc, 4');
-
-    //show/hide when deleted field
-    if (FItemGroupsCurrent) then begin
-      qrItemGroupsITEMGROUPNAME.DisplayWidth := 30;
-      qrItemGroupsWHENDELETED.Visible := False;
-    end
-    else begin
-      qrItemGroupsITEMGROUPNAME.DisplayWidth := 20;
-      qrItemGroupsWHENDELETED.Visible := True;
-    end;
-
-
-    Prepare;
-    ParamByName('outletid').AsInteger:= FCurrentOutletID;
-    Open;
-  end;
-end;
-{******************************************************************************}
-procedure Tdm.GetModGroups;
-begin
-  with qrModGroups do begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('select o.outletid, o.outletname, mg.forb, mg.modgroupid,');
-    SQL.Add('  mg.modgroup, mg.whendeleted');
-    SQL.Add('  from modgroup mg');
-    SQL.Add('  inner join outlet o on (mg.outletid = o.outletid)'); //get owner outletname
-
-    if (FModGroupCurrent) then begin
-      SQL.Add('where (mg.whendeleted is null)');
-    end
-    else begin
-      SQL.Add('where (mg.whendeleted is not null)');
-    end;
-
-    qrModGroupsOUTLETNAME.Visible:= (FCurrentOutletID = -1) or (AppDetails.ShowSharing); //show owner outlet
-
-    SQL.Add('order by o.outletid, mg.forb desc, mg.modgroup');
-
-    //show/hide when deleted field
-    if (FItemGroupsCurrent) then begin
-      qrModGroupsMODGROUP.DisplayWidth := 30;
-      qrModGroupsWHENDELETED.Visible := False;
-    end
-    else begin
-      qrModGroupsMODGROUP.DisplayWidth := 20;
-      qrModGroupsWHENDELETED.Visible := True;
-    end;
-
-    Prepare;
-    Open;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.GetAccounts;
-begin
-  with qrAccounts do begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('select a.accountid, att.accounttype, a.accountname, a.currentbalance, a.whenclosed,iif(att.remoteoverridegroupid is null, ''All Groups'', att.remoteoverridegroupname) as remoteoverridegroupname');
-
-    SQL.Add('  from account a');
-    SQL.Add('  inner join get_accounttypes(0) att on att.accounttypeid = a.accounttypeid');
-
-    if (FAccountsCurrent) then begin
-      SQL.Add('  and (a.whenclosed is null)');
-//      SQL.Add('get_accounts');
-      qrAccountsWHENCLOSED.Visible:= False;
-    end
-    else begin
-      SQL.Add('  and (a.whenclosed is not null)');
-//      SQL.Add('get_closedaccounts');
-      qrAccountsWHENCLOSED.Visible:= True;
-    end;
-
-    SQL.Add('  order by att.remoteoverridegroupname, att.accounttype, a.accountname');
-    Prepare;
-    Open;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.GetAccountTypes;
-begin
-  with qrAccountTypes do begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('select iif(att.remoteoverridegroupid is null, ''All Groups'', att.remoteoverridegroupname) as remoteoverridegroupname,');
-    SQL.Add('att.accounttypeid, att.accounttype');
-    SQL.Add('  from get_accounttypes(:deleted) att');
-    SQL.Add('  order by att.remoteoverridegroupname, att.accounttype');
-
-    Prepare;
-    if (FAccountsCurrent) then begin
-      ParamByName('deleted').AsInteger := 0;
-//      SQL.Add('get_accounts');
-      qrAccountsWHENCLOSED.Visible:= False;
-    end
-    else begin
-      ParamByName('deleted').AsInteger := 1;
-//      SQL.Add('get_closedaccounts');
-      qrAccountsWHENCLOSED.Visible:= True;
-    end;
-    Open;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.GetPeopleRemoteOverrideGroups;
-begin
-  with qrRemoteGroups do begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('  select rg.remoteoverridegroupid, rg.remoteoverridegroupname ');
-    SQL.Add('  from GET_REMOTEOVERRIDEGROUPS(0,0,1,0,0,:remotelocationid,0) rg');
-    ParamByName('remotelocationid').AsInteger := -1; //use -1 to let db proc find local db remote groups, since reports is unaware of its local remotelocationid
-    Prepare;
-    Open;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.GetStaff;
-begin
-  with qrStaff do begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('select rog.remoteoverridegroupid, iif(rog.remoteoverridegroupid is null, ''All Groups'', rog.remoteoverridegroupname) as remoteoverridegroupname,');
-    SQL.Add('  s.staffid, s.staffname, p.firstname, p.surname,');
-    SQL.Add('  s.whenbegin, s.whenend');
-    SQL.Add('  from staff s');
-    SQL.Add('  inner join perorg p on (s.perorgid = p.perorgid)'); 
-    SQL.Add('  left join remoteoverridegroup rog on (s.remoteoverridegroupid = rog.remoteoverridegroupid)');
-
-
-    if (FStaffCurrent) then begin
-      SQL.Add('where (s.whenend is null) and (s.staffinactive = 0)');
-      qrStaffWHENEND.Visible:= False;
-    end
-    else begin
-      SQL.Add('where (s.whenend is not null)');
-      qrStaffWHENEND.Visible:= True;
-    end;
-
-    SQL.Add('order by rog.remoteoverridegroupname, s.staffname, p.firstname, p.surname');
-
-    
-    Prepare;
-    Open;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.GetTerminals;
-begin
-  with qrTerminals do begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('select t.terminalid, t.terminalname, wa.waname, o.outletname, t.whendeleted whendeleted');
-    SQL.Add('  from terminal t');
-    SQL.Add('  inner join workarea wa on (t.workareaid = wa.workareaid)');
-    SQL.Add('  inner join outlet o on (wa.outletid = o.outletid)');
-
-    if (FTerminalsCurrent) then begin
-      SQL.Add('where (t.whendeleted is null)');
-      qrTerminalsWHENDELETED.Visible := False;
-    end
-    else begin
-      SQL.Add('where (t.whendeleted is not null)');
-      qrTerminalsWHENDELETED.Visible := True;
-    end;
-
-    SQL.Add('order by o.outletid, wa.workareaid, t.terminalid');
-
-    Prepare;
-
-
-    Open;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.GetTills;
-begin
-  with qrTills do begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('select t.tillid, t.tillname, wa.waname, o.outletname, t.whendeleted whendeleted');
-    SQL.Add('  from till t');
-    SQL.Add('  inner join workarea wa on (t.workareaid = wa.workareaid)');
-    SQL.Add('  inner join outlet o on (wa.outletid = o.outletid)');
-
-    if (FTillsCurrent) then begin
-      SQL.Add('where (t.whendeleted is null)');
-      qrTillsWHENDELETED.Visible := False;
-    end
-    else begin
-      SQL.Add('where (t.whendeleted is not null)');
-      qrTillsWHENDELETED.Visible := True;
-    end;
-
-    SQL.Add('order by o.outletid, wa.workareaid, t.tillid');
-
-    Prepare;
-    Open;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.GetSaleCategories;
-begin
-  with qrSaleCategories do begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('select salecategoryid, salecategory, whendeleted');
-    SQL.Add('from salecategory');
-
-    if (FSaleCategoriesCurrent) then begin
-      SQL.Add('where whendeleted is null');
-      qrSaleCategoriesWHENDELETED.Visible := False;
-    end
-    else begin
-      SQL.Add('where whendeleted is not null');
-      qrSaleCategoriesWHENDELETED.Visible := True;
-    end;
-
-    SQL.Add('order by salecategory, whendeleted');
-
-    Prepare;
-
-    Open;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.GetSections;
-begin
-  with qrSections do begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('select sectionid, section, whendeleted');
-    SQL.Add('from section');
-
-    if (FSectionsCurrent) then begin
-      SQL.Add('where whendeleted is null');
-      qrSectionsWHENDELETED.Visible := False;
-    end
-    else begin
-      SQL.Add('where whendeleted is not null');
-      qrSectionsWHENDELETED.Visible := True;
-    end;
-
-    SQL.Add('order by section, whendeleted');
-
-    Prepare;
-
-    Open;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.GetCourses;
-begin
-  with qrCourses do begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('select courseid, course, whendeleted');
-    SQL.Add('from course');
-
-    if (FCoursesCurrent) then begin
-      SQL.Add('where whendeleted is null');
-      qrCoursesWHENDELETED.Visible := False;
-    end
-    else begin
-      SQL.Add('where whendeleted is not null');
-      qrCoursesWHENDELETED.Visible := True;
-    end;
-
-    SQL.Add('order by course, whendeleted');
-
-    Prepare;
-
-
-    Open;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.GetDiscountSchemes;
-begin
-  with qrDiscountSchemes do begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('select discountschemeid, discountschemename, whendeleted');
-    SQL.Add('from discountscheme');
-
-    if (FDiscountSchemesCurrent) then begin
-      SQL.Add('where whendeleted is null');
-      qrDiscountSchemesWHENDELETED.Visible := False;
-    end
-    else begin
-      SQL.Add('where whendeleted is not null');
-      qrDiscountSchemesWHENDELETED.Visible := True;
-    end;
-    SQL.Add('and discountschemetype = 1');
-    SQL.Add('order by discountschemename, whendeleted');
-
-    Prepare;
-    Open;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.GetPeriodEnds(FromTime, ToTime: TDateTime);
-begin
-  with qrAccountPEs do begin
-    Close;
-    UnPrepare;
-
-{    SQL.Clear;
-    SQL.Add('select salecategoryid, salecategory, whendeleted');
-    SQL.Add('from salecategory');
-
-    if formReports.radSCCurrent.Checked then begin
-      SQL.Add('where whendeleted is null');
-      qrSaleCategoriesWHENDELETED.Visible := False;
-    end else begin
-      SQL.Add('where whendeleted is not null');
-      qrSaleCategoriesWHENDELETED.Visible := True;
-    end;
-
-    SQL.Add('order by salecategory, whendeleted');}
-
-    Prepare;
-
-    ParamByName('fromtime').AsDateTime:= FromTime;
-    ParamByName('totime').AsDateTime:= ToTime;
-
-    Open;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.dsAccountsDataChange(Sender: TObject; Field: TField);
-begin
-  with qrAccounts do begin
-    Glbs.AccountID := FieldByName('accountid').AsInteger;
-    Glbs.AccountName := FieldByName('accountname').AsString;
-    Glbs.AccRemoteGroupName := FieldByName('remoteoverridegroupname').AsString;
-    Glbs.AccTRemoteGroupName := FieldByName('remoteoverridegroupname').AsString;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.dsAccountPEsDataChange(Sender: TObject; Field: TField);
-begin
-  with qrAccountPEs do begin
-    Glbs.PeriodEndID := FieldByName('periodendid').AsInteger;
-    Glbs.PeriodEndAccountType:= FieldByName('accounttype').AsString;
-    Glbs.PeriodEndWhenEnded:= FieldByName('whenupd').AsDateTime;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.dsStaffDataChange(Sender: TObject; Field: TField);
-begin
-  with qrStaff do begin
-    Glbs.StaffID := FieldByName('staffid').AsInteger;
-    Glbs.StaffName := FieldByName('staffname').AsString;
-    Glbs.SurName := FieldByName('surname').AsString;
-    Glbs.FirstName := FieldByName('firstname').AsString;
-    Glbs.StaffRemoteGroupID := FieldByName('remoteoverridegroupid').AsInteger;
-    Glbs.StaffRemoteGroupName := FieldByName('remoteoverridegroupname').AsString;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.QRAccountSalesCalcFields(DataSet: TDataSet);
-begin
-  qrAccountSalesOutlet.Value := Copy(qrAccountSalesOutletName.Value,1,6);
-end;
-{*****************************************************************************}
-procedure Tdm.dsItemGroupsDataChange(Sender: TObject; Field: TField);
-begin
-  with qrItemGroups do begin
-    Glbs.ItemGroupID := FieldByName('itemgroupid').AsInteger;
-    Glbs.ItemGroup := FieldByName('itemgroupname').AsString;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.qrOrdersCalcFields(DataSet: TDataSet);
-begin
-  qrOrdersOutlet.Value := Copy(qrOrdersOutletName.Value,1,6);
-end;
-{*****************************************************************************}
-procedure Tdm.qrVoidLinesCalcFields(DataSet: TDataSet);
-begin
-  qrVoidLinesOutlet.Value := Copy(qrVoidLinesOutletName.Value,1,6);
-end;
-{*****************************************************************************}
-procedure Tdm.dsTerminalsDataChange(Sender: TObject; Field: TField);
-begin
-  with qrTerminals do begin
-    Glbs.TerminalID := FieldByName('terminalid').AsInteger;
-    Glbs.TerminalName := FieldByName('terminalname').AsString;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.dsTillsDataChange(Sender: TObject; Field: TField);
-begin
-  with qrTills do begin
-    Glbs.TillID := FieldByName('tillid').AsInteger;
-    Glbs.TillName := FieldByName('tillname').AsString;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.dsSaleCategoriesDataChange(Sender: TObject; Field: TField);
-begin
-  with qrSaleCategories do begin
-    Glbs.SaleCategoriesSaleCategoryID := FieldByName('salecategoryid').AsInteger;
-    Glbs.SaleCategoriesSaleCategory := FieldByName('salecategory').AsString;
-    Glbs.SaleCategoriesWhenDeleted := FieldByName('whendeleted').AsDateTime;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.dsAccountTypesDataChange(Sender: TObject; Field: TField);
-begin
-  with qrAccountTypes do begin
-    Glbs.AccountTypeID := FieldByName('accounttypeid').AsInteger;
-    Glbs.AccountType := FieldByName('accounttype').AsString;
-    Glbs.AccRemoteGroupName := '';
-    Glbs.AccTRemoteGroupName := FieldByName('remoteoverridegroupname').AsString;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.dsCoursesDataChange(Sender: TObject; Field: TField);
-begin
-  with qrCourses do begin
-    Glbs.CourseID:= FieldByName('courseid').AsInteger;
-    Glbs.Course:= FieldByName('course').AsString;
-  end;
-end;
-{*****************************************************************************}
-procedure Tdm.dsDiscountSchemesDataChange(Sender: TObject; Field: TField);
-begin
-  with qrDiscountSchemes do begin
-    Glbs.DiscountSchemeID:= FieldByName('discountschemeid').AsInteger;
-    Glbs.DiscountSchemeName:= FieldByName('discountschemename').AsString;
-  end;
-end;
-{******************************************************************************}
-function Tdm.GetAccountSummary(FromTime, ToTime: TDateTime; AccountID, AccountTypeID: Integer): Integer;
-begin
-  qrItemTotalForAccountDay.Close;
-  qrInvocesForAccount.Close;
-  qrAccountsForPeriod.Close;
-  with qrAccountsForPeriod.Params do begin
-    ParamByName('PeriodStart').Value := FromTime;
-    ParamByName('PeriodEnd').Value := ToTime;
-    ParamByName('AccountID').Value := AccountID;
-    ParamByName('AccountTypeID').Value := AccountTypeID;
-  end;
-  with qrInvocesForAccount.Params do begin
-    ParamByName('PeriodStart').Value := FromTime;
-    ParamByName('PeriodEnd').Value := ToTime;
-  end;
-  qrAccountsForPeriod.Open;
-  qrInvocesForAccount.Open;
-  Result := qrAccountsForPeriod.RecordCount;
-end;
-{*****************************************************************************}
-{*****************************************************************************}
-procedure Tdm.dsModGroupDataChange(Sender: TObject; Field: TField);
-begin
-  with qrModGroups do begin
-    Glbs.ModGroupID:= FieldByName('modgroupid').AsInteger;
-    Glbs.ModGroup:= FieldByName('modgroup').AsString;
-  end;
-end;
-procedure StringAsParam(Param: TParam; S: String);
-//Jon 08-01-2002
-//Used to quickly fill in Parameters
-begin
-  Param.AsString:= S;
-end;
-{******************************************************************************}
-procedure IntegerAsParam(Param: TParam; I: Integer);
-begin
-  Param.AsInteger:= I;
-end;
-{******************************************************************************}
-procedure BoolAsParam(Param: TParam; B: Boolean);
-begin
-  if (B) then begin
-    Param.AsInteger:= 1;
-  end
-  else begin
-    Param.AsInteger:= 0;
-  end;
-end;
-{******************************************************************************}
-function FieldAsString(Field: TField; const DefaultS: String): String;
-begin
-  if (Field.IsNull) then begin
-    Result:= DefaultS;
-  end
-  else begin
-    Result:= Field.AsString;
-  end;
-end;
-{******************************************************************************}
-function FieldAsInt(Field: TField; const DefaultI: Integer): Integer;
-begin
-  if (Field.IsNull) then begin
-    Result:= DefaultI;
-  end
-  else begin
-    Result:= Field.AsInteger;
-  end;
-end;
-{******************************************************************************}
-function FieldAsBool(Field: TField): Boolean;
-begin
-  Result:= ((not Field.IsNull) and (Field.AsInteger = 1));
-end;
-{******************************************************************************}
-procedure Tdm.GetSalePeriods;
-begin
-  with qrSalePeriods do begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('SELECT r.TIMEPERIODID, r.TimePeriodName ');
-    SQL.Add('FROM TIMEPERIOD r where r.WHENDELETED is null');
-    SQL.Add('order by TIMEPERIODORDER');
-
-    Prepare;
-
-    Open;
-  end;
-  qrSalePeriods.FieldByName('TimePeriodName').DisplayWidth := 30;
-  qrSalePeriods.FieldByName('TIMEPERIODID').Visible := False;
-end;
-
-procedure Tdm.dsSalePeriodsDataChange(Sender: TObject; Field: TField);
-begin
-  with qrSalePeriods do begin
-    Glbs.SalePeriodID   := FieldByName('TIMEPERIODID').AsInteger;
-    Glbs.SalePeriodName := FieldByName('TimePeriodName').AsString;
-  end;
-end;
-
-procedure Tdm.GetCombos;
-begin
-  with qrCombos do
-  begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('Select Comboid, ComboName, WhenDeleted');
-    SQL.Add('From Combos');
-               
-    if (FCombosCurrent) then
-    begin
-      SQL.Add('Where whendeleted is null');
-      qrCombosWHENDELETED.Visible := False;
-    end
-    else begin
-      SQL.Add('Where whendeleted is not null');
-      qrCombosWHENDELETED.Visible := True;
-    end;
-
-    SQL.Add('Order by ComboName, whendeleted');
-    Prepare;
-    Open;
-  end;
-end;
-
-procedure Tdm.SetCombosCurrent(const Value: Boolean);
-begin
-  if (Value <> FCombosCurrent) then
-  begin
-    FCombosCurrent  := Value;
-    GetCombos;
-  end;
-end;
-
-procedure Tdm.dsCombosDataChange(Sender: TObject; Field: TField);
-begin
-  with qrCombos do
-  begin
-    Glbs.ComboId   := FieldByName('ComboID').AsInteger;
-    Glbs.ComboName := FieldByName('ComboName').AsString;
-  end;
-end;
-
-procedure Tdm.GetEvents;
-begin
-  with qrEvents do
-  begin
-    Close;
-    UnPrepare;
-
-    SQL.Clear;
-    SQL.Add('select a.eventid, a.eventname, a.whendeleted');
-    SQL.Add(' from anevent a');
-    if (FEventsCurrent) then
-    begin
-      SQL.Add('  where (a.whendeleted is null)');
-      qrEventsWhenDeleted.Visible:= False;
-    end
-    else begin
-      SQL.Add('  where (a.whendeleted is not null)');
-      qrEventsWhenDeleted.Visible:= True;
-    end;
-
-    SQL.Add('  order by a.eventname');
-    Prepare;
-    Open;
-  end;
-end;
-
-procedure Tdm.dsEventsDataChange(Sender: TObject; Field: TField);
-begin
-  with qrEvents do
-  begin
-    Glbs.EventID   := FieldByName('EventID').AsInteger;
-    Glbs.EventName := FieldByName('EventName').AsString;
-  end;
-end;
-
-procedure Tdm.SetEventsCurrent(const Value: Boolean);
-begin
-  if (Value <> FEventsCurrent) then
-  begin
-    FEventsCurrent := Value;
-    GetEvents;
-  end;
-end;
-
-procedure Tdm.qrEventSalesCalcFields(DataSet: TDataSet);
-begin
-  qrEventSalesOutlet.Value := Copy(qrEventSalesOutletName.Value,1,6);
-end;
-
-procedure Tdm.SetQueryTenderedDiscounts(OutletID: Integer; RemoteLocationID: Integer);
-begin
-  with dm.qrTenderedDiscount do
-  begin
-    Close;
-    ParamByName('fromtime').AsDateTime := formReports.FromTime;
-    ParamByName('totime').AsDateTime := formReports.ToTime;  
-    ParamByName('outletid').AsInteger := OutletID;
-    ParamByName('remotelocationid').AsInteger := RemoteLocationID;
-
-    Open;
-  end;
-end;
-
-procedure Tdm.dsSectionsDataChange(Sender: TObject; Field: TField);
-begin
-  with qrSections do begin
-    Glbs.SectionsSectionID := FieldByName('sectionid').AsInteger;
-    Glbs.SectionsSection := FieldByName('section').AsString;
-    Glbs.SectionsWhenDeleted := FieldByName('whendeleted').AsDateTime;
-  end;
-end;
 
 end.
 
